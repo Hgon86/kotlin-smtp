@@ -92,9 +92,11 @@ These are the primary seams that already exist (good for library extraction):
 
 These classes exist only to wire and run the server via Spring Boot:
 
-- `io.github.kotlinsmtp.KotlinSmtpApplication` (Spring Boot entrypoint)
 - `io.github.kotlinsmtp.server.SmtpServerRunner` (start/stop on Spring lifecycle)
-- `io.github.kotlinsmtp.config.SmtpServerConfig` (ConfigurationProperties + @Bean wiring)
+- `io.github.kotlinsmtp.config.KotlinSmtpAutoConfiguration` (auto-config wiring)
+- `io.github.kotlinsmtp.config.SmtpServerProperties` (ConfigurationProperties)
+
+Note: a runnable Spring Boot app (portfolio/demo) is intentionally deferred until the library boundary and public API are stable.
 
 Important: extracting a Spring-free `core` module does NOT mean "the server cannot start".
 It means:
@@ -111,8 +113,8 @@ Minimum viable library split:
   - NO Spring dependencies
 
 - host module (choose one now, add others later):
-  - `kotlin-smtp-app` (a runnable Spring Boot app), or
-  - `kotlin-smtp-starter` (auto-configuration) + separate example app
+  - `kotlin-smtp-spring-boot-starter` (auto-configuration)
+  - `kotlin-smtp-example-app` (separate, last)
 
 ### Risks / Couplings To Watch During Extraction
 

@@ -5,24 +5,24 @@ Netty 프레임워크를 기반으로 하며, 코루틴을 활용한 비동기 �
 
 ## 프로젝트 구조
 
-이 프로젝트는 라이브러리와 애플리케이션으로 분리된 구조입니다:
+이 프로젝트는 라이브러리화(core)와 Spring Boot 자동설정(starter)을 우선으로 정리합니다.
+
+포트폴리오용 runnable example app은 **가장 마지막 단계**에서 별도 모듈로 추가하는 방향입니다.
 
 ```
 kotlin-smtp/
-├── kotlin-smtp-core/          # Spring-free SMTP 엔진 라이브러리
+├── kotlin-smtp-core/                     # Spring-free SMTP 엔진 라이브러리
 │   ├── server/               # Netty 기반 SMTP 서버
 │   ├── protocol/             # SMTP 프로토콜 구현
 │   ├── auth/                 # 인증 인터페이스
 │   └── storage/              # 메시지 저장 인터페이스
 │
-└── src/                      # Spring Boot 애플리케이션 (kotlin-smtp-app)
-    ├── main/kotlin/
-    │   └── io/github/kotlinsmtp/
-    │       ├── config/       # Spring 설정
-    │       └── ...           # 빈/와이어링
-    └── main/resources/
-        ├── application.yml              # 기본 설정
-        
+├── kotlin-smtp-spring-boot-starter/     # Spring Boot auto-config (core 기반)
+│   ├── config/                          # @ConfigurationProperties + AutoConfiguration
+│   └── ...                              # starter 기본 구현체(파일 store/spool/relay)
+│
+└── docs/
+    └── application.example.yml          # 설정 예시
 ```
 
 ## 주요 기능
@@ -59,15 +59,17 @@ export SMTP_LISTS_DIR=./data/lists
 export SMTP_SPOOL_DIR=./data/spool
 ```
 
-### 2. 실행
+### 2. Spring Boot 앱에서 사용
 
-```bash
-./gradlew bootRun
-```
+이 저장소는 runnable app을 먼저 만들기보다, 라이브러리(core + starter)를 안정화하는 것을 우선합니다.
+
+본인의 Spring Boot 앱에서 아래처럼 starter를 추가하면, `application.yml` 설정만으로 SMTP 서버가 뜨는 구성을 목표로 합니다.
 
 ## 설정 가이드
 
 ### 기본 설정 (application.yml)
+
+설정 예시는 `docs/application.example.yml`를 참고하세요.
 
 ```yaml
 smtp:
@@ -137,7 +139,9 @@ smtp:
 
 ## 라이브러리 사용
 
-`kotlin-smtp-core`를 의존성으로 사용하여 커스텀 SMTP 서버를 구축할 수 있습니다:
+### Core만 사용 (Spring 없이 직접 실행)
+
+`kotlin-smtp-core`를 의존성으로 사용하여 커스텀 SMTP 서버를 직접 구성할 수 있습니다:
 
 ```kotlin
 // build.gradle.kts
@@ -162,6 +166,18 @@ val server = SmtpServer(
 
 server.start()
 ```
+
+### Spring Boot에서 사용 (starter)
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("io.github.kotlinsmtp:kotlin-smtp-core:VERSION")
+    implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:VERSION")
+}
+```
+
+`kotlin-smtp-spring-boot-starter`는 `smtp.*` 설정을 통해 `SmtpServer`들을 자동 생성/시작하는 구성을 제공합니다.
 
 ## 아키텍처
 

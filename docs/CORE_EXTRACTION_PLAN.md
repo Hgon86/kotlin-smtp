@@ -15,9 +15,10 @@ Target structure (minimal):
   - SMTP engine + protocol + extension interfaces
   - no Spring annotations/dependencies
 
-- `kotlin-smtp-app` (temporary name)
-  - Spring Boot entrypoint
-  - reads configuration, wires beans, starts servers
+- `kotlin-smtp-spring-boot-starter`
+  - Spring Boot auto-configuration for the core engine
+  - exposes `@ConfigurationProperties` for wiring
+  - contains host-side default implementations (spool/relay/file store) until they are split further
 
 Target structure (recommended after boundaries stabilize):
 
@@ -29,8 +30,9 @@ Target structure (recommended after boundaries stabilize):
   - exposes `@ConfigurationProperties` for wiring
 
 - `kotlin-smtp-example-app`
-  - a runnable sample app (or integration test harness)
-  - demonstrates how to wire the core (with or without Spring)
+  - a runnable sample app (portfolio/demo)
+  - demonstrates how to wire the core (with Spring Boot starter)
+  - intentionally deferred until the library boundary and public API are stable
 
 ### Step 2: Move Code By Responsibility (No Behavior Change)
 
@@ -41,11 +43,10 @@ Move into `core` first:
 - `auth/*` (AuthService, rate limiter) but remove Spring usage (see Step 3)
 - `storage/*` (MessageStore interface)
 
-Keep in `app` initially:
-- `config/SmtpServerConfig.kt`
-- `server/SmtpServerRunner.kt`
-- `KotlinSmtpApplication.kt`
-- default implementations that are likely to expand soon (spool/relay/local mailbox)
+Keep in `spring-boot-starter` initially:
+- auto-config + properties (`KotlinSmtpAutoConfiguration`, `SmtpServerProperties`)
+- server lifecycle glue (`SmtpServerRunner`)
+- host-side default implementations (spool/relay/local mailbox/file store)
 
 ### Step 3: Remove Spring Couplings From Core
 
@@ -57,14 +58,14 @@ If core needs lifecycle hooks, expose them as plain Kotlin APIs (start/stop) and
 
 ### Step 4: Host Wires Core
 
-In `app`:
-- keep `SmtpServerConfig` as the single wiring point
-- create `SmtpServer` instances and call `start()` via `SmtpServerRunner`
+In Spring Boot host applications:
+- rely on `kotlin-smtp-spring-boot-starter` (auto-config) to create `SmtpServer` instances
+- `SmtpServerRunner` starts/stops them via Spring lifecycle
 
 This answers the common concern:
 "If core removes Spring, does the server stop working?"
 
-No. The app module (Spring) still starts the server. The core module is only the engine.
+No. A Spring Boot host app (your portfolio app later) starts the server via the starter. The core module is only the engine.
 
 ### Step 5: Decide What "Core" Means (One Required Decision)
 

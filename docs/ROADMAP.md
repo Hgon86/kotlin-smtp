@@ -5,7 +5,7 @@
 ## 현재 상태 (Current State)
 
 - **Base Package**: `io.github.kotlinsmtp` (리팩토링 완료)
-- **모듈 구조**: `kotlin-smtp-core` (라이브러리) + host(app) (Spring 앱; 임시)
+- **모듈 구조**: `kotlin-smtp-core` (라이브러리) + `kotlin-smtp-spring-boot-starter` (Spring Boot 자동설정)
 - **최근 커밋**: `8f0e121 refactor: extract core module and rename base package`
 - **테스트**: `./gradlew test` 통과
 
@@ -62,8 +62,9 @@
 - [ ] 설정 문서 자동 생성 (spring-boot-configuration-processor)
 
 **관련 파일**:
-- `src/main/kotlin/io/github/kotlinsmtp/config/SmtpServerConfig.kt`
-- `src/main/resources/application*.yml`
+- `kotlin-smtp-spring-boot-starter/src/main/kotlin/io/github/kotlinsmtp/config/SmtpServerProperties.kt`
+- `kotlin-smtp-spring-boot-starter/src/main/kotlin/io/github/kotlinsmtp/config/KotlinSmtpAutoConfiguration.kt`
+- `docs/application.example.yml`
 
 **우선순위**: MEDIUM
 
@@ -116,8 +117,19 @@
 
 **TODO**:
 - [ ] `kotlin-smtp-spring-boot-starter` 신규 모듈 생성
-- [ ] starter에서 `SmtpServerConfig`/auto-config 제공
-- [ ] host(app)는 example로 축소하거나 별도 `kotlin-smtp-example-app`로 이동
+- [ ] starter에서 `@ConfigurationProperties` + auto-config 제공
+- [ ] example app은 가장 마지막(포트폴리오 단계)으로 미룸
+
+---
+
+### 6. Example App (포트폴리오용, 마지막에 진행)
+
+**목표**: 라이브러리(core + starter)를 소비해서 SMTP 서버 앱까지 구성
+
+**TODO**:
+- [ ] `kotlin-smtp-example-app` 모듈 생성
+- [ ] core + starter 의존
+- [ ] 실제 운영/배포는 목적이 아니라 "사용 예시 + 포트폴리오"로 구성
 
 **우선순위**: MEDIUM
 
@@ -193,7 +205,7 @@
 - **Breaking Changes**: 라이브러리 public API 변경 시 문서화
 - **테스트**: 모든 신규 기능은 테스트와 함께
 - **보안**: 인증/TLS 관련 변경은 보안 검토 필수
-- **설정**: 새 설정 추가 시 application-container.yml도 업데이트
+- **설정**: 새 설정 추가 시 `docs/application.example.yml`도 업데이트
 
 ---
 
@@ -209,7 +221,7 @@
 ## 연락/질문
 
 - 프로젝트 구조 관련: `kotlin-smtp-core/` 모듈 참조
-- 설정 관련: `SmtpServerConfig.kt` 및 `application*.yml` 참조
+- 설정 관련: `kotlin-smtp-spring-boot-starter/src/main/kotlin/io/github/kotlinsmtp/config/SmtpServerProperties.kt` 및 `docs/application.example.yml` 참조
 - 아키텍처 관련: `docs/THIN_ARCHITECTURE.md` 참조
 
 ---

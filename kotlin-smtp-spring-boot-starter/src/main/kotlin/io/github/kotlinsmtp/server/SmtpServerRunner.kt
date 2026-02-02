@@ -11,11 +11,9 @@ import kotlinx.coroutines.runBlocking
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.ContextClosedEvent
 import org.springframework.context.event.EventListener
-import org.springframework.stereotype.Component
 
 private val log = KotlinLogging.logger {}
 
-@Component
 class SmtpServerRunner(
     private val smtpServers: List<SmtpServer>
 ) {

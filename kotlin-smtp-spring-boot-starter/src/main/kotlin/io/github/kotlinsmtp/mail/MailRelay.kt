@@ -1,7 +1,7 @@
 package io.github.kotlinsmtp.mail
 
 import io.github.kotlinsmtp.model.MxRecord
-import io.github.kotlinsmtp.config.SmtpServerConfig
+import io.github.kotlinsmtp.config.SmtpServerProperties
 import io.github.kotlinsmtp.utils.AddressUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.mail.Session
@@ -33,7 +33,7 @@ private val log = KotlinLogging.logger {}
  */
 class MailRelay(
     private val dispatcherIO: CoroutineDispatcher,
-    private val tls: SmtpServerConfig.OutboundTlsConfig,
+    private val tls: SmtpServerProperties.OutboundTlsConfig,
 ) {
     // TODO: Redis 캐싱으로 대체 예정
     // private val redisTemplate: RedisTemplate<String, List<MxRecord>>
