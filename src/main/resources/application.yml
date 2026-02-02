@@ -16,7 +16,7 @@ management:
 
 smtp:
   port: 2525 # listeners 미설정 시 단일 포트로 동작
-  hostname: crinity
+  hostname: localhost
   serviceName: ESMTP
 
   # 리스너(포트)별 정책 분리(기능 구현 우선)
@@ -54,11 +54,13 @@ smtp:
       - 127.0.0.1/32
       - ::1/128
 
-  # 로컬 저장소(메일박스/임시파일) 경로
+  # 저장소 경로 설정 (필수)
+  # - OS 중립적으로 상대경로를 기본 예시로 둡니다.
+  # - 운영/배포 환경에서는 절대경로 또는 환경변수로 명시 권장.
   storage:
-    mailboxDir: C:\smtp-server\mailboxes
-    tempDir: C:\smtp-server\temp-mails
-    listsDir: C:\smtp-server\lists # EXPN 로컬 리스트(기능 우선; 운영에서는 DB/Directory로 이관 TODO)
+    mailboxDir: ${SMTP_MAILBOX_DIR:./data/mailboxes}
+    tempDir: ${SMTP_TEMP_DIR:./data/temp}
+    listsDir: ${SMTP_LISTS_DIR:./data/lists}
 
   ssl:
     enabled: false # SSL/TLS 사용 여부
@@ -82,9 +84,9 @@ smtp:
       connectTimeoutMs: 15000
       readTimeoutMs: 15000
 
-  # 스풀러 기본 설정
+  # 스풀러 기본 설정 (필수: dir)
   spool:
-    dir: C:\smtp-server\spool
+    dir: ${SMTP_SPOOL_DIR:./data/spool}
     maxRetries: 5
     retryDelaySeconds: 60
 

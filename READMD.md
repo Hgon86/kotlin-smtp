@@ -1,98 +1,223 @@
-```mermaid
-flowchart TD
-%% Network Handling Subgraph
-subgraph "네트워크 처리"
-direction TB
-A([SmtpServer]) --> B([SmtpChannelHandler])
-B --> C([SmtpSession])
-end
+# Kotlin SMTP Server
 
-    %% Command Handling Subgraph
-    subgraph "명령어 처리"
-        direction TB
-        D{{SmtpCommands}}
-        D --> E1(("HeloCommand"))
-        D --> E2(("EhloCommand"))
-        D --> E3(("DataCommand"))
-        D --> E4(("StartTlsCommand"))
-        D --> E5(("기타 SMTP 명령어"))
-    end
+Kotlin 기반의 SMTP 서버 라이브러리 및 실행 애플리케이션입니다.
+Netty 프레임워크를 기반으로 하며, 코루틴을 활용한 비동기 처리를 지원합니다.
 
-    %% Mail Handling Subgraph
-    subgraph "메일 처리"
-        direction TB
-        F([SmtpProtocolHandler]) --> G([SimpleSmtpProtocolHandler])
-        G --> H1((MailParser))
-        G --> H2((MailRelay))
-        G --> H3((LocalMailboxManager))
-        H2 --> I(("MX 레코드 조회")):::special
-        H3 --> J(("로컬 메일박스 저장")):::special
-    end
+## 프로젝트 구조
 
-    %% Styling for special nodes
-    classDef special fill:#ffcccc,stroke:#d62728,stroke-width:2px;
+이 프로젝트는 라이브러리와 애플리케이션으로 분리된 구조입니다:
 
-    %% Edge connections
-    C --> D
-    C --> F
 ```
-
-# Kotlin SMTP 서버
-
-Kotlin으로 구현된 경량화된 SMTP 서버입니다. Netty 프레임워크를 기반으로 비동기 네트워크 처리를 지원하며, 코루틴을 활용한 효율적인 동시성 처리가 특징입니다.
+kotlin-smtp/
+├── kotlin-smtp-core/          # Spring-free SMTP 엔진 라이브러리
+│   ├── server/               # Netty 기반 SMTP 서버
+│   ├── protocol/             # SMTP 프로토콜 구현
+│   ├── auth/                 # 인증 인터페이스
+│   └── storage/              # 메시지 저장 인터페이스
+│
+└── src/                      # Spring Boot 애플리케이션 (kotlin-smtp-app)
+    ├── main/kotlin/
+    │   └── io/github/kotlinsmtp/
+    │       ├── config/       # Spring 설정
+    │       └── ...           # 빈/와이어링
+    └── main/resources/
+        ├── application.yml              # 기본 설정
+        
+```
 
 ## 주요 기능
 
 - **SMTP 프로토콜 구현**: RFC 5321 기반 SMTP 명령어 지원
-- **TLS 보안 연결**: STARTTLS 명령을 통한 보안 연결 지원
-- **로컬 메일박스 관리**: 로컬 도메인 메일 저장 및 관리
-- **외부 메일 릴레이**: MX 레코드 조회를 통한 외부 메일 서버 릴레이
-- **확장성 있는 구조**: 커스텀 프로토콜 핸들러 구현 가능
+- **TLS 보안 연결**: STARTTLS 및 Implicit TLS(SMTPS) 지원
+- **AUTH 인증**: PLAIN 인증 구현
+- **메일 릴레이**: MX 레코드 조회 및 외부 전달
+- **로컬 메일박스**: 로컬 도메인 메일 저장
+- **스풀 및 재시도**: 실패 메일 자동 재시도
+- **Rate Limiting**: DoS 방지를 위한 연결/메시지 제한
 
-## 아키텍처
+## 빠른 시작
 
-### 네트워크 처리
+### 1. 필수 설정
 
-- **SmtpServer**: 서버 설정 및 Netty 부트스트랩 관리
-- **SmtpChannelHandler**: Netty 채널 이벤트 처리 및 세션 관리
-- **SmtpSession**: SMTP 세션 상태 및 클라이언트 통신 관리
-
-### 명령어 처리
-
-- **SmtpCommands**: SMTP 명령어 라우팅 및 처리
-- **HeloCommand, EhloCommand**: 클라이언트 인사 처리
-- **MailCommand, RcptCommand**: 발신자/수신자 설정
-- **DataCommand**: 메일 본문 데이터 처리
-- **StartTlsCommand**: TLS 보안 연결 시작
-
-### 메일 처리
-
-- **SmtpProtocolHandler**: 메일 트랜잭션 처리 인터페이스
-- **SimpleSmtpProtocolHandler**: 기본 메일 처리 구현체
-- **MailParser**: 이메일 데이터 파싱 및 MimeMessage 변환
-- **MailRelay**: 외부 메일 서버로 메일 릴레이 (MX 레코드 조회)
-- **LocalMailboxManager**: 로컬 사용자 메일박스 관리
-
-## 설정 방법
-
-`application.yml` 파일에서 다음 설정을 구성할 수 있습니다:
+`application.yml` 또는 환경변수로 저장소 경로를 설정해야 합니다:
 
 ```yaml
 smtp:
-  port: 25                           # SMTP 서버 포트
-  hostname: localhost                # 서버 호스트명
-  serviceName: kotlin-smtp           # 서비스 이름
-  
-  ssl:
-    enabled: false                   # SSL/TLS 사용 여부
-    certChainFile: /path/to/cert     # 인증서 체인 파일 경로
-    privateKeyFile: /path/to/key     # 개인 키 파일 경로
+  storage:
+    mailboxDir: ./data/mailboxes
+    tempDir: ./data/temp
+    listsDir: ./data/lists
+  spool:
+    dir: ./data/spool
 ```
 
-## 향후 개발 계획
+또는 환경변수 사용:
+```bash
+export SMTP_MAILBOX_DIR=./data/mailboxes
+export SMTP_TEMP_DIR=./data/temp
+export SMTP_LISTS_DIR=./data/lists
+export SMTP_SPOOL_DIR=./data/spool
+```
 
-- Redis 기반 MX 레코드 캐싱
-- 다중 로컬 도메인 지원
-- 사용자 인증 기능 추가
-- 메시지 필터링 및 스팸 방지 기능
-- 클러스터링 지원
+### 2. 실행
+
+```bash
+./gradlew bootRun
+```
+
+## 설정 가이드
+
+### 기본 설정 (application.yml)
+
+```yaml
+smtp:
+  port: 2525                    # 단일 포트 모드
+  hostname: smtp.example.com
+  
+  # 또는 멀티 리스너 모드
+  listeners:
+    - port: 2525                # MTA 수신
+      serviceName: ESMTP
+      enableStartTls: true
+      enableAuth: true
+    - port: 2587                # Submission
+      serviceName: SUBMISSION
+      requireAuthForMail: true
+    - port: 2465                # SMTPS
+      serviceName: SMTPS
+      implicitTls: true
+
+  # 저장소 (필수)
+  storage:
+    mailboxDir: /var/smtp/mailboxes
+    tempDir: /var/smtp/temp
+    listsDir: /var/smtp/lists
+
+  # TLS 설정
+  ssl:
+    enabled: true
+    certChainFile: /etc/smtp/certs/tls.crt
+    privateKeyFile: /etc/smtp/certs/tls.key
+
+  # 릴레이 설정
+  relay:
+    enabled: true
+    localDomain: example.com
+    requireAuthForRelay: true   # 오픈 릴레이 방지
+    outboundTls:
+      trustAll: false           # 운영에서는 반드시 false
+
+  # 스풀 설정
+  spool:
+    dir: /var/smtp/spool
+    maxRetries: 5
+    retryDelaySeconds: 60
+
+  # 인증
+  auth:
+    enabled: true
+    required: true
+    users:
+      user1: "{bcrypt}$2a$10$..."
+```
+
+### 환경변수 우선순위
+
+모든 설정은 환경변수로 오버라이드 가능합니다:
+
+| 환경변수 | 설명 | 예시 |
+|---------|------|------|
+| `SMTP_MAILBOX_DIR` | 메일박스 저장 경로 | `/var/smtp/mailboxes` |
+| `SMTP_TEMP_DIR` | 임시 파일 경로 | `/var/smtp/temp` |
+| `SMTP_SPOOL_DIR` | 스풀 디렉토리 | `/var/smtp/spool` |
+| `SMTP_HOSTNAME` | 서버 호스트명 | `smtp.example.com` |
+| `SMTP_TLS_ENABLED` | TLS 활성화 | `true` |
+| `SMTP_RELAY_ENABLED` | 릴레이 활성화 | `false` |
+| `SMTP_AUTH_ENABLED` | 인증 활성화 | `true` |
+
+## 라이브러리 사용
+
+`kotlin-smtp-core`를 의존성으로 사용하여 커스텀 SMTP 서버를 구축할 수 있습니다:
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("io.github.kotlinsmtp:kotlin-smtp-core:VERSION")
+}
+```
+
+```kotlin
+import io.github.kotlinsmtp.server.SmtpServer
+import io.github.kotlinsmtp.auth.AuthService
+import io.github.kotlinsmtp.storage.MessageStore
+
+val server = SmtpServer(
+    port = 2525,
+    hostname = "smtp.example.com",
+    authService = myAuthService,
+    transactionHandlerCreator = { myHandler() },
+    messageStore = myMessageStore,
+    // ... other options
+)
+
+server.start()
+```
+
+## 아키텍처
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Network Layer (Netty)                                   │
+│  ┌──────────────┐    ┌─────────────┐    ┌──────────┐   │
+│  │ SmtpServer   │───▶│ Channel     │───▶│ Session  │   │
+│  └──────────────┘    │ Handler     │    │          │   │
+│                      └─────────────┘    └────┬─────┘   │
+└───────────────────────────────────────────────┼─────────┘
+                                                │
+┌───────────────────────────────────────────────┼─────────┐
+│  Protocol Layer                                │        │
+│  ┌──────────────────┐    ┌────────────────────┘        │
+│  │ SmtpCommands     │◄───┘                             │
+│  │  ├── EHLO/HELO   │                                  │
+│  │  ├── MAIL/RCPT   │                                  │
+│  │  ├── DATA        │                                  │
+│  │  ├── STARTTLS    │                                  │
+│  │  └── AUTH        │                                  │
+│  └──────────────────┘                                  │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  Handler Layer                                          │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ SmtpProtocolHandler (Transaction Handler)       │   │
+│  │  ├── SimpleSmtpProtocolHandler (기본)           │   │
+│  │  └── [Custom Handler] ← 사용자 구현 가능        │   │
+│  └─────────────────────────────────────────────────┘   │
+│                         │                              │
+│  ┌──────────────┐  ┌────┴─────┐  ┌─────────────┐      │
+│  │ MessageStore │  │ Delivery │  │ AuthService │      │
+│  │ (Storage)    │  │ Service  │  │ (Auth)      │      │
+│  └──────────────┘  └──────────┘  └─────────────┘      │
+└─────────────────────────────────────────────────────────┘
+```
+
+## 보안 가이드
+
+1. **오픈 릴레이 방지**: `smtp.relay.requireAuthForRelay=true` 설정
+2. **TLS 강제**: `trustAll=false` (운영 환경에서만)
+3. **Rate Limiting**: IP당 연결/메시지 수 제한
+4. **PROXY Protocol**: LB 뒤에서만 사용, trustedCidrs 설정 필수
+
+## 라이선스
+
+[라이선스 정보 추가 필요]
+
+---
+
+## 문서
+
+- [CORE_EXTRACTION_PLAN.md](docs/CORE_EXTRACTION_PLAN.md) - Core 모듈 분리 계획
+- [THIN_ARCHITECTURE.md](docs/THIN_ARCHITECTURE.md) - 현재 아키텍처 문서
+- [ROADMAP.md](docs/ROADMAP.md) - 프로젝트 로드맵 및 작업 추적
+- [PUBLIC_API_CANDIDATES.md](docs/PUBLIC_API_CANDIDATES.md) - 공개 API 후보

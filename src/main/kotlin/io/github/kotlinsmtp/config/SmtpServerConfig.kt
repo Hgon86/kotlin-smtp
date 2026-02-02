@@ -38,13 +38,19 @@ class SmtpServerConfig {
     var listeners: List<ListenerConfig> = emptyList()
 
     data class StorageConfig(
-        var mailboxDir: String = "C:\\smtp-server\\mailboxes",
-        var tempDir: String = "C:\\smtp-server\\temp-mails",
-        var listsDir: String = "C:\\smtp-server\\lists", // EXPN용 로컬 리스트(기능 우선)
+        var mailboxDir: String = "",
+        var tempDir: String = "",
+        var listsDir: String = "", // EXPN용 로컬 리스트(기능 우선)
     ) {
         val mailboxPath: Path get() = Path.of(mailboxDir)
         val tempPath: Path get() = Path.of(tempDir)
         val listsPath: Path get() = Path.of(listsDir)
+
+        fun validate() {
+            require(mailboxDir.isNotBlank()) { "smtp.storage.mailboxDir must be configured (e.g., /var/smtp/mailboxes for Linux or C:/smtp/mailboxes for Windows)" }
+            require(tempDir.isNotBlank()) { "smtp.storage.tempDir must be configured (e.g., /var/smtp/temp or C:/smtp/temp)" }
+            require(listsDir.isNotBlank()) { "smtp.storage.listsDir must be configured (e.g., /var/smtp/lists or C:/smtp/lists)" }
+        }
     }
 
     data class RelayConfig(
@@ -74,11 +80,15 @@ class SmtpServerConfig {
     )
 
     data class SpoolConfig(
-        var dir: String = "C:\\smtp-server\\spool",
+        var dir: String = "",
         var maxRetries: Int = 5,
         var retryDelaySeconds: Long = 60,
     ) {
         val path: Path get() = Path.of(dir)
+
+        fun validate() {
+            require(dir.isNotBlank()) { "smtp.spool.dir must be configured (e.g., /var/smtp/spool for Linux or C:/smtp/spool for Windows)" }
+        }
     }
 
     data class AuthConfig(
@@ -218,6 +228,10 @@ class SmtpServerConfig {
         authService: AuthService,
         authRateLimiter: AuthRateLimiter,
     ): List<SmtpServer> {
+        // Validate required storage paths (no OS-specific defaults)
+        storage.validate()
+        spool.validate()
+
         // 안전장치: relay.enabled를 켜는 순간, 설정 실수로 open relay가 되는 것을 막습니다.
         if (relay.enabled && !relay.requireAuthForRelay && relay.allowedSenderDomains.isEmpty()) {
             error("Refusing to start: smtp.relay.enabled=true without smtp.relay.requireAuthForRelay=true or smtp.relay.allowedSenderDomains allowlist")

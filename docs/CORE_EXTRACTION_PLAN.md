@@ -19,6 +19,19 @@ Target structure (minimal):
   - Spring Boot entrypoint
   - reads configuration, wires beans, starts servers
 
+Target structure (recommended after boundaries stabilize):
+
+- `kotlin-smtp-core`
+  - Spring-free engine and extension interfaces
+
+- `kotlin-smtp-spring-boot-starter`
+  - Spring Boot auto-configuration for the core engine
+  - exposes `@ConfigurationProperties` for wiring
+
+- `kotlin-smtp-example-app`
+  - a runnable sample app (or integration test harness)
+  - demonstrates how to wire the core (with or without Spring)
+
 ### Step 2: Move Code By Responsibility (No Behavior Change)
 
 Move into `core` first:
@@ -67,5 +80,5 @@ Option B: batteries-included core
 
 ### Step 6: After Core Extraction
 
-- Introduce `kotlin-smtp-starter` (Spring Boot auto-config) when the boundaries are stable.
+- Introduce `kotlin-smtp-spring-boot-starter` (Spring Boot auto-config) when the boundaries are stable.
 - Add R2DBC/PostgreSQL implementations as separate modules (auth + metadata) to keep core clean.
