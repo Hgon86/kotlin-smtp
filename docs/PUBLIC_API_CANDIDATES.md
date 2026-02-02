@@ -8,20 +8,20 @@ Rule of thumb:
 
 ### Core Engine (Should Be Public)
 
-- `com.crinity.kotlinsmtp.server.SmtpServer`
+- `io.github.kotlinsmtp.server.SmtpServer`
   - create server instance, configure ports/policies, start/stop
-- `com.crinity.kotlinsmtp.server.SmtpSession`
+- `io.github.kotlinsmtp.server.SmtpSession`
   - session lifecycle and response helpers (careful: may remain internal if we want to hide Netty)
-- `com.crinity.kotlinsmtp.model.SessionData`
+- `io.github.kotlinsmtp.model.SessionData`
   - observable state passed into handlers
 
 ### Extension Interfaces (Should Be Public)
 
-- `com.crinity.kotlinsmtp.storage.MessageStore`
-- `com.crinity.kotlinsmtp.auth.AuthService`
-- `com.crinity.kotlinsmtp.protocol.handler.SmtpProtocolHandler`
-- `com.crinity.kotlinsmtp.protocol.handler.SmtpUserHandler`
-- `com.crinity.kotlinsmtp.protocol.handler.SmtpMailingListHandler`
+- `io.github.kotlinsmtp.storage.MessageStore`
+- `io.github.kotlinsmtp.auth.AuthService`
+- `io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler`
+- `io.github.kotlinsmtp.protocol.handler.SmtpUserHandler`
+- `io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler`
 
 ### Probably NOT Public (Keep Internal Initially)
 

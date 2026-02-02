@@ -109,4 +109,4 @@ smtp:
 logging:
   level:
     root: info
-    com.crinity.kotlinsmtp: info
+    io.github.kotlinsmtp: info

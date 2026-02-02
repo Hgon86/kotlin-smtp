@@ -14,24 +14,24 @@ Non-goals:
 ### Runtime Flow (Happy Path)
 
 1) TCP accept
-- `com.crinity.kotlinsmtp.server.SmtpServer` creates the Netty pipeline.
+- `io.github.kotlinsmtp.server.SmtpServer` creates the Netty pipeline.
 - Optional: PROXY protocol v1 (`HAProxyMessageDecoder`) if enabled.
 - Optional: implicit TLS (SMTPS) via `SslHandler` if enabled.
 
 2) Inbound framing
-- `com.crinity.kotlinsmtp.server.SmtpInboundDecoder` turns the inbound stream into:
+- `io.github.kotlinsmtp.server.SmtpInboundDecoder` turns the inbound stream into:
   - `SmtpInboundFrame.Line` (SMTP command lines)
   - `SmtpInboundFrame.Bytes` (BDAT chunks)
 
 3) Session orchestration
-- `com.crinity.kotlinsmtp.protocol.handler.SmtpChannelHandler` creates one `SmtpSession` per connection.
+- `io.github.kotlinsmtp.protocol.handler.SmtpChannelHandler` creates one `SmtpSession` per connection.
 - It feeds inbound frames into a per-session coroutine consumer to preserve ordering.
 
 4) SMTP state machine
-- `com.crinity.kotlinsmtp.server.SmtpSession.handle()`:
+- `io.github.kotlinsmtp.server.SmtpSession.handle()`:
   - sends greeting (220)
   - reads lines sequentially
-  - dispatches via `com.crinity.kotlinsmtp.protocol.command.api.SmtpCommands.handle(line, session)`
+  - dispatches via `io.github.kotlinsmtp.protocol.command.api.SmtpCommands.handle(line, session)`
 
 5) Command layer
 - Each command updates `SessionData` and/or calls into the transaction handler.
@@ -39,27 +39,27 @@ Non-goals:
 
 6) Transaction handler (message acceptance)
 - `SmtpSession.transactionHandler` is lazily created via `SmtpServer.transactionHandlerCreator`.
-- Current default: `com.crinity.kotlinsmtp.protocol.handler.SimpleSmtpProtocolHandler`
+- Current default: `io.github.kotlinsmtp.protocol.handler.SimpleSmtpProtocolHandler`
   - stores raw message via `MessageStore.storeRfc822(...)`
   - either:
     - deliver synchronously, or
     - enqueue to spooler (`MailSpooler`) and return success to SMTP client
 
 7) Delivery
-- `com.crinity.kotlinsmtp.spool.MailDeliveryService`:
+- `io.github.kotlinsmtp.spool.MailDeliveryService`:
   - local: `LocalMailboxManager.deliverToLocalMailbox(...)`
   - external: `MailRelay.relayMessage(...)` (DNS MX lookup + Jakarta Mail transport)
-- `com.crinity.kotlinsmtp.spool.MailSpooler` provides retry/backoff + optional DSN generation via `DsnService`.
+- `io.github.kotlinsmtp.spool.MailSpooler` provides retry/backoff + optional DSN generation via `DsnService`.
 
 ### Key State Objects
 
-- `com.crinity.kotlinsmtp.model.SessionData`:
+- `io.github.kotlinsmtp.model.SessionData`:
   - greeting state (EHLO/HELO)
   - AUTH state
   - TLS state
   - MAIL/RCPT and ESMTP parameters (SIZE/SMTPUTF8/DSN)
 
-- `com.crinity.kotlinsmtp.server.SmtpSession`:
+- `io.github.kotlinsmtp.server.SmtpSession`:
   - owns connection lifecycle
   - owns DATA/BDAT mode and buffering
   - provides `sendResponse(...)` and `sendMultilineResponse(...)`
@@ -68,23 +68,23 @@ Non-goals:
 
 These are the primary seams that already exist (good for library extraction):
 
-- `com.crinity.kotlinsmtp.storage.MessageStore`
+- `io.github.kotlinsmtp.storage.MessageStore`
   - boundary for storing accepted raw RFC822 (usually .eml)
   - current impl: `FileMessageStore`
 
-- `com.crinity.kotlinsmtp.auth.AuthService`
+- `io.github.kotlinsmtp.auth.AuthService`
   - boundary for AUTH verification
   - current impl: `InMemoryAuthService`
 
-- `com.crinity.kotlinsmtp.protocol.handler.SmtpProtocolHandler`
+- `io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler`
   - per-transaction handler (MAIL/RCPT/DATA)
   - current default: `SimpleSmtpProtocolHandler`
 
-- `com.crinity.kotlinsmtp.protocol.handler.SmtpUserHandler`
+- `io.github.kotlinsmtp.protocol.handler.SmtpUserHandler`
   - VRFY-like user checks / local policy
   - current impl: `LocalDirectoryUserHandler`
 
-- `com.crinity.kotlinsmtp.protocol.handler.SmtpMailingListHandler`
+- `io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler`
   - EXPN mailing list expansion
   - current impl: `LocalFileMailingListHandler`
 
@@ -92,9 +92,9 @@ These are the primary seams that already exist (good for library extraction):
 
 These classes exist only to wire and run the server via Spring Boot:
 
-- `com.crinity.kotlinsmtp.KotlinSmtpApplication` (Spring Boot entrypoint)
-- `com.crinity.kotlinsmtp.server.SmtpServerRunner` (start/stop on Spring lifecycle)
-- `com.crinity.kotlinsmtp.config.SmtpServerConfig` (ConfigurationProperties + @Bean wiring)
+- `io.github.kotlinsmtp.KotlinSmtpApplication` (Spring Boot entrypoint)
+- `io.github.kotlinsmtp.server.SmtpServerRunner` (start/stop on Spring lifecycle)
+- `io.github.kotlinsmtp.config.SmtpServerConfig` (ConfigurationProperties + @Bean wiring)
 
 Important: extracting a Spring-free `core` module does NOT mean "the server cannot start".
 It means:

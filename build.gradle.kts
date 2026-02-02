@@ -5,7 +5,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
 }
 
-group = "com.crinity"
+group = "io.github.kotlinsmtp"
 version = "0.0.1-SNAPSHOT"
 
 java {
@@ -25,6 +25,8 @@ repositories {
 }
 
 dependencies {
+    implementation(project(":kotlin-smtp-core"))
+
     implementation("org.springframework.boot:spring-boot-starter-webflux")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
