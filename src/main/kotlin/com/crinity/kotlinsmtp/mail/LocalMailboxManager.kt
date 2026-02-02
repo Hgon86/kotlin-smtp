@@ -11,36 +11,28 @@ import java.time.format.DateTimeFormatter
 
 private val log = KotlinLogging.logger {}
 
-/**
- * 사용자별 메일박스 디렉토리를 관리하고 메일을 저장 AI 작성 버전
- * 추후 카프카 이벤트 발행으로 변경 예정
- */
 class LocalMailboxManager(
     private val mailboxDir: Path = Path.of("C:\\smtp-server\\mailboxes")
 ) {
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+    private val mailboxRoot: Path = mailboxDir.toAbsolutePath().normalize()
 
     init {
         try {
-            Files.createDirectories(mailboxDir)
-            log.info { "Initialized mailbox directory at: $mailboxDir" }
+            Files.createDirectories(mailboxRoot)
+            log.info { "Initialized mailbox directory at: $mailboxRoot" }
         } catch (e: Exception) {
-            log.error(e) { "Failed to create mailbox directory: $mailboxDir" }
+            log.error(e) { "Failed to create mailbox directory: $mailboxRoot" }
             throw RuntimeException("Failed to initialize mailbox directory", e)
         }
     }
 
-    /**
-     * 로컬 사용자의 메일박스에 메일을 저장합니다.
-     *
-     * @param username 사용자 이름 (이메일 주소의 @ 앞 부분)
-     * @param tempFile 임시 저장된 메일 파일
-     * @return 저장된 메일 파일 경로
-     */
     suspend fun deliverToLocalMailbox(username: String, tempFile: Path): Path = withContext(Dispatchers.IO) {
-        // 사용자명 유효성 검사
+        // TODO(storage): 로컬 파일 저장 대신 DB/S3/오브젝트 스토리지로 교체 가능하도록 추상화(MessageStore) 도입
+        //               - 대량 트래픽/다중 인스턴스 환경에서는 로컬 디스크는 한계가 큼
+        //               - 최종 목표: "메일 본문 저장"과 "SMTP 수신/릴레이"를 느슨하게 분리
         val sanitizedUsername = sanitizeUsername(username)
-        val userMailbox = getUserMailboxDir(sanitizedUsername)
+        val userMailbox = getUserMailboxDir(username)
 
         val timestamp = LocalDateTime.now().format(dateFormatter)
         val mailFile = userMailbox.resolve("mail_${timestamp}.eml")
@@ -55,35 +47,39 @@ class LocalMailboxManager(
         }
     }
 
-    /**
-     * 사용자 메일박스 디렉토리를 반환합니다.
-     * 디렉토리가 없으면 생성합니다.
-     *
-     * @param username 사용자 이름
-     * @return 사용자 메일박스 디렉토리 경로
-     */
     private fun getUserMailboxDir(username: String): Path {
         val sanitizedUsername = sanitizeUsername(username)
-        val userMailbox = mailboxDir.resolve(sanitizedUsername)
-
-        if (!Files.exists(userMailbox)) {
-            try {
-                Files.createDirectories(userMailbox)
-                log.debug { "Created mailbox directory for user: $sanitizedUsername" }
-            } catch (e: Exception) {
-                log.error(e) { "Failed to create mailbox directory for user: $sanitizedUsername" }
-                throw RuntimeException("Failed to create user mailbox directory", e)
-            }
+        val userMailbox = mailboxRoot.resolve(sanitizedUsername).normalize()
+        if (!userMailbox.startsWith(mailboxRoot)) {
+            throw IllegalArgumentException("Mailbox path escape attempt")
         }
-
+        try {
+            Files.createDirectories(userMailbox)
+            log.debug { "Ensured mailbox directory for user: $sanitizedUsername" }
+        } catch (e: Exception) {
+            log.error(e) { "Failed to create mailbox directory for user: $sanitizedUsername" }
+            throw RuntimeException("Failed to create user mailbox directory", e)
+        }
         return userMailbox
     }
 
-    /**
-     * 사용자 이름에서 파일 시스템에 유효하지 않은 문자를 제거합니다.
-     */
     private fun sanitizeUsername(username: String): String {
-        // 파일 시스템에 유효하지 않은 문자 제거
-        return username.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        val u = username.trim()
+        if (u.isEmpty()) throw IllegalArgumentException("Username is blank")
+
+        // 파일시스템 경로로 쓰일 수 있으므로 매우 보수적으로 제한합니다.
+        // - 점(.)은 허용하지만 "."/".." 자체는 금지(정규화로 루트 탈출 가능)
+        val sanitized = u.map { ch ->
+            when {
+                ch.isLetterOrDigit() || ch == '.' || ch == '_' || ch == '-' || ch == '+' -> ch
+                else -> '_'
+            }
+        }.joinToString("").take(128)
+
+        if (sanitized == "." || sanitized == "..") {
+            throw IllegalArgumentException("Invalid username")
+        }
+        if (sanitized.isBlank()) throw IllegalArgumentException("Invalid username")
+        return sanitized
     }
-} 
+}

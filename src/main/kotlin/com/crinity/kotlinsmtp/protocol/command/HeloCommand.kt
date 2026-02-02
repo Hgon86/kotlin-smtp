@@ -17,6 +17,8 @@ class HeloCommand : SmtpCommand(
 
         session.resetTransaction()
         session.sessionData.helo = command.parts[1]
+        session.sessionData.greeted = true
+        session.sessionData.usedEhlo = false
 
         // 확장 코드 없이 응답 전송
         session.respondLine("${OKAY.code} ${session.server.hostname} at your service")

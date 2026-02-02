@@ -1,6 +1,7 @@
 package com.crinity.kotlinsmtp.utils
 
 import jakarta.mail.internet.InternetAddress
+import java.net.IDN
 
 object AddressUtils {
     /**
@@ -22,6 +23,56 @@ object AddressUtils {
     }.getOrDefault(false)
 
     /**
+     * SMTPUTF8 주소(UTF-8 local-part) 최소 검증
+     *
+     * - RFC 전체를 엄밀히 구현하기보다, "실사용에서 터지지 않게" 보수적으로 검증합니다.
+     * - 도메인은 IDNA(Punycode)로 변환 가능해야 합니다.
+     */
+    fun validateSmtpUtf8Address(address: String): Boolean = runCatching {
+        val trimmed = address.trim()
+        if (trimmed.isEmpty()) return false
+        // 헤더/프로토콜 파손 방지
+        if (trimmed.any { it == '\r' || it == '\n' }) return false
+        val at = trimmed.indexOf('@')
+        if (at <= 0) return false
+        if (at != trimmed.lastIndexOf('@')) return false
+        val local = trimmed.substring(0, at)
+        val domain = trimmed.substring(at + 1)
+        if (domain.isEmpty()) return false
+        // local-part는 whitespace/제어문자만 막고 나머지는 허용(UTF-8)
+        if (local.any { it.isWhitespace() || it.code < 0x20 }) return false
+        // 도메인은 IDN 변환 가능해야 함
+        normalizeDomain(domain) != null
+    }.getOrDefault(false)
+
+    /**
+     * 도메인을 비교/정책 판단용으로 정규화합니다.
+     * - Unicode 도메인 → IDNA ASCII로 변환
+     */
+    fun normalizeDomain(domain: String): String? = runCatching {
+        val d = domain.trim().trimEnd('.')
+        if (d.isEmpty()) return null
+        // ALLOW_UNASSIGNED: 운영상 보수적으로 허용. 필요하면 USE_STD3_ASCII_RULES 등으로 강화 가능.
+        IDN.toASCII(d, IDN.ALLOW_UNASSIGNED).lowercase()
+    }.getOrNull()
+
+    fun isAllAscii(value: String): Boolean = value.all { it.code in 0x20..0x7E }
+
+    /**
+     * 주소에서 도메인 부분만 IDNA(ASCII)로 정규화합니다.
+     * - local-part는 그대로 둡니다(UTF-8 local-part는 SMTPUTF8에서 필요).
+     */
+    fun normalizeDomainInAddress(address: String): String {
+        val trimmed = address.trim()
+        val at = trimmed.lastIndexOf('@')
+        if (at <= 0 || at >= trimmed.lastIndex) return trimmed
+        val local = trimmed.substring(0, at)
+        val domain = trimmed.substring(at + 1)
+        val normalized = normalizeDomain(domain) ?: domain
+        return "$local@$normalized"
+    }
+
+    /**
      * 호스트 부분 검증
      */
     fun validateHost(host: String): Boolean {
@@ -29,7 +80,8 @@ object AddressUtils {
 
         return runCatching {
             val domain = host.substring(1) // @ 제거
-            InternetAddress("test@$domain").apply { validate() }
+            val normalized = normalizeDomain(domain) ?: return false
+            InternetAddress("test@$normalized").apply { validate() }
             true
         }.getOrDefault(false)
     }

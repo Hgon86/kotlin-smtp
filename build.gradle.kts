@@ -26,6 +26,7 @@ repositories {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webflux")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
     implementation("org.apache.kafka:kafka-streams")
@@ -34,8 +35,22 @@ dependencies {
     implementation("org.springframework.kafka:spring-kafka")
     implementation("io.github.oshai:kotlin-logging-jvm:7.0.4")
     implementation("org.springframework.boot:spring-boot-configuration-processor")
+
+    // Jakarta Mail API 및 구현체(Angus Mail)
     implementation("jakarta.mail:jakarta.mail-api")
+    implementation("org.eclipse.angus:angus-mail:2.0.3")
+
+    // JSON 유틸
+    implementation("org.json:json:20240303")
+
+    // 비밀번호 해시(BCrypt)
+    implementation("org.springframework.security:spring-security-crypto")
+
     implementation("dnsjava:dnsjava:3.6.3")
+
+    // PROXY protocol(v1) 지원: HAProxy/NLB 뒤에서 원본 클라이언트 IP 복원
+    // - 버전은 Spring Boot의 dependency management(BOM)에 위임합니다.
+    implementation("io.netty:netty-codec-haproxy")
 
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

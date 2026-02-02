@@ -4,8 +4,6 @@ import com.crinity.kotlinsmtp.protocol.command.api.ParsedCommand
 import com.crinity.kotlinsmtp.protocol.command.api.SmtpCommand
 import com.crinity.kotlinsmtp.server.SmtpSession
 import com.crinity.kotlinsmtp.utils.SmtpStatusCode.CANNOT_VERIFY_USER
-import com.crinity.kotlinsmtp.utils.SmtpStatusCode.COMMAND_NOT_IMPLEMENTED
-import com.crinity.kotlinsmtp.utils.SmtpStatusCode.INVALID_MAILBOX
 import com.crinity.kotlinsmtp.utils.SmtpStatusCode.OKAY
 
 
@@ -15,26 +13,29 @@ class VrfyCommand : SmtpCommand(
     "searchTerm"
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
-        val users = session.server.userHandler?.verify(command.rawWithoutCommand)
+        // 인터넷 노출 SMTP 서버에서는 VRFY가 사용자 열거(User Enumeration)로 악용되기 쉽습니다.
+        // 따라서 기본값은 252로 고정하고, 설정으로만 활성화합니다.
+        if (!session.server.enableVrfy || session.server.userHandler == null) {
+            session.sendResponse(CANNOT_VERIFY_USER.code, "Cannot VRFY user, but will accept message and attempt delivery")
+            return
+        }
 
-        if (users == null) {
-            session.sendResponse(COMMAND_NOT_IMPLEMENTED.code, "The verify command is not supported")
+        val term = command.rawWithoutCommand.trim()
+        if (term.isEmpty()) {
+            respondSyntax("Empty VRFY argument not allowed.")
+        }
+
+        val users = runCatching { session.server.userHandler.verify(term) }.getOrDefault(emptyList())
+        if (users.isEmpty()) {
+            session.sendResponse(550, "5.1.1 User unknown")
+            return
+        }
+
+        val lines = users.map { it.stringRepresentation }
+        if (lines.size == 1) {
+            session.sendResponse(OKAY.code, lines.first())
         } else {
-            when {
-                users.isEmpty() ->
-                    session.sendResponse(CANNOT_VERIFY_USER.code, "The given mailbox could not be verified")
-
-                users.size == 1 ->
-                    session.sendResponse(OKAY.code, users.first().stringRepresentation)
-
-                else -> {
-                    val response = buildList {
-                        add(" Ambiguous; Possibilities are")
-                        addAll(users.map { it.stringRepresentation })
-                    }
-                    session.sendMultilineResponse(INVALID_MAILBOX.code, response)
-                }
-            }
+            session.sendMultilineResponse(OKAY.code, lines)
         }
     }
 }

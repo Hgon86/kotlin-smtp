@@ -38,3 +38,8 @@ out/
 
 ### Kotlin ###
 .kotlin
+.specify
+.cursor
+.fastembed_cache
+.codanna
+.codannaignore

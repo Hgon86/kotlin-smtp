@@ -17,22 +17,22 @@ private val log = KotlinLogging.logger {}
 
 @Component
 class SmtpServerRunner(
-    private val smtpServer: SmtpServer
+    private val smtpServers: List<SmtpServer>
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @EventListener
     fun onApplicationReady(event: ApplicationReadyEvent) {
-        log.info { "Starting SMTP server on port ${smtpServer.port}" }
-        scope.launch {
-            smtpServer.start()
+        smtpServers.forEach { server ->
+            log.info { "Starting SMTP server on port ${server.port} (implicitTls=${server.implicitTls})" }
+            scope.launch { server.start() }
         }
     }
 
     @EventListener
     fun onContextClosed(event: ContextClosedEvent) = runBlocking {
         log.info { "Stopping SMTP server" }
-        smtpServer.stop()
+        smtpServers.forEach { it.stop() }
         scope.cancel()
     }
 
