@@ -23,7 +23,7 @@ import java.net.InetSocketAddress
 
 private val log = KotlinLogging.logger {}
 
-class SmtpChannelHandler(private val server: SmtpServer) : ChannelInboundHandlerAdapter() {
+internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInboundHandlerAdapter() {
     private lateinit var session: SmtpSession
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var clientIp: String? = null

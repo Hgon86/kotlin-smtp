@@ -11,7 +11,7 @@ private val log = KotlinLogging.logger {}
  * IP 기반 Rate Limiter
  * 스팸 및 DoS 공격 방지를 위한 연결 수 및 메시지 수 제한
  */
-class RateLimiter(
+internal class RateLimiter(
     private val maxConnectionsPerIp: Int = 10,
     private val maxMessagesPerIpPerHour: Int = 100
 ) {

@@ -10,8 +10,6 @@ Rule of thumb:
 
 - `io.github.kotlinsmtp.server.SmtpServer`
   - create server instance, configure ports/policies, start/stop
-- `io.github.kotlinsmtp.server.SmtpSession`
-  - session lifecycle and response helpers (careful: may remain internal if we want to hide Netty)
 - `io.github.kotlinsmtp.model.SessionData`
   - observable state passed into handlers
 
@@ -22,6 +20,7 @@ Rule of thumb:
 - `io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler`
 - `io.github.kotlinsmtp.protocol.handler.SmtpUserHandler`
 - `io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler`
+- `io.github.kotlinsmtp.server.SmtpSpooler`
 
 ### Probably NOT Public (Keep Internal Initially)
 

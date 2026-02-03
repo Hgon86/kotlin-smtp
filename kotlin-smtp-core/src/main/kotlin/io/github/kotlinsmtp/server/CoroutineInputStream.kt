@@ -7,7 +7,7 @@ import java.io.InputStream
 /**
  * 코루틴 채널을 기반으로 한 InputStream 구현
  */
-class CoroutineInputStream(private val channel: Channel<ByteArray>) : InputStream() {
+internal class CoroutineInputStream(private val channel: Channel<ByteArray>) : InputStream() {
     private var buffer: ByteArray = ByteArray(0)
     private var position: Int = 0
     private var closed = false

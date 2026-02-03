@@ -6,7 +6,7 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 import io.github.kotlinsmtp.utils.Values.MAX_MESSAGE_SIZE
 
-class EhloCommand : SmtpCommand(
+internal class EhloCommand : SmtpCommand(
     "EHLO",
     "Extended HELO - The client introduces itself.",
     "<domain>"

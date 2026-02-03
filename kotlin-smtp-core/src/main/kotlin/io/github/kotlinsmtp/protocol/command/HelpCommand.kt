@@ -7,7 +7,7 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode.HELP_MESSAGE
 
 
-class HelpCommand : SmtpCommand(
+internal class HelpCommand : SmtpCommand(
     "HELP",
     "Displays helpful information about the server in general, or about the given (optional) search term.",
     "(searchTerm)"

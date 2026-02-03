@@ -24,7 +24,7 @@ import kotlin.time.Duration.Companion.minutes
  * - 각 BDAT 청크마다 250 응답을 반환(서버가 다음 청크를 받을 준비가 됐음을 의미)
  * - LAST 청크에서는 전체 메시지 처리가 완료된 뒤 최종 250/4xx/5xx를 반환
  */
-class BdatCommand : SmtpCommand(
+internal class BdatCommand : SmtpCommand(
     "BDAT",
     "Chunking - sends a message as one or more chunks. Syntax: BDAT <chunk-size> [LAST]",
     "<chunk-size> [LAST]"

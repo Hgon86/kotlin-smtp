@@ -7,7 +7,7 @@ import io.github.kotlinsmtp.utils.SmtpStatusCode.CANNOT_VERIFY_USER
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 
 
-class VrfyCommand : SmtpCommand(
+internal class VrfyCommand : SmtpCommand(
     "VRFY",
     "Checks if the given mailbox exists.",
     "searchTerm"

@@ -6,7 +6,7 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode.SERVICE_CLOSING_CHANNEL
 
 
-class QuitCommand : SmtpCommand(
+internal class QuitCommand : SmtpCommand(
     "QUIT",
     "Closes the current session."
 ) {

@@ -3,7 +3,7 @@ package io.github.kotlinsmtp.protocol.command.api
 import io.github.kotlinsmtp.utils.Values
 
 
-class ParsedCommand(val rawCommand: String) {
+internal class ParsedCommand(val rawCommand: String) {
     private val trimmed by lazy { rawCommand.trimStart() }
 
     // SMTP는 SP 뿐 아니라 HTAB 등도 공백으로 취급될 수 있으므로 "공백 전체"를 고려합니다.

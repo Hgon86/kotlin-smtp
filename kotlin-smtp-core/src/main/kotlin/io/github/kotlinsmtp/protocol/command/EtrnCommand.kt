@@ -14,7 +14,7 @@ import io.github.kotlinsmtp.utils.SmtpStatusCode
  * - 인터넷 노출 기본값은 비활성화(enableEtrn=false)
  * - 활성화 시에도 남용 방지를 위해 인증된 세션에서만 허용합니다.
  */
-class EtrnCommand : SmtpCommand(
+internal class EtrnCommand : SmtpCommand(
     "ETRN",
     "Requests that the server attempt to process the queue for the given domain (admin/management).",
     "<domain>"

@@ -5,7 +5,7 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode.COMMAND_SYNTAX_ERROR
 
 
-abstract class SmtpCommand(
+internal abstract class SmtpCommand(
     private val name: String,
     val description: String,
     private val expectedSyntax: String? = null

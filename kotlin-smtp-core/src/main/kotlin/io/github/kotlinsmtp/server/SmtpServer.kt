@@ -43,24 +43,24 @@ class SmtpServer(
     val port: Int,
     val hostname: String,
     val serviceName: String? = "kotlin-smtp",
-    val authService: AuthService? = null,
-    val transactionHandlerCreator: (() -> SmtpProtocolHandler)? = null,
-    val userHandler: SmtpUserHandler? = null,
-    val mailingListHandler: SmtpMailingListHandler? = null,
-    val spooler: SmtpSpooler? = null,
-    val authRateLimiter: AuthRateLimiter? = null,
+    internal val authService: AuthService? = null,
+    internal val transactionHandlerCreator: (() -> SmtpProtocolHandler)? = null,
+    internal val userHandler: SmtpUserHandler? = null,
+    internal val mailingListHandler: SmtpMailingListHandler? = null,
+    internal val spooler: SmtpSpooler? = null,
+    internal val authRateLimiter: AuthRateLimiter? = null,
     // 기능 플래그(기본값은 인터넷 노출 기준으로 보수적으로 off)
-    val enableVrfy: Boolean = false,
-    val enableEtrn: Boolean = false,
-    val enableExpn: Boolean = false,
+    internal val enableVrfy: Boolean = false,
+    internal val enableEtrn: Boolean = false,
+    internal val enableExpn: Boolean = false,
     // 리스너(포트)별 정책 플래그
-    val implicitTls: Boolean = false, // 465(SMTPS)처럼 접속 즉시 TLS
-    val enableStartTls: Boolean = true, // STARTTLS 커맨드/광고 허용
-    val enableAuth: Boolean = true, // AUTH 커맨드/광고 허용
-    val requireAuthForMail: Boolean = false, // MAIL 트랜잭션 시작 전 AUTH 강제(Submission 용도)
+    internal val implicitTls: Boolean = false, // 465(SMTPS)처럼 접속 즉시 TLS
+    internal val enableStartTls: Boolean = true, // STARTTLS 커맨드/광고 허용
+    internal val enableAuth: Boolean = true, // AUTH 커맨드/광고 허용
+    internal val requireAuthForMail: Boolean = false, // MAIL 트랜잭션 시작 전 AUTH 강제(Submission 용도)
     // PROXY protocol(v1) 지원 (HAProxy 등 L4 프록시 뒤에서 원본 클라이언트 IP 복원)
-    val proxyProtocolEnabled: Boolean = false,
-    val trustedProxyCidrs: List<String> = listOf("127.0.0.1/32", "::1/128"),
+    internal val proxyProtocolEnabled: Boolean = false,
+    internal val trustedProxyCidrs: List<String> = listOf("127.0.0.1/32", "::1/128"),
     private val certChainFile: File? = null,
     private val privateKeyFile: File? = null,
     // TLS 하드닝 설정
@@ -70,29 +70,29 @@ class SmtpServer(
     maxConnectionsPerIp: Int = 10,
     maxMessagesPerIpPerHour: Int = 100,
 ) {
-    val serverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val serverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val serverMutex = Mutex()
     private var channelFuture: ChannelFuture? = null
     private val bossGroup = NioEventLoopGroup(1)
     private val workerGroup = NioEventLoopGroup()
 
     // Rate Limiter (스팸 및 DoS 방지)
-    val rateLimiter = RateLimiter(maxConnectionsPerIp, maxMessagesPerIpPerHour)
+    internal val rateLimiter = RateLimiter(maxConnectionsPerIp, maxMessagesPerIpPerHour)
 
     // 활성 세션 추적 (graceful shutdown용)
-    val sessionTracker = ActiveSessionTracker()
+    internal val sessionTracker = ActiveSessionTracker()
 
     // 신뢰 프록시 CIDR 파싱(런타임 오버헤드 최소화)
-    val trustedProxyCidrsParsed = trustedProxyCidrs.mapNotNull { io.github.kotlinsmtp.utils.IpCidr.parse(it) }
+    internal val trustedProxyCidrsParsed = trustedProxyCidrs.mapNotNull { io.github.kotlinsmtp.utils.IpCidr.parse(it) }
 
     @Volatile
     private var currentSslContext: SslContext? = buildSslContext()
 
-    val sslContext: SslContext?
+    internal val sslContext: SslContext?
         get() = currentSslContext
 
     // TLS 하드닝 설정 접근자 (SmtpSession 등에서 사용)
-    val tlsHandshakeTimeout: Long = tlsHandshakeTimeoutMs.toLong()
+    internal val tlsHandshakeTimeout: Long = tlsHandshakeTimeoutMs.toLong()
 
     init {
         scheduleCertificateReload()

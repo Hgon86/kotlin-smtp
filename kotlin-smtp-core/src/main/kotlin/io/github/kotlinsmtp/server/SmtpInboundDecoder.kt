@@ -21,7 +21,7 @@ import io.netty.util.CharsetUtil
  *       '다운스트림이 attribute로 expectedBytes를 설정'하는 방식은 레이스로 깨질 수 있습니다.
  *       그래서 디코더가 BDAT 라인을 직접 인지해 모드를 전환합니다.
  */
-class SmtpInboundDecoder(
+internal class SmtpInboundDecoder(
     private val maxLineLength: Int = Values.MAX_SMTP_LINE_LENGTH,
 ) : ByteToMessageDecoder() {
 

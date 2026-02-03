@@ -22,7 +22,7 @@ import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
 import kotlin.time.Duration.Companion.minutes
 
-class DataCommand : SmtpCommand(
+internal class DataCommand : SmtpCommand(
     "DATA",
     "The text following this command is the message which should be sent.",
 ) {

@@ -10,7 +10,7 @@ private val log = KotlinLogging.logger {}
  * 
  * Graceful shutdown 시 모든 세션이 종료될 때까지 대기하기 위해 사용됩니다.
  */
-class ActiveSessionTracker {
+internal class ActiveSessionTracker {
     private val activeSessions = ConcurrentHashMap<String, SmtpSession>()
 
     /**

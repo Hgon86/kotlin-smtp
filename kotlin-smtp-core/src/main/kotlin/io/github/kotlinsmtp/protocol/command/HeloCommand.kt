@@ -5,7 +5,7 @@ import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 
-class HeloCommand : SmtpCommand(
+internal class HeloCommand : SmtpCommand(
     "HELO",
     "The client introduces itself.",
     "<domain>"

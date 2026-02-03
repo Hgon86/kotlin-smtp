@@ -15,7 +15,7 @@ import io.github.kotlinsmtp.utils.Values.MAX_MESSAGE_SIZE
 import io.github.kotlinsmtp.utils.parseMailArguments
 import io.github.kotlinsmtp.utils.MailArguments
 
-class MailCommand : SmtpCommand(
+internal class MailCommand : SmtpCommand(
     "MAIL",
     "Starts a mail transaction and specifies the sender.",
     "FROM:<senderAddress> [SIZE=<size>] [BODY=7BIT]"

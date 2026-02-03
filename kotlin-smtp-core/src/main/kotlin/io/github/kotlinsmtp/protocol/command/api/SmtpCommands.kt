@@ -24,7 +24,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger {}
 
-enum class SmtpCommands(
+internal enum class SmtpCommands(
     val instance: SmtpCommand
 ) {
     HELO(HeloCommand()),

@@ -6,7 +6,7 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 
 
-class RsetCommand : SmtpCommand(
+internal class RsetCommand : SmtpCommand(
     "RSET",
     "Resets the current session."
 ) {

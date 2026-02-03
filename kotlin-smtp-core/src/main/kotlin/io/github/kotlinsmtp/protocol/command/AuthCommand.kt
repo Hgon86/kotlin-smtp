@@ -13,7 +13,7 @@ import java.util.Base64
 import kotlin.math.min
 import kotlin.math.pow
 
-class AuthCommand : SmtpCommand(
+internal class AuthCommand : SmtpCommand(
     "AUTH",
     "Authenticate to the server (PLAIN, LOGIN)",
     "PLAIN [initial-response] | LOGIN [initial-response]"

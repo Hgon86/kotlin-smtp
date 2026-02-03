@@ -22,7 +22,7 @@ class SmtpServerRunner(
     @EventListener
     fun onApplicationReady(event: ApplicationReadyEvent) {
         smtpServers.forEach { server ->
-            log.info { "Starting SMTP server on port ${server.port} (implicitTls=${server.implicitTls})" }
+            log.info { "Starting SMTP server on port ${server.port}" }
             scope.launch { server.start() }
         }
     }

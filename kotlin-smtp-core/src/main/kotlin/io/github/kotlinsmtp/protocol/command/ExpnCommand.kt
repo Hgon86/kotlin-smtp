@@ -8,7 +8,7 @@ import io.github.kotlinsmtp.utils.SmtpStatusCode.COMMAND_NOT_IMPLEMENTED
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 
 
-class ExpnCommand : SmtpCommand(
+internal class ExpnCommand : SmtpCommand(
     "EXPN",
     "Checks if the given mailing list exists (and if so, this may return the membership)",
     "searchTerm"

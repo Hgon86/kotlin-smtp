@@ -6,7 +6,7 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 
 
-class NoopCommand : SmtpCommand(
+internal class NoopCommand : SmtpCommand(
     "NOOP",
     "This command will lead to no operations being issued."
 ) {

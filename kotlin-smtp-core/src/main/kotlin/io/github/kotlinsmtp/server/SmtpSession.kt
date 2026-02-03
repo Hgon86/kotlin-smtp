@@ -22,7 +22,7 @@ import kotlinx.coroutines.channels.Channel as KChannel
 
 private val log = KotlinLogging.logger {}
 
-class SmtpSession(
+internal class SmtpSession(
     private val channel: Channel,
     val server: SmtpServer,
 ) {

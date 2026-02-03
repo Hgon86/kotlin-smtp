@@ -16,7 +16,7 @@ import io.github.kotlinsmtp.utils.Values.MAX_RECIPIENTS
 import io.github.kotlinsmtp.utils.parseRcptArguments
 import io.github.kotlinsmtp.model.RcptDsn
 
-class RcptCommand : SmtpCommand(
+internal class RcptCommand : SmtpCommand(
     "RCPT",
     "Specified a recipient who should receive the mail. This command can be called multiple times.",
     "TO:<(path:)address> [parameters]"

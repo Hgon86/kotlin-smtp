@@ -6,7 +6,7 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode.COMMAND_NOT_IMPLEMENTED
 import io.github.kotlinsmtp.utils.SmtpStatusCode.SERVICE_READY
 
-class StartTlsCommand : SmtpCommand(
+internal class StartTlsCommand : SmtpCommand(
     "STARTTLS",
     "Upgrade connection to TLS",
 ) {
