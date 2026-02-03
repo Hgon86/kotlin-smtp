@@ -51,6 +51,24 @@
 
 ---
 
+### 1.5. Public API 경계 확정 (core) - 라이브러리화 핵심
+
+**목표**: Maven 배포를 염두에 두고, "호스트가 의존해야 하는 타입"만 안정화(semver 대상)하고 나머지는 내부로 숨김
+
+**TODO**:
+- [ ] public package 목록 확정 (기준: host가 구현/호출해야 하는 인터페이스)
+- [ ] internal/impl 패키지로 이동 대상 분류 (Netty 파이프라인/디코더/프레임 등)
+- [ ] Kotlin `internal` + 패키지 네이밍(`...internal...` 또는 `...impl...`) 정책 결정
+- [ ] `PUBLIC_API_CANDIDATES.md`를 실제 코드와 1:1로 맞추기
+- [ ] (선택) Java 친화 facade 필요 여부 결정
+
+**출력물**:
+- `docs/PUBLIC_API_POLICY.md` (새 문서): "무엇이 public API인가"와 변경 규칙
+
+**우선순위**: HIGH
+
+---
+
 ### 2. 설정 시스템 고도화
 
 **목표**: 운영환경에서 안전하고 유연한 설정 관리
@@ -65,6 +83,19 @@
 - `kotlin-smtp-spring-boot-starter/src/main/kotlin/io/github/kotlinsmtp/config/SmtpServerProperties.kt`
 - `kotlin-smtp-spring-boot-starter/src/main/kotlin/io/github/kotlinsmtp/config/KotlinSmtpAutoConfiguration.kt`
 - `docs/application.example.yml`
+
+**우선순위**: MEDIUM
+
+---
+
+### 2.5. Maven 배포 준비 (라이브러리)
+
+**목표**: core + starter를 독립 artifact로 배포 가능하게 정리
+
+**TODO**:
+- [ ] gradle publish 설정(artifactId, POM, license, scm)
+- [ ] 버전 정책(semver) 문서화
+- [ ] starter의 의존성 범위 점검 (core는 Spring-free 유지)
 
 **우선순위**: MEDIUM
 

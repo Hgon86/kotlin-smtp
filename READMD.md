@@ -237,3 +237,4 @@ dependencies {
 - [THIN_ARCHITECTURE.md](docs/THIN_ARCHITECTURE.md) - 현재 아키텍처 문서
 - [ROADMAP.md](docs/ROADMAP.md) - 프로젝트 로드맵 및 작업 추적
 - [PUBLIC_API_CANDIDATES.md](docs/PUBLIC_API_CANDIDATES.md) - 공개 API 후보
+- [PUBLIC_API_POLICY.md](docs/PUBLIC_API_POLICY.md) - Public API 경계/변경 규칙
