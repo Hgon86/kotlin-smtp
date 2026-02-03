@@ -18,7 +18,6 @@ import io.netty.handler.codec.haproxy.HAProxyMessageDecoder
 import io.netty.handler.codec.string.StringEncoder
 import io.netty.handler.ssl.SslContext
 import io.netty.handler.ssl.SslContextBuilder
-import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.CharsetUtil
 import kotlinx.coroutines.CoroutineScope
@@ -32,10 +31,8 @@ import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.nio.file.Files
 import java.time.Duration
-import java.time.Instant
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
-import kotlin.coroutines.CoroutineContext
 
 private val log = KotlinLogging.logger {}
 
@@ -49,11 +46,9 @@ class SmtpServer internal constructor(
     internal val mailingListHandler: SmtpMailingListHandler? = null,
     internal val spooler: SmtpSpooler? = null,
     internal val authRateLimiter: AuthRateLimiter? = null,
-    // 기능 플래그(기본값은 인터넷 노출 기준으로 보수적으로 off)
     internal val enableVrfy: Boolean = false,
     internal val enableEtrn: Boolean = false,
     internal val enableExpn: Boolean = false,
-    // 리스너(포트)별 정책 플래그
     internal val implicitTls: Boolean = false, // 465(SMTPS)처럼 접속 즉시 TLS
     internal val enableStartTls: Boolean = true, // STARTTLS 커맨드/광고 허용
     internal val enableAuth: Boolean = true, // AUTH 커맨드/광고 허용
@@ -70,11 +65,11 @@ class SmtpServer internal constructor(
     maxConnectionsPerIp: Int = 10,
     maxMessagesPerIpPerHour: Int = 100,
 ) {
-    internal val serverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal var serverScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val serverMutex = Mutex()
     private var channelFuture: ChannelFuture? = null
-    private val bossGroup = NioEventLoopGroup(1)
-    private val workerGroup = NioEventLoopGroup()
+    private var bossGroup: NioEventLoopGroup? = null
+    private var workerGroup: NioEventLoopGroup? = null
 
     // Rate Limiter (스팸 및 DoS 방지)
     internal val rateLimiter = RateLimiter(maxConnectionsPerIp, maxMessagesPerIpPerHour)
@@ -94,10 +89,14 @@ class SmtpServer internal constructor(
     // TLS 하드닝 설정 접근자 (SmtpSession 등에서 사용)
     internal val tlsHandshakeTimeout: Long = tlsHandshakeTimeoutMs.toLong()
 
-    init {
-        scheduleCertificateReload()
-        scheduleRateLimiterCleanup()
+    /** 서버 실행 상태를 추적합니다. */
+    private enum class LifecycleState {
+        STOPPED,
+        RUNNING,
     }
+
+    @Volatile
+    private var state: LifecycleState = LifecycleState.STOPPED
 
     private fun buildSslContext(): SslContext? {
         if (certChainFile != null && privateKeyFile != null) {
@@ -160,104 +159,164 @@ class SmtpServer internal constructor(
 
     private fun fileTimestamp(file: File): Long = runCatching { Files.getLastModifiedTime(file.toPath()).toMillis() }.getOrDefault(0L)
 
-    suspend fun start(
-        coroutineContext: CoroutineContext = Dispatchers.IO,
-        wait: Boolean = false
-    ): Boolean {
-        return serverMutex.withLock {
-            if (channelFuture == null) {
-                val bootstrap = ServerBootstrap()
-                bootstrap.group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel::class.java)
-                    .childHandler(object : ChannelInitializer<SocketChannel>() {
-                        override fun initChannel(ch: SocketChannel) {
-                            // 파이프라인 핸들러에 이름을 명시해 STARTTLS 업그레이드/디버깅을 단순화합니다.
-                            val p = ch.pipeline()
-
-                            // PROXY protocol(v1):
-                            // - 프록시가 "원본 클라이언트 IP" 정보를 접속 직후 한 줄로 먼저 전달합니다.
-                            // - implicit TLS(465)에서도 PROXY 라인이 TLS 핸드셰이크보다 먼저 오므로,
-                            //   반드시 SSL 핸들러보다 앞에서 디코딩해야 합니다.
-                            if (proxyProtocolEnabled) {
-                                p.addLast("proxyDecoder", HAProxyMessageDecoder())
-                            }
-
-                            // SMTPS(implicit TLS): 접속 즉시 TLS 핸드셰이크를 시작합니다.
-                            // - sslContext가 없으면 잘못된 설정이므로 즉시 연결을 종료합니다.
-                            if (implicitTls) {
-                                val ctx = sslContext
-                                if (ctx == null) {
-                                    ch.close()
-                                    return
-                                }
-                                val ssl = ctx.newHandler(ch.alloc()).also {
-                                    it.engine().useClientMode = false
-                                    it.setHandshakeTimeout(tlsHandshakeTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
-                                }
-                                p.addLast("ssl", ssl)
-                            }
-
-                            // SMTP 입력 프레이밍(라인/BDAT 바이트)을 자체 처리합니다.
-                            // - LineBasedFrameDecoder/StringDecoder 조합은 BDAT(CHUNKING) 구현이 불가능합니다.
-                            p.addLast("smtpInboundDecoder", SmtpInboundDecoder())
-
-                            // SMTP 응답은 8BITMIME를 고려해 ISO-8859-1로 인코딩합니다.
-                            // (SMTPUTF8는 별도 확장으로 다룸)
-                            p.addLast("stringEncoder", StringEncoder(CharsetUtil.ISO_8859_1))
-                            p.addLast("idleStateHandler", IdleStateHandler(0, 0, 5, java.util.concurrent.TimeUnit.MINUTES))
-                            p.addLast("smtpChannelHandler", SmtpChannelHandler(this@SmtpServer))
-                        }
-                    })
-                    .option(ChannelOption.SO_BACKLOG, 128)
-                    .childOption(ChannelOption.SO_KEEPALIVE, true)
-
-                channelFuture = bootstrap.bind(port).sync()
-                log.info { "Started smtp server, listening on port $port" }
-
-                if (wait) {
-                    serverScope.launch(coroutineContext) {
-                        channelFuture?.channel()?.closeFuture()?.sync()
-                    }
-                }
-                true
-            } else false
+    private fun ensureRuntime() {
+        // If the scope was cancelled by a previous stop(), recreate it.
+        if (!serverScope.isActive) {
+            serverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         }
+
+        val boss = bossGroup
+        val worker = workerGroup
+
+        if (boss == null || boss.isShuttingDown || boss.isShutdown || boss.isTerminated) {
+            bossGroup = NioEventLoopGroup(1)
+        }
+        if (worker == null || worker.isShuttingDown || worker.isShutdown || worker.isTerminated) {
+            workerGroup = NioEventLoopGroup()
+        }
+
+        // Start background maintenance tasks for this runtime.
+        scheduleCertificateReload()
+        scheduleRateLimiterCleanup()
     }
 
     /**
-     * Graceful shutdown with session draining
-     * 1. Stop accepting new connections
-     * 2. Close all active sessions gracefully
-     * 3. Wait for sessions to close (with timeout)
-     * 4. Shutdown event loops
+     * SMTP 서버를 시작합니다.
+     *
+     * @param wait true인 경우 서버 채널이 닫힐 때까지 반환하지 않습니다.
+     * @return 이미 실행 중이면 false, 새로 시작하면 true
+     */
+    suspend fun start(wait: Boolean = false): Boolean {
+        var closeFutureToWait: io.netty.channel.ChannelFuture? = null
+        val started = serverMutex.withLock {
+            if (state == LifecycleState.RUNNING || channelFuture != null) return@withLock false
+
+            ensureRuntime()
+
+            val bootstrap = ServerBootstrap()
+            bootstrap.group(
+                bossGroup ?: error("bossGroup must be initialized"),
+                workerGroup ?: error("workerGroup must be initialized")
+            )
+                .channel(NioServerSocketChannel::class.java)
+                .childHandler(object : ChannelInitializer<SocketChannel>() {
+                    override fun initChannel(ch: SocketChannel) {
+                        // 파이프라인 핸들러에 이름을 명시해 STARTTLS 업그레이드/디버깅을 단순화합니다.
+                        val p = ch.pipeline()
+
+                        // PROXY protocol(v1):
+                        // - 프록시가 "원본 클라이언트 IP" 정보를 접속 직후 한 줄로 먼저 전달합니다.
+                        // - implicit TLS(465)에서도 PROXY 라인이 TLS 핸드셰이크보다 먼저 오므로,
+                        //   반드시 SSL 핸들러보다 앞에서 디코딩해야 합니다.
+                        if (proxyProtocolEnabled) {
+                            p.addLast("proxyDecoder", HAProxyMessageDecoder())
+                        }
+
+                        // SMTPS(implicit TLS): 접속 즉시 TLS 핸드셰이크를 시작합니다.
+                        // - sslContext가 없으면 잘못된 설정이므로 즉시 연결을 종료합니다.
+                        if (implicitTls) {
+                            val ctx = sslContext
+                            if (ctx == null) {
+                                ch.close()
+                                return
+                            }
+                            val ssl = ctx.newHandler(ch.alloc()).also {
+                                it.engine().useClientMode = false
+                                it.setHandshakeTimeout(tlsHandshakeTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
+                            }
+                            p.addLast("ssl", ssl)
+                        }
+
+                        // SMTP 입력 프레이밍(라인/BDAT 바이트)을 자체 처리합니다.
+                        // - LineBasedFrameDecoder/StringDecoder 조합은 BDAT(CHUNKING) 구현이 불가능합니다.
+                        p.addLast("smtpInboundDecoder", SmtpInboundDecoder())
+
+                        // SMTP 응답은 8BITMIME를 고려해 ISO-8859-1로 인코딩합니다.
+                        // (SMTPUTF8는 별도 확장으로 다룸)
+                        p.addLast("stringEncoder", StringEncoder(CharsetUtil.ISO_8859_1))
+                        p.addLast("idleStateHandler", IdleStateHandler(0, 0, 5, java.util.concurrent.TimeUnit.MINUTES))
+                        p.addLast("smtpChannelHandler", SmtpChannelHandler(this@SmtpServer))
+                    }
+                })
+                .option(ChannelOption.SO_BACKLOG, 128)
+                .childOption(ChannelOption.SO_KEEPALIVE, true)
+
+            channelFuture = bootstrap.bind(port).sync()
+            state = LifecycleState.RUNNING
+            log.info { "Started smtp server, listening on port $port" }
+
+            if (wait) {
+                closeFutureToWait = channelFuture?.channel()?.closeFuture()
+            }
+
+            true
+        }
+
+        if (!started) return false
+
+        if (wait) closeFutureToWait?.sync()
+
+        return true
+    }
+
+    /**
+     * SMTP 서버를 종료합니다.
+     *
+     * - 신규 연결 accept를 중단합니다.
+     * - 활성 세션에 close를 요청하고, 지정된 시간 내에 드레인(drain)합니다.
+     * - Netty 이벤트 루프 종료까지 최대한 기다립니다.
+     *
+     * @param gracefulTimeoutMs graceful shutdown에 사용할 전체 타임아웃(ms)
+     * @return 실행 중인 서버를 종료했으면 true, 이미 종료 상태면 false
      */
     suspend fun stop(gracefulTimeoutMs: Long = 30000): Boolean = serverMutex.withLock {
-        if (channelFuture != null) {
+        if (state == LifecycleState.RUNNING && channelFuture != null) {
             try {
                 log.info { "Initiating graceful shutdown (port=$port)" }
-                
+
+                val deadline = System.currentTimeMillis() + gracefulTimeoutMs
+
                 // 1. Stop accepting new connections
                 channelFuture?.channel()?.close()?.sync()
                 log.info { "Stopped accepting new connections" }
-                
+
                 // 2. Close all active sessions
                 sessionTracker.closeAllSessions()
-                
-                // 3. Wait for sessions to close gracefully
-                val allClosed = sessionTracker.awaitAllSessionsClosed(gracefulTimeoutMs)
-                if (!allClosed) {
-                    log.warn { "Graceful shutdown timeout. Forcing remaining sessions to close" }
+
+                // 3. Wait for sessions to close gracefully (bounded)
+                fun remainingMs(): Long = (deadline - System.currentTimeMillis()).coerceAtLeast(0L)
+
+                var allClosed = sessionTracker.awaitAllSessionsClosed(remainingMs())
+                if (!allClosed && remainingMs() > 0) {
+                    log.warn { "Graceful shutdown timeout. Retrying session close for remaining sessions" }
+                    sessionTracker.closeAllSessions()
+                    allClosed = sessionTracker.awaitAllSessionsClosed(remainingMs())
                 }
-                
+
                 // 4. Shutdown event loops
+                val worker = workerGroup
+                val boss = bossGroup
+
+                worker?.shutdownGracefully(0, remainingMs().coerceAtLeast(1), TimeUnit.MILLISECONDS)
+                boss?.shutdownGracefully(0, remainingMs().coerceAtLeast(1), TimeUnit.MILLISECONDS)
+
+                // Netty user guide recommends awaiting terminationFuture().
+                val workerDone = worker?.terminationFuture()?.await(remainingMs().coerceAtLeast(1), TimeUnit.MILLISECONDS) ?: true
+                val bossDone = boss?.terminationFuture()?.await(remainingMs().coerceAtLeast(1), TimeUnit.MILLISECONDS) ?: true
+                if (!workerDone || !bossDone) {
+                    log.warn { "Event loop groups did not terminate within timeout (port=$port)" }
+                }
+
+                // Cancel background tasks last.
                 serverScope.cancel()
-                workerGroup.shutdownGracefully()
-                bossGroup.shutdownGracefully()
-                
-                log.info { "SMTP server stopped gracefully (port=$port)" }
+
+                log.info { "SMTP server stopped (port=$port, sessionsClosed=$allClosed)" }
                 true
             } finally {
                 channelFuture = null
+                state = LifecycleState.STOPPED
+                bossGroup = null
+                workerGroup = null
             }
         } else false
     }
