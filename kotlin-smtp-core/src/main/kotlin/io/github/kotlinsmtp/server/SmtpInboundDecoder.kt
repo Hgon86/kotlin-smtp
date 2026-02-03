@@ -36,6 +36,14 @@ internal class SmtpInboundDecoder(
 
     private var pendingRawBytes: Int? = null
 
+    /**
+     * 디코더 레벨에서 추적하는 DATA 본문 수신 모드입니다.
+     *
+     * 세션이 `inDataMode=true`를 반영하기 전에도(PIPELINING/동일 패킷) 프레이밍이 깨지지 않도록,
+     * DATA 라인을 감지하면 곧바로 BDAT auto-detect를 비활성화합니다.
+     */
+    private var dataModeForFraming: Boolean = false
+
     override fun decode(ctx: io.netty.channel.ChannelHandlerContext, input: ByteBuf, out: MutableList<Any>) {
         while (true) {
             val expectedBytes = pendingRawBytes
@@ -89,10 +97,9 @@ internal class SmtpInboundDecoder(
             // SMTP 커맨드/데이터는 8BITMIME를 고려해 ISO-8859-1로 1:1 보존합니다.
             val line = String(lineBytes, CharsetUtil.ISO_8859_1)
 
-            // BDAT 감지 시, 다음 bytes를 raw 모드로 프레이밍하도록 예약합니다.
-            // - 유효한 BDAT 라인이면, 청크 바이트가 같은 패킷에 있어도 안전하게 Bytes 프레임으로 분리됩니다.
-            // - 단, DATA 본문 수신 중에는 본문 라인이 "BDAT ..."로 시작할 수 있으므로 auto-detect를 끕니다.
-            val inDataMode = ctx.channel().attr(IN_DATA_MODE).get() == true
+            // DATA 본문 수신 중에는 본문 라인이 "BDAT ..."로 시작할 수 있으므로 auto-detect를 끕니다.
+            // 세션 반영(IN_DATA_MODE) 이전 입력까지 방어하기 위해 디코더 자체 state도 함께 사용합니다.
+            val inDataMode = dataModeForFraming || (ctx.channel().attr(IN_DATA_MODE).get() == true)
             if (!inDataMode) {
                 parseBdatSizeIfAny(line)?.let { size ->
                     if (size > Values.MAX_BDAT_CHUNK_SIZE) {
@@ -100,6 +107,16 @@ internal class SmtpInboundDecoder(
                     }
                     pendingRawBytes = size
                 }
+            }
+
+            // 프레이밍 레벨에서 DATA 모드 전환/해제를 추적합니다.
+            // - DATA 라인 이후(354 응답 전이라도) 본문이 연속으로 들어올 수 있습니다.
+            // - 본문 종료 마커('.')를 처리한 뒤에는 다음 커맨드 라인을 정상적으로 파싱할 수 있어야 합니다.
+            val commandPart = line.trimStart()
+            if (!dataModeForFraming && commandPart.equals("DATA", ignoreCase = true)) {
+                dataModeForFraming = true
+            } else if (dataModeForFraming && line == ".") {
+                dataModeForFraming = false
             }
             out.add(SmtpInboundFrame.Line(line))
         }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.slf4j.MDC
 import java.net.InetSocketAddress
 import java.util.*
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.channels.Channel as KChannel
@@ -28,6 +29,7 @@ internal class SmtpSession(
 ) {
     // 입력 라인 채널 용량 제한으로 폭주 시 메모리 압박 방지
     private val incomingFrames = KChannel<SmtpInboundFrame>(1024)
+    private val inflightBdatBytes = AtomicLong(0)
     private val sessionActive = MutableStateFlow(true)
     private val sessionId = UUID.randomUUID().toString().take(8)
 
@@ -39,14 +41,27 @@ internal class SmtpSession(
     /**
      * DATA 수신 중 여부
      * - 보안/운영: DATA 본문은 로그에 남기지 않기 위해 사용합니다.
+     * - false로 전환 시 프레이밍 힌트(dataModeFramingHint)도 함께 리셋합니다.
      */
     @Volatile
     var inDataMode: Boolean = false
         internal set(value) {
             field = value
+            if (!value) {
+                dataModeFramingHint = false
+            }
             // Netty 디코더가 DATA 모드에서는 BDAT auto-detect를 하지 않도록 힌트를 줍니다.
             channel.attr(SmtpInboundDecoder.IN_DATA_MODE).set(value)
         }
+
+    /**
+     * DATA 라인 이후 본문이 파이프라인으로 들어오는 경우를 위해 사용하는 프레이밍 힌트입니다.
+     *
+     * - `inDataMode=true`가 되기 전에도(354 응답 전) 본문 라인이 유입될 수 있습니다.
+     * - 이 힌트는 "라인 길이 제한"과 "민감 로그 마스킹"에만 사용됩니다.
+     */
+    @Volatile
+    private var dataModeFramingHint: Boolean = false
 
     var transactionHandler: SmtpProtocolHandler? = null
         get() {
@@ -124,6 +139,7 @@ internal class SmtpSession(
         return when (frame) {
             is SmtpInboundFrame.Line -> frame.text
             is SmtpInboundFrame.Bytes -> {
+                inflightBdatBytes.addAndGet(-frame.bytes.size.toLong())
                 // 프로토콜 동기화가 깨진 상태: 커맨드/데이터 라인을 기대했는데 raw bytes가 들어옴
                 sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Protocol sync error")
                 shouldQuit = true
@@ -137,6 +153,7 @@ internal class SmtpSession(
         val frame = incomingFrames.receiveCatching().getOrNull() ?: return null
         return when (frame) {
             is SmtpInboundFrame.Bytes -> frame.bytes.also {
+                inflightBdatBytes.addAndGet(-it.size.toLong())
                 if (it.size != expectedBytes) {
                     // 디코더와 호출부 기대치가 어긋난 경우: 보수적으로 연결 종료
                     sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Protocol sync error")
@@ -267,8 +284,17 @@ internal class SmtpSession(
         // 운영 필요 시에도 길이만 남기도록 최소화합니다.
         log.debug { "Session[$sessionId] -> <BYTES:${bytes.size} bytes>" }
 
+        val size = bytes.size
+        if (!tryReserveBdatBytes(size)) {
+            sendResponse(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection.")
+            shouldQuit = true
+            close()
+            return
+        }
+
         val result = incomingFrames.trySend(SmtpInboundFrame.Bytes(bytes))
         if (result.isFailure) {
+            inflightBdatBytes.addAndGet(-size.toLong())
             sendResponse(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection.")
             shouldQuit = true
             close()
@@ -278,11 +304,20 @@ internal class SmtpSession(
     private suspend fun handleIncomingLine(line: String) {
         // 보안: AUTH PLAIN 등 크리덴셜이 포함될 수 있는 라인은 그대로 로깅하지 않습니다.
         log.info { "Session[$sessionId] -> ${sanitizeIncomingForLog(line)}" }
+
+        // DATA 라인 이후 본문이 파이프라인으로 들어오는 경우를 위해 힌트를 세팅합니다.
+        // (inDataMode=true 반영 이전의 라인 길이 제한/로그 마스킹 안정화 목적)
+        val commandPart = line.trimStart()
+        if (!inDataMode && !dataModeFramingHint && commandPart.equals("DATA", ignoreCase = true)) {
+            dataModeFramingHint = true
+        } else if (dataModeFramingHint && line == ".") {
+            dataModeFramingHint = false
+        }
         
         // 라인 길이 검증 (DoS 방지)
         // - 커맨드 라인은 MAX_COMMAND_LINE_LENGTH
         // - DATA 본문 라인은 별도 상한(MAX_SMTP_LINE_LENGTH)으로 완화(본문 라인이 커맨드 상한을 넘을 수 있음)
-        val maxAllowed = if (inDataMode) Values.MAX_SMTP_LINE_LENGTH else Values.MAX_COMMAND_LINE_LENGTH
+        val maxAllowed = if (inDataMode || dataModeFramingHint) Values.MAX_SMTP_LINE_LENGTH else Values.MAX_COMMAND_LINE_LENGTH
         if (line.length > maxAllowed) {
             sendResponse(
                 SmtpStatusCode.COMMAND_SYNTAX_ERROR.code,
@@ -308,7 +343,7 @@ internal class SmtpSession(
      */
     private fun sanitizeIncomingForLog(line: String): String {
         // DATA 본문은 개인정보/메일 내용이 포함되므로 라인을 그대로 남기지 않습니다.
-        if (inDataMode) {
+        if (inDataMode || dataModeFramingHint) {
             return if (line == ".") "<DATA:END>" else "<DATA:${line.length} chars>"
         }
 
@@ -320,6 +355,16 @@ internal class SmtpSession(
             parts.size >= 2 && parts[1].equals("PLAIN", ignoreCase = true) -> "AUTH PLAIN ***"
             parts.size >= 2 -> "AUTH ${parts[1]} ***"
             else -> "AUTH ***"
+        }
+    }
+
+    private fun tryReserveBdatBytes(bytes: Int): Boolean {
+        if (bytes <= 0) return true
+        while (true) {
+            val current = inflightBdatBytes.get()
+            val next = current + bytes
+            if (next > Values.MAX_INFLIGHT_BDAT_BYTES) return false
+            if (inflightBdatBytes.compareAndSet(current, next)) return true
         }
     }
 

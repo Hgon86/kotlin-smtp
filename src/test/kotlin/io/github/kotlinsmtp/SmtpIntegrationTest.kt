@@ -163,6 +163,83 @@ class SmtpIntegrationTest {
     }
 
     /**
+     * DATA 본문이 파이프라인으로 들어와도 프레이밍이 깨지지 않아야 합니다.
+     *
+     * 특히 본문 라인이 "BDAT ..."로 시작하더라도 BDAT로 오인하면 안 됩니다.
+     */
+    @Test
+    fun `test DATA pipelined body does not trigger BDAT framing`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // Greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("MAIL FROM:<sender@test.com>\r\n")
+            writer.flush()
+            reader.readLine()
+
+            writer.write("RCPT TO:<recipient@test.com>\r\n")
+            writer.flush()
+            reader.readLine()
+
+            // 354 응답을 기다리지 않고, DATA 이후 본문을 연속으로 보냄
+            writer.write("DATA\r\n")
+            // DATA 본문 내용물이 "BDAT 4" 문자열을 포함하는 경우(BDAT 명령으로 오인하면 안 됨)
+            writer.write("BDAT 4\r\n")
+            writer.write(".\r\n")
+            writer.flush()
+
+            val dataResponse = reader.readLine()
+            assertTrue(dataResponse.startsWith("354"), "Expected 354 go ahead")
+
+            val finalResponse = reader.readLine()
+            assertTrue(finalResponse.startsWith("250"), "Expected 250 ok after DATA")
+
+            writer.write("QUIT\r\n")
+            writer.flush()
+        }
+    }
+
+    /**
+     * BDAT 라인과 청크 바이트가 같은 write로 들어와도 정확히 프레이밍되어야 합니다.
+     */
+    @Test
+    fun `test BDAT line and bytes in same write`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val out = socket.getOutputStream()
+
+            reader.readLine() // Greeting
+
+            out.write("EHLO test.client.local\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            skipEhloResponse(reader)
+
+            out.write("MAIL FROM:<sender@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            reader.readLine()
+
+            out.write("RCPT TO:<recipient@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            reader.readLine()
+
+            out.write("BDAT 4 LAST\r\nABCD".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+
+            val response = reader.readLine()
+            assertTrue(response.startsWith("250"), "Expected 250 ok after BDAT, got: $response")
+
+            out.write("QUIT\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+        }
+    }
+
+    /**
      * RSET 테스트 - 트랜잭션 중단 및 재시작
      */
     @Test

@@ -21,4 +21,14 @@ internal object Values {
      * - 총 메시지 크기 제한은 [MAX_MESSAGE_SIZE]로 별도 적용합니다.
      */
     const val MAX_BDAT_CHUNK_SIZE = 8 * 1024 * 1024 // 8MB
+
+    /**
+     * BDAT 바이트 프레임 인플라이트(대기 중) 총량 제한 (bytes)
+     *
+     * - 현재 구현은 BDAT 청크를 ByteArray로 버퍼링한 뒤 코루틴 채널로 전달합니다.
+     * - 프레임 개수(capacity) 제한만으로는 큰 청크에서 메모리 폭주를 막기 어려우므로,
+     *   "대기 중인 총 바이트" 상한을 별도로 둡니다.
+     * - 기본값: [MAX_BDAT_CHUNK_SIZE] * 2
+     */
+    const val MAX_INFLIGHT_BDAT_BYTES: Int = MAX_BDAT_CHUNK_SIZE * 2
 }
