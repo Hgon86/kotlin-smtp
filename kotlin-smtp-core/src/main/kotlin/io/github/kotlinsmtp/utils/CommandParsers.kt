@@ -8,7 +8,7 @@ import io.github.kotlinsmtp.utils.SmtpStatusCode.RECIPIENT_NOT_RECOGNIZED
  * @property address 발신자 이메일 주소 (빈 문자열은 빈 reverse-path를 의미)
  * @property parameters ESMTP 파라미터 맵 (키는 대문자로 정규화)
  */
-data class MailArguments(
+internal data class MailArguments(
     val address: String,
     val parameters: Map<String, String>,
 )
@@ -18,7 +18,7 @@ data class MailArguments(
  * @property address 수신자 이메일 주소
  * @property parameters ESMTP 파라미터 맵 (키는 대문자로 정규화)
  */
-data class RcptArguments(
+internal data class RcptArguments(
     val address: String,
     val parameters: Map<String, String>,
 )
@@ -31,7 +31,7 @@ data class RcptArguments(
  * @return 파싱된 MailArguments
  * @throws IllegalArgumentException 파싱 실패 시
  */
-fun parseMailArguments(raw: String): MailArguments {
+internal fun parseMailArguments(raw: String): MailArguments {
     val trimmed = raw.trim()
     
     // "MAIL FROM:" 키워드 검증
@@ -57,7 +57,7 @@ fun parseMailArguments(raw: String): MailArguments {
  * @return 파싱된 RcptArguments
  * @throws IllegalArgumentException 파싱 실패 시
  */
-fun parseRcptArguments(raw: String): RcptArguments {
+internal fun parseRcptArguments(raw: String): RcptArguments {
     val trimmed = raw.trim()
     
     // "RCPT TO:" 키워드 검증
@@ -127,7 +127,7 @@ private fun extractParameters(segment: String): Map<String, String> {
  * @param disallowed 금지된 파라미터 이름 집합 (대문자)
  * @throws SmtpSendResponse 금지된 파라미터 발견 시 555 오류
  */
-fun Map<String, String>.ensureNoUnsupportedParams(disallowed: Set<String>) {
+internal fun Map<String, String>.ensureNoUnsupportedParams(disallowed: Set<String>) {
     for (key in keys) {
         if (key.uppercase() in disallowed) {
             throw SmtpSendResponse(

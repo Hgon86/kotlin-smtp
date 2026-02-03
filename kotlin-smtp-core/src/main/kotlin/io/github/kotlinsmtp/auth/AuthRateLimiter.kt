@@ -14,7 +14,7 @@ private val log = KotlinLogging.logger {}
  *   (clientIp, username) 단위로 실패 카운트/잠금을 관리합니다.
  * - 메모리 기반 구현이며, 분산 환경에서는 Redis 등으로 교체 필요.
  */
-class AuthRateLimiter(
+internal class AuthRateLimiter(
     private val maxFailuresPerWindow: Int = 5,
     private val windowSeconds: Long = 300, // 5분
     private val lockoutDurationSeconds: Long = 600, // 10분
@@ -64,6 +64,7 @@ class AuthRateLimiter(
         val record = records.computeIfAbsent(key) { FailureRecord() }
         
         synchronized(record) {
+            // DO NOT REMOVE: protects the mutable failures list inside the record.
             // 오래된 실패 기록 제거
             record.failures.removeIf { it < windowStart }
             

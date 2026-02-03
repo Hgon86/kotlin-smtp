@@ -1,8 +1,7 @@
 package io.github.kotlinsmtp.mail
 
-import io.github.kotlinsmtp.model.MxRecord
 import io.github.kotlinsmtp.config.SmtpServerProperties
-import io.github.kotlinsmtp.utils.AddressUtils
+import io.github.kotlinsmtp.util.AddressUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.mail.Session
 import jakarta.mail.internet.InternetAddress

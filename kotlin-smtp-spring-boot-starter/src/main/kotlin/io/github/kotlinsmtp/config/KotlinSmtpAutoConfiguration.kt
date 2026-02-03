@@ -1,6 +1,5 @@
 package io.github.kotlinsmtp.config
 
-import io.github.kotlinsmtp.auth.AuthRateLimiter
 import io.github.kotlinsmtp.auth.AuthService
 import io.github.kotlinsmtp.auth.InMemoryAuthService
 import io.github.kotlinsmtp.mail.LocalMailboxManager
@@ -33,14 +32,6 @@ class KotlinSmtpAutoConfiguration {
         enabled = props.auth.enabled,
         required = props.auth.required,
         users = props.auth.users
-    )
-
-    @Bean
-    @ConditionalOnMissingBean
-    fun authRateLimiter(props: SmtpServerProperties): AuthRateLimiter = AuthRateLimiter(
-        maxFailuresPerWindow = props.auth.rateLimitMaxFailures,
-        windowSeconds = props.auth.rateLimitWindowSeconds,
-        lockoutDurationSeconds = props.auth.rateLimitLockoutSeconds,
     )
 
     @Bean
@@ -122,7 +113,6 @@ class KotlinSmtpAutoConfiguration {
         mailingListHandler: SmtpMailingListHandler,
         messageStore: MessageStore,
         authService: AuthService,
-        authRateLimiter: AuthRateLimiter,
     ): List<SmtpServer> {
         // Validate required storage paths (no OS-specific defaults)
         props.storage.validate()
@@ -160,33 +150,40 @@ class KotlinSmtpAutoConfiguration {
         } else props.listeners
 
         return effectiveListeners.map { l ->
-            SmtpServer(
-                port = l.port,
-                hostname = props.hostname,
-                serviceName = l.serviceName ?: props.serviceName,
-                authService = authService,
-                transactionHandlerCreator = handlerCreator,
-                userHandler = userHandler,
-                mailingListHandler = mailingListHandler,
-                spooler = spooler,
-                authRateLimiter = authRateLimiter,
-                enableVrfy = props.features.vrfyEnabled,
-                enableEtrn = props.features.etrnEnabled,
-                enableExpn = props.features.expnEnabled,
-                implicitTls = l.implicitTls,
-                enableStartTls = l.enableStartTls,
-                enableAuth = l.enableAuth && props.auth.enabled,
-                requireAuthForMail = l.requireAuthForMail,
-                proxyProtocolEnabled = l.proxyProtocol,
-                trustedProxyCidrs = props.proxy.trustedCidrs,
-                certChainFile = cert,
-                privateKeyFile = key,
-                minTlsVersion = props.ssl.minTlsVersion,
-                tlsHandshakeTimeoutMs = props.ssl.handshakeTimeoutMs,
-                tlsCipherSuites = props.ssl.cipherSuites,
-                maxConnectionsPerIp = props.rateLimit.maxConnectionsPerIp,
-                maxMessagesPerIpPerHour = props.rateLimit.maxMessagesPerIpPerHour,
-            )
+            SmtpServer.create(l.port, props.hostname) {
+                serviceName = l.serviceName ?: props.serviceName
+                useAuthService(authService)
+                useProtocolHandlerFactory(handlerCreator)
+                useUserHandler(userHandler)
+                useMailingListHandler(mailingListHandler)
+                useSpooler(spooler)
+
+                features.enableVrfy = props.features.vrfyEnabled
+                features.enableEtrn = props.features.etrnEnabled
+                features.enableExpn = props.features.expnEnabled
+
+                listener.implicitTls = l.implicitTls
+                listener.enableStartTls = l.enableStartTls
+                listener.enableAuth = l.enableAuth && props.auth.enabled
+                listener.requireAuthForMail = l.requireAuthForMail
+
+                proxyProtocol.enabled = l.proxyProtocol
+                proxyProtocol.trustedProxyCidrs = props.proxy.trustedCidrs
+
+                tls.certChainPath = cert?.toPath()
+                tls.privateKeyPath = key?.toPath()
+                tls.minTlsVersion = props.ssl.minTlsVersion
+                tls.handshakeTimeoutMs = props.ssl.handshakeTimeoutMs
+                tls.cipherSuites = props.ssl.cipherSuites
+
+                rateLimit.maxConnectionsPerIp = props.rateLimit.maxConnectionsPerIp
+                rateLimit.maxMessagesPerIpPerHour = props.rateLimit.maxMessagesPerIpPerHour
+
+                authRateLimit.enabled = props.auth.rateLimitEnabled
+                authRateLimit.maxFailuresPerWindow = props.auth.rateLimitMaxFailures
+                authRateLimit.windowSeconds = props.auth.rateLimitWindowSeconds
+                authRateLimit.lockoutDurationSeconds = props.auth.rateLimitLockoutSeconds
+            }
         }
     }
 

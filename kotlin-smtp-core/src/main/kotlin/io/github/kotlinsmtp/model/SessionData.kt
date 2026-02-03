@@ -29,6 +29,10 @@ class SessionData {
     // TODO(표준 DSN): RFC 3464 생성 시 각 수신자의 옵션을 반영
     var rcptDsn: MutableMap<String, RcptDsn> = mutableMapOf(); internal set
 
+    // Public read-only view (do not mutate rcptDsn from outside the engine)
+    val rcptDsnView: Map<String, RcptDsn>
+        get() = rcptDsn
+
     // 연결 컨텍스트
     var peerAddress: String? = null; internal set // 클라이언트 IP:port
     var serverHostname: String? = null; internal set // 서버 호스트명

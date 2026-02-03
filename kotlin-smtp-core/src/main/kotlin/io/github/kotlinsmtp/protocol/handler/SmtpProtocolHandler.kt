@@ -5,6 +5,7 @@ import java.io.InputStream
 
 abstract class SmtpProtocolHandler {
     lateinit var sessionData: SessionData
+        internal set
 
     internal fun init(sessionData: SessionData) {
         this.sessionData = sessionData

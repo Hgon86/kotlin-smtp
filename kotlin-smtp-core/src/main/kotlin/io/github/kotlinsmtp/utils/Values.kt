@@ -1,6 +1,6 @@
 package io.github.kotlinsmtp.utils
 
-object Values {
+internal object Values {
     val whitespaceRegex = Regex("\\s+")
     const val MAX_MESSAGE_SIZE = 52_428_800 // 50MB in bytes
     const val MAX_RECIPIENTS = 100 // 세션당 최대 RCPT 수

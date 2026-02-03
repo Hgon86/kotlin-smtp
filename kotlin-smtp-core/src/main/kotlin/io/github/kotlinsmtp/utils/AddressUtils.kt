@@ -2,7 +2,7 @@ package io.github.kotlinsmtp.utils
 
 import java.net.IDN
 
-object AddressUtils {
+internal object AddressUtils {
     private val asciiLocalPartRegex = Regex("^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}$")
 
     // RFC 1035-ish label validation; not a full RFC 5322 parser.
@@ -125,9 +125,9 @@ object AddressUtils {
 /**
  * 문자열이 유효한 이메일 주소인지 확인하는 확장 함수
  */
-fun String.isValidEmailAddress(): Boolean = AddressUtils.validateAddress(this)
+internal fun String.isValidEmailAddress(): Boolean = AddressUtils.validateAddress(this)
 
 /**
  * 문자열이 유효한 이메일 호스트인지 확인하는 확장 함수
  */
-fun String.isValidEmailHost(): Boolean = AddressUtils.validateHost(this)
+internal fun String.isValidEmailHost(): Boolean = AddressUtils.validateHost(this)

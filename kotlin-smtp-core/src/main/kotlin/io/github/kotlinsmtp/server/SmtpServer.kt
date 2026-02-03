@@ -39,7 +39,7 @@ import kotlin.coroutines.CoroutineContext
 
 private val log = KotlinLogging.logger {}
 
-class SmtpServer(
+class SmtpServer internal constructor(
     val port: Int,
     val hostname: String,
     val serviceName: String? = "kotlin-smtp",
@@ -260,5 +260,145 @@ class SmtpServer(
                 channelFuture = null
             }
         } else false
+    }
+
+    companion object {
+        /**
+         * Preferred entrypoint for constructing an SMTP server.
+         *
+         * This enforces the public API boundary by keeping the implementation constructor internal.
+         */
+        @JvmStatic
+        fun builder(port: Int, hostname: String): Builder = Builder(port, hostname)
+
+        /**
+         * Kotlin-friendly factory.
+         */
+        @JvmStatic
+        fun create(port: Int, hostname: String, configure: Builder.() -> Unit): SmtpServer =
+            builder(port, hostname).apply(configure).build()
+    }
+
+    class Builder internal constructor(
+        private val port: Int,
+        private val hostname: String,
+    ) {
+        var serviceName: String? = "kotlin-smtp"
+
+        /** Required: provides the per-session protocol handler. */
+        private var protocolHandlerFactory: (() -> SmtpProtocolHandler)? = null
+
+        private var authService: AuthService? = null
+        private var userHandler: SmtpUserHandler? = null
+        private var mailingListHandler: SmtpMailingListHandler? = null
+        private var spooler: SmtpSpooler? = null
+
+        fun useProtocolHandlerFactory(factory: () -> SmtpProtocolHandler) {
+            this.protocolHandlerFactory = factory
+        }
+
+        fun useAuthService(service: AuthService?) {
+            this.authService = service
+        }
+
+        fun useUserHandler(handler: SmtpUserHandler?) {
+            this.userHandler = handler
+        }
+
+        fun useMailingListHandler(handler: SmtpMailingListHandler?) {
+            this.mailingListHandler = handler
+        }
+
+        fun useSpooler(spooler: SmtpSpooler?) {
+            this.spooler = spooler
+        }
+
+        val features: FeatureFlags = FeatureFlags()
+        val listener: ListenerPolicy = ListenerPolicy()
+        val proxyProtocol: ProxyProtocolPolicy = ProxyProtocolPolicy()
+        val tls: TlsPolicy = TlsPolicy()
+        val rateLimit: RateLimitPolicy = RateLimitPolicy()
+        val authRateLimit: AuthRateLimitPolicy = AuthRateLimitPolicy()
+
+        fun build(): SmtpServer {
+            val handlerFactory = protocolHandlerFactory
+                ?: error("protocolHandlerFactory is required. Call useProtocolHandlerFactory { }.")
+
+            val authLimiter = if (authRateLimit.enabled) {
+                io.github.kotlinsmtp.auth.AuthRateLimiter(
+                    maxFailuresPerWindow = authRateLimit.maxFailuresPerWindow,
+                    windowSeconds = authRateLimit.windowSeconds,
+                    lockoutDurationSeconds = authRateLimit.lockoutDurationSeconds,
+                )
+            } else {
+                null
+            }
+
+            return SmtpServer(
+                port = port,
+                hostname = hostname,
+                serviceName = serviceName,
+                authService = authService,
+                transactionHandlerCreator = handlerFactory,
+                userHandler = userHandler,
+                mailingListHandler = mailingListHandler,
+                spooler = spooler,
+                authRateLimiter = authLimiter,
+                enableVrfy = features.enableVrfy,
+                enableEtrn = features.enableEtrn,
+                enableExpn = features.enableExpn,
+                implicitTls = listener.implicitTls,
+                enableStartTls = listener.enableStartTls,
+                enableAuth = listener.enableAuth,
+                requireAuthForMail = listener.requireAuthForMail,
+                proxyProtocolEnabled = proxyProtocol.enabled,
+                trustedProxyCidrs = proxyProtocol.trustedProxyCidrs,
+                certChainFile = tls.certChainPath?.toFile(),
+                privateKeyFile = tls.privateKeyPath?.toFile(),
+                minTlsVersion = tls.minTlsVersion,
+                tlsHandshakeTimeoutMs = tls.handshakeTimeoutMs,
+                tlsCipherSuites = tls.cipherSuites,
+                maxConnectionsPerIp = rateLimit.maxConnectionsPerIp,
+                maxMessagesPerIpPerHour = rateLimit.maxMessagesPerIpPerHour,
+            )
+        }
+    }
+
+    class FeatureFlags {
+        var enableVrfy: Boolean = false
+        var enableEtrn: Boolean = false
+        var enableExpn: Boolean = false
+    }
+
+    class ListenerPolicy {
+        var implicitTls: Boolean = false
+        var enableStartTls: Boolean = true
+        var enableAuth: Boolean = true
+        var requireAuthForMail: Boolean = false
+    }
+
+    class ProxyProtocolPolicy {
+        var enabled: Boolean = false
+        var trustedProxyCidrs: List<String> = listOf("127.0.0.1/32", "::1/128")
+    }
+
+    class TlsPolicy {
+        var certChainPath: java.nio.file.Path? = null
+        var privateKeyPath: java.nio.file.Path? = null
+        var minTlsVersion: String = "TLSv1.2"
+        var handshakeTimeoutMs: Int = 30_000
+        var cipherSuites: List<String> = emptyList()
+    }
+
+    class RateLimitPolicy {
+        var maxConnectionsPerIp: Int = 10
+        var maxMessagesPerIpPerHour: Int = 100
+    }
+
+    class AuthRateLimitPolicy {
+        var enabled: Boolean = true
+        var maxFailuresPerWindow: Int = 5
+        var windowSeconds: Long = 300
+        var lockoutDurationSeconds: Long = 600
     }
 }

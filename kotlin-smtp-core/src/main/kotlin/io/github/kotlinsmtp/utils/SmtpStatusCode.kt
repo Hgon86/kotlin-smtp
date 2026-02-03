@@ -1,6 +1,6 @@
 package io.github.kotlinsmtp.utils
 
-enum class SmtpStatusCode(
+internal enum class SmtpStatusCode(
     val code: Int,
     val enhancedCode: String,
     val defaultDescription: String

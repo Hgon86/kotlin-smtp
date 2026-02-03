@@ -49,3 +49,12 @@ The library is Kotlin but JVM-based; Java users can depend on it.
 However, Kotlin-specific APIs (e.g., `suspend` functions, default args) can be awkward from Java.
 
 If Java friendliness becomes a goal, add an explicit facade layer (non-suspending start/stop, builders) rather than exposing internals.
+
+## Kotlin Visibility Gotcha
+
+In Kotlin, reducing constructor parameter *property visibility* (e.g., `internal val foo`) does **not** remove it from the callable constructor signature.
+
+To enforce a minimal public API boundary:
+
+- Keep implementation constructors `internal` (or `private`) and expose explicit public factories/builders.
+- Avoid making "everything configurable" via a public constructor; prefer additive config objects / builder APIs.

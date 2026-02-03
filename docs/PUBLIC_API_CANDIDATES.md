@@ -9,7 +9,8 @@ Rule of thumb:
 ### Core Engine (Should Be Public)
 
 - `io.github.kotlinsmtp.server.SmtpServer`
-  - create server instance, configure ports/policies, start/stop
+  - create server instance via `SmtpServer.create(...)` / `SmtpServer.builder(...)`, start/stop
+  - `SmtpServer` implementation constructor should remain internal
 - `io.github.kotlinsmtp.model.SessionData`
   - observable state passed into handlers
 

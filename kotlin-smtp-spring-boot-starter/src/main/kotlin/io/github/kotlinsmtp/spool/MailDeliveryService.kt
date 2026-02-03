@@ -5,7 +5,7 @@ import io.github.kotlinsmtp.mail.LocalMailboxManager
 import io.github.kotlinsmtp.mail.MailRelay
 import io.github.kotlinsmtp.model.RcptDsn
 import io.github.kotlinsmtp.relay.DsnService
-import io.github.kotlinsmtp.utils.AddressUtils
+import io.github.kotlinsmtp.util.AddressUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.mail.Session
 import jakarta.mail.internet.MimeMessage

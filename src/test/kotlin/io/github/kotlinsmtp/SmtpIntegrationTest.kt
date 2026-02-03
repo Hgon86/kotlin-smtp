@@ -40,17 +40,18 @@ class SmtpIntegrationTest {
         
         // Find an available port
         testPort = ServerSocket(0).use { it.localPort }
-        
-        server = SmtpServer(
-            port = testPort,
-            hostname = "test-smtp.local",
-            serviceName = "test-smtp",
-            transactionHandlerCreator = { TestSmtpProtocolHandler() },
-            enableStartTls = false, // 테스트에서는 TLS 없이 진행
-            enableAuth = false, // 기본 테스트에서는 AUTH 비활성
-            implicitTls = false,
-            proxyProtocolEnabled = false,
-        )
+
+        server = SmtpServer.create(testPort, "test-smtp.local") {
+            serviceName = "test-smtp"
+            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+
+            // 테스트에서는 TLS/AUTH 없이 진행
+            listener.enableStartTls = false
+            listener.enableAuth = false
+            listener.implicitTls = false
+
+            proxyProtocol.enabled = false
+        }
         
         runBlocking {
             server.start()

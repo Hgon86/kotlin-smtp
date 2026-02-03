@@ -8,7 +8,7 @@ import java.net.InetAddress
  * - PROXY protocol은 스푸핑 위험이 있으므로 "신뢰 프록시 IP 대역" 검사에 사용합니다.
  * - 기능 우선: IPv4/IPv6 공통 지원, 최소한의 비교 로직만 제공합니다.
  */
-class IpCidr private constructor(
+internal class IpCidr private constructor(
     private val network: ByteArray,
     private val prefixBits: Int,
 ) {

@@ -19,8 +19,8 @@ interface AuthService {
  * SASL PLAIN 초기 응답(Base64) 디코딩 유틸리티
  * 포맷: authzid\0authcid\0passwd
  */
-object SaslPlain {
-    data class Credentials(val authzid: String?, val authcid: String, val password: String)
+internal object SaslPlain {
+    internal data class Credentials(val authzid: String?, val authcid: String, val password: String)
 
     fun decode(initialResponseBase64: String): Credentials? = runCatching {
         val decoded = Base64.getDecoder().decode(initialResponseBase64)

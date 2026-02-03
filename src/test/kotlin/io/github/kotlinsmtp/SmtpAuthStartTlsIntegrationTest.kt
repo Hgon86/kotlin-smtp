@@ -38,20 +38,21 @@ class SmtpAuthStartTlsIntegrationTest {
         testPort = ServerSocket(0).use { it.localPort }
         ssc = SelfSignedCertificate()
 
-        server = SmtpServer(
-            port = testPort,
-            hostname = "test-smtp.local",
-            serviceName = "test-smtp",
-            authService = authService,
-            transactionHandlerCreator = { TestSmtpProtocolHandler() },
-            enableStartTls = true,
-            enableAuth = true,
-            requireAuthForMail = true,
-            implicitTls = false,
-            proxyProtocolEnabled = false,
-            certChainFile = ssc.certificate(),
-            privateKeyFile = ssc.privateKey(),
-        )
+        server = SmtpServer.create(testPort, "test-smtp.local") {
+            serviceName = "test-smtp"
+            useAuthService(this@SmtpAuthStartTlsIntegrationTest.authService)
+            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+
+            listener.enableStartTls = true
+            listener.enableAuth = true
+            listener.requireAuthForMail = true
+            listener.implicitTls = false
+
+            proxyProtocol.enabled = false
+
+            tls.certChainPath = ssc.certificate().toPath()
+            tls.privateKeyPath = ssc.privateKey().toPath()
+        }
 
         runBlocking {
             server.start()
