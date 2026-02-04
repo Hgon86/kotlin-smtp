@@ -6,8 +6,10 @@ import io.github.kotlinsmtp.server.ProxyProtocolSupport
 import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.netty.channel.ChannelFutureListener
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
+import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.haproxy.HAProxyMessage
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateEvent
@@ -43,11 +45,9 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
             clientIp = (ctx.channel().remoteAddress() as? InetSocketAddress)?.address?.hostAddress
 
             if (clientIp != null && !server.rateLimiter.allowConnection(clientIp!!)) {
-                scope.launch {
-                    ctx.writeAndFlush("421 4.7.0 Too many connections from your IP address. Try again later.\r\n")
-                    log.warn { "Rate limit: Rejected connection from $clientIp" }
-                    ctx.close()
-                }
+                ctx.writeAndFlush("421 4.7.0 Too many connections from your IP address. Try again later.\r\n")
+                    .addListener(ChannelFutureListener.CLOSE)
+                log.warn { "Rate limit: Rejected connection from $clientIp" }
                 return
             }
             // allowConnection()이 true를 반환한 경우에만 releaseConnection()을 호출해야 합니다.
@@ -87,8 +87,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         // PROXY가 활성화된 경우, 여기 시점에는 clientIp가 "원본 클라이언트 IP"로 확정되어 있어야 합니다.
         pendingRejectMessage?.let { msg ->
             // implicit TLS에서는 최소한 핸드셰이크 이후에만 응답을 보낼 수 있으므로, 여기서 처리합니다.
-            ctx.writeAndFlush("$msg\r\n")
-            ctx.close()
+            ctx.writeAndFlush("$msg\r\n").addListener(ChannelFutureListener.CLOSE)
             return
         }
 
@@ -144,7 +143,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
             val offered = ch.trySend(msg)
             if (offered.isFailure) {
                 scope.launch {
-                    session.sendResponse(
+                    session.sendResponseAwait(
                         SmtpStatusCode.SERVICE_NOT_AVAILABLE.code,
                         "Input buffer overflow. Closing connection."
                     )
@@ -188,8 +187,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
 
             // 평문 리스너는 즉시 응답 가능, implicit TLS는 핸드셰이크 완료 후 maybeStartSession에서 응답
             if (!server.implicitTls) {
-                ctx.writeAndFlush("$response\r\n")
-                ctx.close()
+                ctx.writeAndFlush("$response\r\n").addListener(ChannelFutureListener.CLOSE)
             } else {
                 // TLS가 아직 준비되지 않았을 수 있으므로, maybeStartSession에서 처리하도록 둡니다.
                 maybeStartSession(ctx)
@@ -218,6 +216,33 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
 
     @Deprecated("Deprecated in Java")
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
+        // Known inbound framing errors should be mapped to a deterministic SMTP response when possible.
+        if (cause is TooLongFrameException || cause is IllegalArgumentException) {
+            val message = cause.message ?: "Protocol error"
+            val status = if (message.contains("BDAT", ignoreCase = true)) {
+                SmtpStatusCode.EXCEEDED_STORAGE_ALLOCATION
+            } else {
+                SmtpStatusCode.COMMAND_SYNTAX_ERROR
+            }
+
+            log.warn(cause) { "Inbound protocol error; closing connection" }
+
+            // Stop passing inbound frames as the decoder state is no longer reliable.
+            inboundFrames?.close()
+            inboundJob?.cancel()
+
+            scope.launch {
+                if (this@SmtpChannelHandler::session.isInitialized) {
+                    runCatching { session.sendResponseAwait(status.code, message) }
+                    ctx.close()
+                } else {
+                    ctx.writeAndFlush("${status.code} ${status.enhancedCode} $message\r\n")
+                        .addListener(ChannelFutureListener.CLOSE)
+                }
+            }
+            return
+        }
+
         log.error(cause) { "Error in SMTP session" }
         inboundFrames?.close()
         inboundJob?.cancel()
@@ -233,7 +258,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         if (evt is IdleStateEvent) {
             scope.launch {
                 if (this@SmtpChannelHandler::session.isInitialized) {
-                    session.sendResponse(
+                    session.sendResponseAwait(
                         421,
                         "4.4.2 Idle timeout. Closing connection."
                     )

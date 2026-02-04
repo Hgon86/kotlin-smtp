@@ -286,7 +286,7 @@ internal class SmtpSession(
 
         val size = bytes.size
         if (!tryReserveBdatBytes(size)) {
-            sendResponse(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection.")
+            sendResponseAwait(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection.")
             shouldQuit = true
             close()
             return
@@ -295,7 +295,7 @@ internal class SmtpSession(
         val result = incomingFrames.trySend(SmtpInboundFrame.Bytes(bytes))
         if (result.isFailure) {
             inflightBdatBytes.addAndGet(-size.toLong())
-            sendResponse(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection.")
+            sendResponseAwait(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection.")
             shouldQuit = true
             close()
         }
@@ -319,7 +319,7 @@ internal class SmtpSession(
         // - DATA 본문 라인은 별도 상한(MAX_SMTP_LINE_LENGTH)으로 완화(본문 라인이 커맨드 상한을 넘을 수 있음)
         val maxAllowed = if (inDataMode || dataModeFramingHint) Values.MAX_SMTP_LINE_LENGTH else Values.MAX_COMMAND_LINE_LENGTH
         if (line.length > maxAllowed) {
-            sendResponse(
+            sendResponseAwait(
                 SmtpStatusCode.COMMAND_SYNTAX_ERROR.code,
                 "Line too long (max $maxAllowed bytes)"
             )
@@ -331,7 +331,7 @@ internal class SmtpSession(
         val result = incomingFrames.trySend(SmtpInboundFrame.Line(line))
         if (result.isFailure) {
             // 입력 버퍼가 가득 찬 경우 세션을 종료하여 자원 남용 방지
-            sendResponse(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection.")
+            sendResponseAwait(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection.")
             shouldQuit = true
             close()
         }

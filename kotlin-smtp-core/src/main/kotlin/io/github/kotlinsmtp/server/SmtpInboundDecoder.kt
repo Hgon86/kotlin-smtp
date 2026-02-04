@@ -23,6 +23,7 @@ import io.netty.util.CharsetUtil
  */
 internal class SmtpInboundDecoder(
     private val maxLineLength: Int = Values.MAX_SMTP_LINE_LENGTH,
+    private val strictCrlf: Boolean = false,
 ) : ByteToMessageDecoder() {
 
     companion object {
@@ -83,6 +84,12 @@ internal class SmtpInboundDecoder(
             val hasCr = lfIndex > readerIndex && input.getByte(lfIndex - 1).toInt() == '\r'.code
             val lineLength = if (hasCr) lfIndex - readerIndex - 1 else lfIndex - readerIndex
 
+            if (strictCrlf && !hasCr) {
+                // RFC 5321 requires CRLF. Keep permissive by default for interoperability.
+                input.readerIndex(lfIndex + 1)
+                throw IllegalArgumentException("SMTP line must end with CRLF")
+            }
+
             if (lineLength > maxLineLength) {
                 // 해당 라인을 버리고 에러 처리
                 input.readerIndex(lfIndex + 1)
@@ -137,11 +144,21 @@ internal class SmtpInboundDecoder(
         if (!trimmed.regionMatches(0, "BDAT", 0, 4, ignoreCase = true)) return null
         if (trimmed.length > 4 && !trimmed[4].isWhitespace()) return null
 
-        val parts = trimmed.split(Values.whitespaceRegex).filter { it.isNotBlank() }
-        if (parts.size < 2) return null
-        val sizeLong = parts[1].toLongOrNull() ?: return null
-        if (sizeLong < 0) return null
-        if (sizeLong > Int.MAX_VALUE.toLong()) return null
-        return sizeLong.toInt()
+        var i = 4
+        while (i < trimmed.length && trimmed[i].isWhitespace()) i++
+        if (i >= trimmed.length) return null
+
+        var value = 0L
+        var digits = 0
+        while (i < trimmed.length) {
+            val c = trimmed[i]
+            if (!c.isDigit()) break
+            value = value * 10 + (c.code - '0'.code)
+            if (value > Int.MAX_VALUE.toLong()) return null
+            digits++
+            i++
+        }
+        if (digits == 0) return null
+        return value.toInt()
     }
 }

@@ -69,7 +69,7 @@ internal class CoroutineInputStream(private val channel: Channel<ByteArray>) : I
     override fun close() {
         if (!closed) {
             closed = true
-            runBlocking { channel.close() }
+            channel.close()
         }
     }
 }
