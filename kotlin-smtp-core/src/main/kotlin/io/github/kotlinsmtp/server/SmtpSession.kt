@@ -6,13 +6,9 @@ import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
 import io.github.kotlinsmtp.utils.Values
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.netty.buffer.ByteBuf
 import io.netty.channel.Channel
-import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelFutureListener
-import io.netty.channel.ChannelInboundHandlerAdapter
-import io.netty.util.ReferenceCountUtil
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -42,6 +38,15 @@ internal class SmtpSession(
         scope = server.serverScope,
         isTlsUpgrading = { tlsUpgrading.get() },
         setAutoRead = { enabled -> setAutoReadOnEventLoop(enabled) },
+    )
+
+    private val tlsUpgrade = SmtpTlsUpgradeManager(
+        channel = channel,
+        server = server,
+        incomingFrames = incomingFrames,
+        tlsUpgrading = tlsUpgrading,
+        setAutoReadOnEventLoop = { enabled -> setAutoReadOnEventLoop(enabled) },
+        onFrameDiscarded = { frame -> discardQueuedFrame(frame) },
     )
 
     @Volatile
@@ -352,20 +357,7 @@ internal class SmtpSession(
      *
      * @return 업그레이드를 계속 진행해도 되면 true
      */
-    internal suspend fun beginStartTlsUpgrade(): Boolean {
-        if (!tlsUpgrading.compareAndSet(false, true)) return false
-
-        // 읽기 중단(autoRead=false)은 event loop에서 수행해야 안전합니다.
-        setAutoReadOnEventLoop(false)
-
-        // autoRead=false 전환 직후에도 이미 스케줄된 read가 수행될 수 있으므로,
-        // SslHandler가 삽입되기 전까지는 raw bytes가 디코더로 흘러가지 않도록 게이트를 둡니다.
-        addStartTlsInboundGateOnEventLoop()
-
-        // STARTTLS는 파이프라이닝할 수 없습니다. 이미 큐에 남은 입력이 있으면(=대기 커맨드/데이터)
-        // 프로토콜 동기화를 위해 업그레이드를 거부하는 쪽이 안전합니다.
-        return !drainPendingInboundFrames()
-    }
+    internal suspend fun beginStartTlsUpgrade(): Boolean = tlsUpgrade.begin()
 
     /**
      * 220 응답이 평문으로 flush된 뒤에 호출되어야 합니다.
@@ -373,59 +365,19 @@ internal class SmtpSession(
      *   동일한 코루틴 흐름에서 수행합니다.
      */
     internal suspend fun finishStartTlsUpgrade() {
-        val sslContext = server.sslContext ?: return
-
         try {
-            val sslHandler = addSslHandlerOnEventLoop(sslContext)
-
-            // 게이트가 버퍼링한 raw bytes가 있으면(클라이언트가 매우 빨리 ClientHello를 보내는 경우)
-            // SslHandler가 먼저 처리할 수 있도록 게이트 제거 후 pipeline head에서 재주입합니다.
-            removeStartTlsInboundGateAndReplayOnEventLoop()
-
-            // TLS 핸드셰이크 바이트를 읽기 위해 읽기를 재개합니다.
-            setAutoReadOnEventLoop(true)
-
-            awaitHandshake(sslHandler)
-
-            isTls = true
-            sessionData.tlsActive = true
-            // STARTTLS 이후에는 인증 상태를 포함해 세션을 리셋해야 합니다.
-            resetTransaction(preserveGreeting = false, preserveAuth = false)
-            requireEhloAfterTls = true
+            tlsUpgrade.complete(
+                onHandshakeSuccess = {
+                    isTls = true
+                    sessionData.tlsActive = true
+                    // STARTTLS 이후에는 인증 상태를 포함해 세션을 리셋해야 합니다.
+                    resetTransaction(preserveGreeting = false, preserveAuth = false)
+                    requireEhloAfterTls = true
+                },
+            )
         } catch (t: Throwable) {
             log.warn(t) { "TLS handshake failed; closing connection" }
             close()
-        } finally {
-            tlsUpgrading.set(false)
-        }
-    }
-
-    private suspend fun addSslHandlerOnEventLoop(sslContext: io.netty.handler.ssl.SslContext): io.netty.handler.ssl.SslHandler =
-        suspendCancellableCoroutine { cont ->
-            channel.eventLoop().execute {
-                val pipeline = channel.pipeline()
-
-                val existing = pipeline.get("ssl") as? io.netty.handler.ssl.SslHandler
-                if (existing != null) {
-                    cont.resume(existing)
-                    return@execute
-                }
-
-                val sslHandler = sslContext.newHandler(channel.alloc()).also {
-                    it.engine().useClientMode = false
-                    it.setHandshakeTimeout(server.tlsHandshakeTimeout, java.util.concurrent.TimeUnit.MILLISECONDS)
-                }
-
-                pipeline.addFirst("ssl", sslHandler)
-                cont.resume(sslHandler)
-            }
-        }
-
-    private suspend fun awaitHandshake(sslHandler: io.netty.handler.ssl.SslHandler) {
-        suspendCancellableCoroutine<Unit> { cont ->
-            sslHandler.handshakeFuture().addListener { future ->
-                if (future.isSuccess) cont.resume(Unit) else cont.resumeWithException(future.cause())
-            }
         }
     }
 
@@ -439,56 +391,14 @@ internal class SmtpSession(
         }
     }
 
-    private suspend fun addStartTlsInboundGateOnEventLoop() {
-        suspendCancellableCoroutine<Unit> { cont ->
-            channel.eventLoop().execute {
-                val pipeline = channel.pipeline()
-                if (pipeline.get(STARTTLS_GATE_NAME) == null) {
-                    pipeline.addFirst(STARTTLS_GATE_NAME, StartTlsInboundGate())
-                }
-                cont.resume(Unit)
-            }
-        }
-    }
-
-    private suspend fun removeStartTlsInboundGateAndReplayOnEventLoop() {
-        suspendCancellableCoroutine<Unit> { cont ->
-            channel.eventLoop().execute {
-                val pipeline = channel.pipeline()
-                val gate = pipeline.get(STARTTLS_GATE_NAME) as? StartTlsInboundGate
-                if (gate == null) {
-                    cont.resume(Unit)
-                    return@execute
-                }
-
-                val buffered = gate.drain()
-                runCatching { pipeline.remove(STARTTLS_GATE_NAME) }
-
-                // pipeline.fireChannelRead는 head에서 시작하므로, ssl 핸들러가 있으면 ssl이 먼저 처리합니다.
-                for (msg in buffered) {
-                    pipeline.fireChannelRead(msg)
-                }
-                if (buffered.isNotEmpty()) {
-                    pipeline.fireChannelReadComplete()
-                }
-                cont.resume(Unit)
-            }
-        }
-    }
-
-    private fun drainPendingInboundFrames(): Boolean {
-        var drained = false
-        while (true) {
-            val frame = incomingFrames.tryReceive().getOrNull() ?: break
-            drained = true
-            if (frame is SmtpInboundFrame.Bytes) {
+    private fun discardQueuedFrame(frame: SmtpInboundFrame) {
+        when (frame) {
+            is SmtpInboundFrame.Line -> backpressure.onConsumed(backpressure.estimateLineBytes(frame.text))
+            is SmtpInboundFrame.Bytes -> {
                 backpressure.releaseInflightBdatBytes(frame.bytes.size)
                 backpressure.onConsumed(frame.bytes.size.toLong())
-            } else if (frame is SmtpInboundFrame.Line) {
-                backpressure.onConsumed(backpressure.estimateLineBytes(frame.text))
             }
         }
-        return drained
     }
 
     /**
@@ -571,52 +481,3 @@ private suspend fun ChannelFuture.awaitCompletion(): Unit =
 
 // "5.7.1 ..." 같은 Enhanced Status Code 형태를 감지합니다.
 private val enhancedStatusRegex = Regex("^\\d\\.\\d\\.\\d\\b")
-
-private const val STARTTLS_GATE_NAME: String = "startTlsGate"
-
-/**
- * STARTTLS 업그레이드 전환 구간에서 SslHandler 삽입 전에 들어온 raw bytes가
- * SMTP 디코더로 흘러가 프로토콜이 깨지는 것을 방지하기 위한 임시 게이트입니다.
- */
-private class StartTlsInboundGate : ChannelInboundHandlerAdapter() {
-    private val buffered: MutableList<Any> = ArrayList(2)
-    private var bufferedBytes: Long = 0
-    private val maxBufferedBytes: Long = 512L * 1024L
-
-    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
-        if (msg is ByteBuf) {
-            bufferedBytes += msg.readableBytes().toLong()
-            if (bufferedBytes > maxBufferedBytes) {
-                ReferenceCountUtil.release(msg)
-                ctx.close()
-                return
-            }
-
-            // 이후 재주입을 위해 retain한 뒤, 현재 read는 소비합니다.
-            buffered.add(ReferenceCountUtil.retain(msg))
-            ReferenceCountUtil.release(msg)
-            return
-        }
-
-        // 예상치 못한 타입은 세션/프로토콜 동기화가 깨졌을 가능성이 높아 종료합니다.
-        ReferenceCountUtil.release(msg)
-        ctx.close()
-    }
-
-    fun drain(): List<Any> {
-        if (buffered.isEmpty()) return emptyList()
-        val copy = buffered.toList()
-        buffered.clear()
-        bufferedBytes = 0
-        return copy
-    }
-
-    override fun handlerRemoved(ctx: ChannelHandlerContext) {
-        // 누수 방지: 제거되는데도 drain되지 않았다면 모두 해제합니다.
-        for (msg in buffered) {
-            ReferenceCountUtil.release(msg)
-        }
-        buffered.clear()
-        bufferedBytes = 0
-    }
-}
