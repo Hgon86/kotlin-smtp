@@ -2,6 +2,7 @@ package io.github.kotlinsmtp.server
 
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
+import java.io.IOException
 import java.io.InputStream
 
 /**
@@ -30,38 +31,31 @@ internal class CoroutineInputStream(private val channel: Channel<ByteArray>) : I
             throw IndexOutOfBoundsException("오프셋: $off, 길이: $len, 배열 크기: ${b.size}")
         }
 
-        var bytesRead = 0
-        var currentOffset = off
+        // InputStream 계약: 가능한 만큼만 반환할 수 있습니다.
+        // len만큼 채울 때까지 블로킹하면 호출 측(핸들러)이 불필요하게 지연될 수 있으므로,
+        // 현재 버퍼에서 읽을 수 있는 만큼만 반환합니다.
+        if (position >= buffer.size && !fillBuffer()) return -1
 
-        while (bytesRead < len) {
-            // 현재 버퍼에서 읽을 수 있는 바이트가 없으면 새 데이터 가져오기
-            if (position >= buffer.size && !fillBuffer()) return if (bytesRead > 0) bytesRead else -1
-
-            // 현재 버퍼에서 읽을 수 있는 바이트 수 계산
-            val available = minOf(buffer.size - position, len - bytesRead)
-
-            // 데이터 복사
-            System.arraycopy(buffer, position, b, currentOffset, available)
-
-            position += available
-            currentOffset += available
-            bytesRead += available
-        }
-
-        return bytesRead
+        val available = minOf(buffer.size - position, len)
+        System.arraycopy(buffer, position, b, off, available)
+        position += available
+        return available
     }
 
     private fun fillBuffer(): Boolean {
-        return try {
-            val nextChunk = runBlocking { channel.receiveCatching().getOrNull() } ?: return false
-
+        val result = runBlocking { channel.receiveCatching() }
+        val nextChunk = result.getOrNull()
+        if (nextChunk != null) {
             buffer = nextChunk
             position = 0
-            true
-        } catch (e: Exception) {
-            // 채널에서 데이터를 받는 중 예외 발생
-            false
+            return true
         }
+
+        val cause = result.exceptionOrNull()
+        if (cause != null) {
+            throw IOException("CoroutineInputStream closed with error", cause)
+        }
+        return false
     }
 
     override fun available(): Int = if (closed) 0 else buffer.size - position

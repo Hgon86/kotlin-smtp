@@ -29,17 +29,6 @@ internal class BdatCommand : SmtpCommand(
     "Chunking - sends a message as one or more chunks. Syntax: BDAT <chunk-size> [LAST]",
     "<chunk-size> [LAST]"
 ) {
-    /**
-     * peerAddress에서 클라이언트 IP 추출
-     * 형식: \"hostname [1.2.3.4]:port\" 또는 \"1.2.3.4:port\"
-     */
-    private fun extractClientIp(peerAddress: String?): String? {
-        if (peerAddress == null) return null
-        val bracketMatch = Regex("\\[([^\\]]+)\\]").find(peerAddress)
-        if (bracketMatch != null) return bracketMatch.groupValues[1]
-        return peerAddress.substringBefore(':').trim()
-    }
-
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
         if (command.parts.size !in 2..3) {
             respondSyntax()
@@ -109,7 +98,7 @@ internal class BdatCommand : SmtpCommand(
 
         // 첫 BDAT 청크에서만 Rate Limiting 메시지 제한을 소모합니다.
         if (isFirstChunk) {
-            val clientIp = extractClientIp(session.sessionData.peerAddress)
+            val clientIp = session.clientIpAddress()
             if (clientIp != null && !session.server.rateLimiter.allowMessage(clientIp)) {
                 session.clearBdatState()
                 session.resetTransaction(preserveGreeting = true)
@@ -175,9 +164,9 @@ internal class BdatCommand : SmtpCommand(
                 // BDAT 0 케이스는 불필요한 전송을 피합니다.
                 if (bytes.isNotEmpty()) dataChannel.send(bytes)
             }
-        }.onFailure { t ->
+        }.onFailure { _ ->
             session.clearBdatState()
-            throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Error receiving BDAT: ${t.message ?: "unknown"}")
+            throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Error receiving BDAT")
         }
 
         if (!isLast) {
@@ -209,7 +198,7 @@ internal class BdatCommand : SmtpCommand(
                     session.sendResponse(e.statusCode, e.message)
 
                 else ->
-                    session.sendResponse(SmtpStatusCode.TRANSACTION_FAILED.code, "Transaction failed: ${e.message ?: "unknown"}")
+                    session.sendResponse(SmtpStatusCode.TRANSACTION_FAILED.code, "Transaction failed")
             }
             session.resetTransaction(preserveGreeting = true)
             return

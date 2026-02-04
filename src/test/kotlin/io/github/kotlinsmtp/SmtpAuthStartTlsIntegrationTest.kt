@@ -131,6 +131,31 @@ class SmtpAuthStartTlsIntegrationTest {
     }
 
     @Test
+    fun `STARTTLS cannot be pipelined with other commands`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 3_000
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val out = socket.getOutputStream()
+
+            reader.readLine() // greeting
+
+            out.write("EHLO test.client.local\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            skipEhloResponse(reader)
+
+            // STARTTLS 응답(220)을 기다리지 않고 다음 커맨드를 파이프라인하면 서버는 거부해야 합니다.
+            out.write("STARTTLS\r\nMAIL FROM:<sender@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+
+            val resp = reader.readLine()
+            assertTrue(resp.startsWith("501"), "Expected 501 for STARTTLS pipelining, got: $resp")
+
+            // 보수적으로 연결이 종료되는지 확인(EOF 또는 타임아웃 등)
+            runCatching { reader.readLine() }
+        }
+    }
+
+    @Test
     fun `STARTTLS + AUTH PLAIN success allows MAIL FROM when required`() {
         Socket("localhost", testPort).use { socket ->
             socket.soTimeout = 5_000

@@ -28,11 +28,21 @@ internal class StartTlsCommand : SmtpCommand(
             return
         }
 
+        // STARTTLS는 파이프라이닝할 수 없습니다.
+        // - 이미 큐에 들어온 입력이 있으면(다음 커맨드/데이터) 업그레이드 전환이 깨질 수 있으므로 거부합니다.
+        val upgradeOk = session.beginStartTlsUpgrade()
+        if (!upgradeOk) {
+            session.sendResponseAwait(501, "5.5.1 STARTTLS cannot be pipelined")
+            session.shouldQuit = true
+            session.close()
+            return
+        }
+
         // RFC 3207 관례: 220 Ready to start TLS
         // 중요: 이 라인은 반드시 "평문으로 flush 완료"된 뒤에 파이프라인에 SslHandler를 삽입해야 합니다.
         session.sendResponseAwait(SERVICE_READY.code, "Ready to start TLS")
 
         // TLS 핸드셰이크 시작 및 파이프라인 갱신
-        session.startTls()
+        session.finishStartTlsUpgrade()
     }
 }

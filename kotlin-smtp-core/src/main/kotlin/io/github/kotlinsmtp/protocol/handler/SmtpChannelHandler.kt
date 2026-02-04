@@ -17,13 +17,12 @@ import io.netty.handler.timeout.IdleStateEvent
 import io.netty.util.ReferenceCountUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import java.net.InetSocketAddress
+import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
 private val log = KotlinLogging.logger {}
@@ -32,10 +31,13 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
     private lateinit var session: SmtpSession
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var clientIp: String? = null
-    private var inboundFrames: Channel<SmtpInboundFrame>? = null
-    private var inboundJob: Job? = null
     private val sessionDeferred = CompletableDeferred<SmtpSession>()
     private var rateLimitAccepted: Boolean = false
+
+    // 세션 시작 전(Proxy/implicit TLS 게이팅 포함) 유입된 라인 프레임을 소량 버퍼링합니다.
+    // - SMTP 클라이언트가 greeting(220) 전에 커맨드를 보내는 경우를 허용하기 위한 호환성 목적
+    // - bytes 프레임은 절대 버퍼링하지 않습니다(BDAT 등은 동기화가 깨질 수 있음)
+    private val pendingLines: ArrayDeque<SmtpInboundFrame.Line> = ArrayDeque()
 
     // PROXY protocol을 사용하는 경우, 원본 IP를 알기 전까지 세션을 시작하면 안 됩니다.
     private var proxyReady: Boolean = !server.proxyProtocolEnabled
@@ -44,21 +46,6 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
     private var pendingRejectMessage: String? = null
 
     override fun channelActive(ctx: ChannelHandlerContext) {
-        // 세션 게이팅(PROXY/implicit TLS) 완료 전에도 입력이 유입될 수 있으므로,
-        // mailbox(프레임 채널)는 먼저 준비해 레이스로 인한 조기 disconnect를 피합니다.
-        if (inboundFrames == null) {
-            // Small buffer to bridge the gap between channelActive and session start.
-            // Keep this bounded to avoid unbounded memory usage.
-            inboundFrames = Channel<SmtpInboundFrame>(capacity = 16).also { ch ->
-                inboundJob = scope.launch {
-                    val s = sessionDeferred.await()
-                    for (frame in ch) {
-                        s.handleIncomingFrame(frame)
-                    }
-                }
-            }
-        }
-
         // PROXY 미사용인 경우: 즉시(프록시 IP가 아니라) 원본 TCP remoteAddress로 레이트리밋을 적용합니다.
         if (!server.proxyProtocolEnabled) {
             clientIp = (ctx.channel().remoteAddress() as? InetSocketAddress)?.address?.hostAddress
@@ -118,6 +105,14 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
     private suspend fun startSession(ctx: ChannelHandlerContext, implicitTlsReady: Boolean) {
         session = SmtpSession(ctx.channel(), server)
         if (!sessionDeferred.isCompleted) sessionDeferred.complete(session)
+
+        // 세션 시작 전 버퍼된 라인을 세션 입력 큐로 이관합니다(순서 보장).
+        // - 큐가 넘치면 세션이 자체적으로 421 후 종료합니다.
+        while (pendingLines.isNotEmpty()) {
+            val line = pendingLines.removeFirst()
+            session.tryEnqueueInboundFrame(line)
+        }
+
         if (implicitTlsReady) {
             session.markImplicitTlsActive()
         }
@@ -143,32 +138,27 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         }
 
         if (msg is SmtpInboundFrame) {  // 커스텀 디코더가 프레임을 출력합니다
-            val ch = inboundFrames
-            if (ch == null) {
-                ctx.close()
-                return
-            }
-
-            // Session is not started yet; never buffer raw bytes pre-greeting.
-            if (!sessionDeferred.isCompleted && msg is io.github.kotlinsmtp.server.SmtpInboundFrame.Bytes) {
-                ctx.close()
-                return
-            }
-
-            val offered = ch.trySend(msg)
-            if (offered.isFailure) {
-                scope.launch {
-                    if (this@SmtpChannelHandler::session.isInitialized) {
-                        session.sendResponseAwait(
-                            SmtpStatusCode.SERVICE_NOT_AVAILABLE.code,
-                            "Input buffer overflow. Closing connection."
-                        )
-                        ctx.close()
-                    } else {
-                        ctx.writeAndFlush("421 4.3.0 Input buffer overflow. Closing connection.\r\n")
-                            .addListener(ChannelFutureListener.CLOSE)
-                    }
+            if (!sessionDeferred.isCompleted) {
+                // Session is not started yet; never buffer raw bytes pre-greeting.
+                if (msg is SmtpInboundFrame.Bytes) {
+                    ctx.close()
+                    return
                 }
+
+                if (pendingLines.size >= 16) {
+                    ctx.writeAndFlush("421 4.3.0 Input buffer overflow. Closing connection.\r\n")
+                        .addListener(ChannelFutureListener.CLOSE)
+                    return
+                }
+                pendingLines.addLast(msg as SmtpInboundFrame.Line)
+                return
+            }
+
+            // 세션 시작 이후: 단일 큐로 직접 enqueue(이중 버퍼 제거)
+            if (this@SmtpChannelHandler::session.isInitialized) {
+                session.tryEnqueueInboundFrame(msg)
+            } else {
+                ctx.close()
             }
         }
     }
@@ -226,8 +216,6 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
             clientIp?.let { server.rateLimiter.releaseConnection(it) }
         }
         
-        inboundFrames?.close()
-        inboundJob?.cancel()
         scope.cancel()
         if (this::session.isInitialized) {
             session.close()
@@ -254,10 +242,6 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
 
             log.warn(cause) { "Inbound protocol error; closing connection" }
 
-            // Stop passing inbound frames as the decoder state is no longer reliable.
-            inboundFrames?.close()
-            inboundJob?.cancel()
-
             scope.launch {
                 if (this@SmtpChannelHandler::session.isInitialized) {
                     runCatching { session.sendResponseAwait(status.code, safeMessage) }
@@ -271,8 +255,6 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         }
 
         log.error(cause) { "Error in SMTP session" }
-        inboundFrames?.close()
-        inboundJob?.cancel()
         scope.cancel()
         if (this::session.isInitialized) {
             session.close()

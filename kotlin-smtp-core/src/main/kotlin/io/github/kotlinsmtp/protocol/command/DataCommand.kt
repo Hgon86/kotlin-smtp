@@ -26,23 +26,6 @@ internal class DataCommand : SmtpCommand(
     "DATA",
     "The text following this command is the message which should be sent.",
 ) {
-    /**
-     * peerAddress에서 클라이언트 IP 추출
-     * 형식: "hostname [1.2.3.4]:port" 또는 "1.2.3.4:port"
-     */
-    private fun extractClientIp(peerAddress: String?): String? {
-        if (peerAddress == null) return null
-        
-        // 대괄호 안의 IP 추출
-        val bracketMatch = Regex("\\[([^\\]]+)\\]").find(peerAddress)
-        if (bracketMatch != null) {
-            return bracketMatch.groupValues[1]
-        }
-        
-        // 콜론 앞의 IP 추출
-        return peerAddress.substringBefore(':').trim()
-    }
-    
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
         if (command.parts.size != 1) {
             respondSyntax()
@@ -66,7 +49,7 @@ internal class DataCommand : SmtpCommand(
         }
 
         // Rate Limiting: 메시지 전송 제한 검사
-        val clientIp = extractClientIp(session.sessionData.peerAddress)
+        val clientIp = session.clientIpAddress()
         if (clientIp != null && !session.server.rateLimiter.allowMessage(clientIp)) {
             throw SmtpSendResponse(452, "4.7.1 Too many messages from your IP. Try again later.")
         }
@@ -167,7 +150,7 @@ internal class DataCommand : SmtpCommand(
             val e = receiveResult.exceptionOrNull()!!
             when (e) {
                 is SmtpSendResponse -> session.sendResponse(e.statusCode, e.message)
-                else -> session.sendResponse(ERROR_IN_PROCESSING.code, "Error receiving DATA: ${e.message ?: "unknown"}")
+                else -> session.sendResponse(ERROR_IN_PROCESSING.code, "Error receiving DATA")
             }
             session.shouldQuit = true
             session.close()
@@ -187,7 +170,7 @@ internal class DataCommand : SmtpCommand(
                     session.sendResponse(e.statusCode, e.message)
 
                 else ->
-                    session.sendResponse(TRANSACTION_FAILED.code, "Transaction failed: ${e.message ?: "unknown"}")
+                    session.sendResponse(TRANSACTION_FAILED.code, "Transaction failed")
             }
             // 실패 시에도 세션은 유지하되(일반적인 SMTP 서버 동작), 트랜잭션은 리셋합니다.
             session.resetTransaction(preserveGreeting = true)
