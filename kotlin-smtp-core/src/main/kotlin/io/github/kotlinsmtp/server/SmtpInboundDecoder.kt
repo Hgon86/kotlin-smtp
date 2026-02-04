@@ -138,6 +138,12 @@ internal class SmtpInboundDecoder(
         return -1
     }
 
+    /**
+     * BDAT <size> 라인을 파싱합니다.
+     *
+     * - size는 0 이상의 정수입니다.
+     * - LAST 같은 후속 토큰은 무시합니다.
+     */
     private fun parseBdatSizeIfAny(line: String): Int? {
         val trimmed = line.trimStart()
         if (trimmed.length < 4) return null

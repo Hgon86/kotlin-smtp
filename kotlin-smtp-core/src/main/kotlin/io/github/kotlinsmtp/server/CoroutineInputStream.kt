@@ -66,6 +66,7 @@ internal class CoroutineInputStream(private val channel: Channel<ByteArray>) : I
 
     override fun available(): Int = if (closed) 0 else buffer.size - position
 
+    /** 스트림과 기반 채널을 종료합니다(멱등). */
     override fun close() {
         if (!closed) {
             closed = true

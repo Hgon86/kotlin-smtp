@@ -6,6 +6,7 @@ import io.github.kotlinsmtp.server.ProxyProtocolSupport
 import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelFutureListener
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
@@ -218,11 +219,18 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
         // Known inbound framing errors should be mapped to a deterministic SMTP response when possible.
         if (cause is TooLongFrameException || cause is IllegalArgumentException) {
-            val message = cause.message ?: "Protocol error"
-            val status = if (message.contains("BDAT", ignoreCase = true)) {
+            val looksLikeBdat = (cause.message?.contains("BDAT", ignoreCase = true) == true)
+            val status = if (looksLikeBdat) {
                 SmtpStatusCode.EXCEEDED_STORAGE_ALLOCATION
             } else {
                 SmtpStatusCode.COMMAND_SYNTAX_ERROR
+            }
+
+            // Avoid echoing exception details back to clients.
+            val safeMessage = when {
+                looksLikeBdat -> "BDAT chunk too large"
+                cause is TooLongFrameException -> "Line too long"
+                else -> "Protocol error"
             }
 
             log.warn(cause) { "Inbound protocol error; closing connection" }
@@ -233,10 +241,10 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
 
             scope.launch {
                 if (this@SmtpChannelHandler::session.isInitialized) {
-                    runCatching { session.sendResponseAwait(status.code, message) }
+                    runCatching { session.sendResponseAwait(status.code, safeMessage) }
                     ctx.close()
                 } else {
-                    ctx.writeAndFlush("${status.code} ${status.enhancedCode} $message\r\n")
+                    ctx.writeAndFlush("${status.code} ${status.enhancedCode} $safeMessage\r\n")
                         .addListener(ChannelFutureListener.CLOSE)
                 }
             }
@@ -250,7 +258,8 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         if (this::session.isInitialized) {
             session.close()
         }
-        ctx.close()
+        // Flush any pending writes without sending extra bytes.
+        ctx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE)
     }
 
     /// 타임아웃 이벤트 처리

@@ -246,6 +246,7 @@ internal class SmtpSession(
         currentMessageSize = 0  // 메시지 크기 리셋
     }
 
+    /** BDAT 스트리밍 상태를 정리합니다(RSET/세션 종료 시). */
     internal suspend fun clearBdatState() {
         // BDAT 핸들러 잡 정리
         bdatHandlerJob?.cancel()
