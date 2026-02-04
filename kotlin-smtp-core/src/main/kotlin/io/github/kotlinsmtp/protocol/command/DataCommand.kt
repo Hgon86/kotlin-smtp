@@ -29,7 +29,7 @@ internal class DataCommand : SmtpCommand(
 
         // CHUNKING(BDAT) 진행 중에는 DATA를 허용하지 않습니다(실사용 클라이언트 호환/상태 일관성).
         // - BDAT를 시작한 뒤에는 BDAT ... LAST로 트랜잭션을 끝내야 합니다.
-        if (session.bdatDataChannel != null) {
+        if (session.isBdatInProgress()) {
             throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "BDAT in progress; use BDAT <size> LAST to finish")
         }
 

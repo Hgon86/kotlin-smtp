@@ -93,10 +93,7 @@ internal class SmtpSession(
      * BDAT(CHUNKING) 스트리밍 상태
      * - BDAT는 여러 번 호출될 수 있으므로, 하나의 트랜잭션 동안 스트림/잡을 유지합니다.
      */
-    internal var bdatDataChannel: kotlinx.coroutines.channels.Channel<ByteArray>? = null
-    internal var bdatStream: CoroutineInputStream? = null
-    internal var bdatHandlerJob: Job? = null
-    internal var bdatHandlerResult: CompletableDeferred<Result<Unit>>? = null
+    internal val bdatState: BdatStreamingState = BdatStreamingState()
 
     var isTls: Boolean = false
         private set
@@ -260,49 +257,23 @@ internal class SmtpSession(
 
         transactionHandler?.done()
         transactionHandler = null
-        val oldHello = if (preserveGreeting) sessionData.helo else null
-        val greeted = if (preserveGreeting) sessionData.greeted else false
-        val usedEhlo = if (preserveGreeting) sessionData.usedEhlo else false
-        val authenticated = if (preserveAuth) sessionData.isAuthenticated else false
-        val authFailedAttempts = if (preserveAuth) sessionData.authFailedAttempts else null
-        val authLockedUntilEpochMs = if (preserveAuth) sessionData.authLockedUntilEpochMs else null
-        sessionData = SessionData().also {
-            it.helo = oldHello
-            it.greeted = greeted
-            it.usedEhlo = usedEhlo
-            it.serverHostname = server.hostname
-            it.peerAddress = resolvePeer(ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress())
-            it.tlsActive = isTls
-            it.isAuthenticated = authenticated
-            it.authFailedAttempts = authFailedAttempts
-            it.authLockedUntilEpochMs = authLockedUntilEpochMs
-            // ESMTP 파라미터 초기화 (보안 강화)
-            it.mailParameters = emptyMap()
-            it.declaredSize = null
-            it.smtpUtf8 = false
-            // RFC 3461(DSN) 관련 파라미터 초기화(트랜잭션 단위)
-            it.dsnEnvid = null
-            it.dsnRet = null
-            it.rcptDsn = mutableMapOf()
-        }
+        sessionData = SmtpSessionDataResetter.reset(
+            current = sessionData,
+            preserveGreeting = preserveGreeting,
+            preserveAuth = preserveAuth,
+            serverHostname = server.hostname,
+            peerAddress = resolvePeer(ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress()),
+            tlsActive = isTls,
+        )
         currentMessageSize = 0  // 메시지 크기 리셋
     }
 
     /** BDAT 스트리밍 상태를 정리합니다(RSET/세션 종료 시). */
     internal suspend fun clearBdatState() {
-        // BDAT 핸들러 잡 정리
-        bdatHandlerJob?.cancel()
-        runCatching { bdatHandlerJob?.join() }
-
-        // 스트림/채널 정리
-        runCatching { bdatStream?.close() }
-        runCatching { bdatDataChannel?.close() }
-
-        bdatDataChannel = null
-        bdatStream = null
-        bdatHandlerJob = null
-        bdatHandlerResult = null
+        bdatState.clear()
     }
+
+    internal fun isBdatInProgress(): Boolean = bdatState.isActive
 
     fun close() {
         if (!closing.compareAndSet(false, true)) return

@@ -67,7 +67,7 @@ internal class BdatCommand : SmtpCommand(
         // BINARYMIME을 선언한 트랜잭션은 BDAT만으로 본문을 받아야 합니다(이미 DATA에서 거부).
         // - 여기서는 별도 처리는 하지 않되, 명시적으로 주석으로 남겨 혼용을 방지합니다.
 
-        val isFirstChunk = (session.bdatDataChannel == null)
+        val isFirstChunk = !session.bdatState.isActive
         if (isFirstChunk) {
             session.currentMessageSize = 0
         }
@@ -123,22 +123,24 @@ internal class BdatCommand : SmtpCommand(
         }
 
         // 스트리밍 상태 초기화(첫 청크) - 여기부터는 '유효한 트랜잭션'으로 처리합니다.
-        if (session.bdatDataChannel == null) {
+        if (!session.bdatState.isActive) {
             val dataChannel = Channel<ByteArray>(Channel.BUFFERED)
             val dataStream = CoroutineInputStream(dataChannel)
             val handlerResult = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
             val handlerJob = SmtpStreamingHandlerRunner.launch(session, dataStream, handlerResult)
 
-            session.bdatDataChannel = dataChannel
-            session.bdatStream = dataStream
-            session.bdatHandlerResult = handlerResult
-            session.bdatHandlerJob = handlerJob
+            session.bdatState.start(
+                dataChannel = dataChannel,
+                stream = dataStream,
+                handlerJob = handlerJob,
+                handlerResult = handlerResult,
+            )
         }
 
         session.currentMessageSize = proposedTotal.toInt()
 
         // 청크를 핸들러로 전달
-        val dataChannel = session.bdatDataChannel
+        val dataChannel = session.bdatState.dataChannel
             ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "BDAT internal state error")
 
         // IO 디스패처에서 batch 처리(추후 청크 분할/스풀링 최적화 여지)
@@ -162,8 +164,8 @@ internal class BdatCommand : SmtpCommand(
         // LAST 청크: 입력 종료 → 스트림 종료 → 처리 결과에 따라 최종 응답
         runCatching { dataChannel.close() }
 
-        val handlerJob = session.bdatHandlerJob
-        val handlerResult = session.bdatHandlerResult
+        val handlerJob = session.bdatState.handlerJob
+        val handlerResult = session.bdatState.handlerResult
             ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "BDAT internal state error")
 
         handlerJob?.join()

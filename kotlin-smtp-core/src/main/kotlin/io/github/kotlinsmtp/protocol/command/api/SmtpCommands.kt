@@ -51,7 +51,7 @@ internal enum class SmtpCommands(
                 // CHUNKING(BDAT) 진행 중에는 BDAT 연속 청크 전송이 프로토콜 의미이므로,
                 // 다른 커맨드를 허용하면 상태가 깨질 수 있습니다(실사용 호환).
                 // - 허용: BDAT / RSET / NOOP / QUIT / HELP
-                if (session.bdatDataChannel != null) {
+                if (session.isBdatInProgress()) {
                     val name = parsedCommand.commandName
                     val allowed = name == "BDAT" || name == "RSET" || name == "NOOP" || name == "QUIT" || name == "HELP"
                     if (!allowed) {
