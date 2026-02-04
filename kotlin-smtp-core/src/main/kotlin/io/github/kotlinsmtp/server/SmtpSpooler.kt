@@ -5,6 +5,6 @@ package io.github.kotlinsmtp.server
  *
  * In engine-only core mode, the spool implementation lives in the host module.
  */
-interface SmtpSpooler {
-    fun triggerOnce()
+public interface SmtpSpooler {
+    public fun triggerOnce(): Unit
 }

@@ -8,7 +8,7 @@ package io.github.kotlinsmtp.model
  *   DSN 발송 시 NOTIFY=NEVER/FAILURE 여부를 반영하는 수준으로 사용합니다.
  * - ORCPT는 향후 RFC 3464 형식의 DSN 생성 시 Original-Recipient에 반영하는 것을 TODO로 둡니다.
  */
-data class RcptDsn(
-    val notify: String? = null,
-    val orcpt: String? = null,
+public data class RcptDsn(
+    public val notify: String? = null,
+    public val orcpt: String? = null,
 )

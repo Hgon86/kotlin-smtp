@@ -11,8 +11,22 @@ Rule of thumb:
 - `io.github.kotlinsmtp.server.SmtpServer`
   - create server instance via `SmtpServer.create(...)` / `SmtpServer.builder(...)`, start/stop
   - `SmtpServer` implementation constructor should remain internal
+- `io.github.kotlinsmtp.server.SmtpSpooler`
+  - minimal hook for host-side spool/delivery scheduling
 - `io.github.kotlinsmtp.model.SessionData`
   - observable state passed into handlers
+
+### Core Models (Should Be Public)
+
+- `io.github.kotlinsmtp.model.SmtpUser`
+  - returned by `SmtpUserHandler`
+- `io.github.kotlinsmtp.model.RcptDsn`
+  - DSN-related RCPT parameters surfaced through `SessionData`
+
+### Core Exceptions (Should Be Public)
+
+- `io.github.kotlinsmtp.exception.SmtpSendResponse`
+  - host/starter handlers may throw this to send an SMTP response with a specific status code
 
 ### Extension Interfaces (Should Be Public)
 
@@ -21,7 +35,6 @@ Rule of thumb:
 - `io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler`
 - `io.github.kotlinsmtp.protocol.handler.SmtpUserHandler`
 - `io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler`
-- `io.github.kotlinsmtp.server.SmtpSpooler`
 
 ### Probably NOT Public (Keep Internal Initially)
 

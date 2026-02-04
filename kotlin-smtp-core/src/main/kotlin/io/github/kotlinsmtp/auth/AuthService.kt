@@ -5,14 +5,14 @@ import java.util.Base64
 /**
  * 간단한 인증 서비스 인터페이스
  */
-interface AuthService {
-    val enabled: Boolean
-    val required: Boolean
+public interface AuthService {
+    public val enabled: Boolean
+    public val required: Boolean
 
     /**
      * 사용자명/비밀번호 검증
      */
-    fun verify(username: String, password: String): Boolean
+    public fun verify(username: String, password: String): Boolean
 }
 
 /**

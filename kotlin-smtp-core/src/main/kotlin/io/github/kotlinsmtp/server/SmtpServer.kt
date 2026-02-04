@@ -36,10 +36,10 @@ import javax.net.ssl.SSLException
 
 private val log = KotlinLogging.logger {}
 
-class SmtpServer internal constructor(
-    val port: Int,
-    val hostname: String,
-    val serviceName: String? = "kotlin-smtp",
+public class SmtpServer internal constructor(
+    public val port: Int,
+    public val hostname: String,
+    public val serviceName: String? = "kotlin-smtp",
     internal val authService: AuthService? = null,
     internal val transactionHandlerCreator: (() -> SmtpProtocolHandler)? = null,
     internal val userHandler: SmtpUserHandler? = null,
@@ -186,7 +186,7 @@ class SmtpServer internal constructor(
      * @param wait true인 경우 서버 채널이 닫힐 때까지 반환하지 않습니다.
      * @return 이미 실행 중이면 false, 새로 시작하면 true
      */
-    suspend fun start(wait: Boolean = false): Boolean {
+    public suspend fun start(wait: Boolean = false): Boolean {
         var closeFutureToWait: io.netty.channel.ChannelFuture? = null
         val started = serverMutex.withLock {
             if (state == LifecycleState.RUNNING || channelFuture != null) return@withLock false
@@ -269,7 +269,7 @@ class SmtpServer internal constructor(
      * @param gracefulTimeoutMs graceful shutdown에 사용할 전체 타임아웃(ms)
      * @return 실행 중인 서버를 종료했으면 true, 이미 종료 상태면 false
      */
-    suspend fun stop(gracefulTimeoutMs: Long = 30000): Boolean = serverMutex.withLock {
+    public suspend fun stop(gracefulTimeoutMs: Long = 30000): Boolean = serverMutex.withLock {
         if (state == LifecycleState.RUNNING && channelFuture != null) {
             try {
                 log.info { "Initiating graceful shutdown (port=$port)" }
@@ -321,28 +321,28 @@ class SmtpServer internal constructor(
         } else false
     }
 
-    companion object {
+    public companion object {
         /**
          * Preferred entrypoint for constructing an SMTP server.
          *
          * This enforces the public API boundary by keeping the implementation constructor internal.
          */
         @JvmStatic
-        fun builder(port: Int, hostname: String): Builder = Builder(port, hostname)
+        public fun builder(port: Int, hostname: String): Builder = Builder(port, hostname)
 
         /**
          * Kotlin-friendly factory.
          */
         @JvmStatic
-        fun create(port: Int, hostname: String, configure: Builder.() -> Unit): SmtpServer =
+        public fun create(port: Int, hostname: String, configure: Builder.() -> Unit): SmtpServer =
             builder(port, hostname).apply(configure).build()
     }
 
-    class Builder internal constructor(
+    public class Builder internal constructor(
         private val port: Int,
         private val hostname: String,
     ) {
-        var serviceName: String? = "kotlin-smtp"
+        public var serviceName: String? = "kotlin-smtp"
 
         /** Required: provides the per-session protocol handler. */
         private var protocolHandlerFactory: (() -> SmtpProtocolHandler)? = null
@@ -352,34 +352,34 @@ class SmtpServer internal constructor(
         private var mailingListHandler: SmtpMailingListHandler? = null
         private var spooler: SmtpSpooler? = null
 
-        fun useProtocolHandlerFactory(factory: () -> SmtpProtocolHandler) {
+        public fun useProtocolHandlerFactory(factory: () -> SmtpProtocolHandler): Unit {
             this.protocolHandlerFactory = factory
         }
 
-        fun useAuthService(service: AuthService?) {
+        public fun useAuthService(service: AuthService?): Unit {
             this.authService = service
         }
 
-        fun useUserHandler(handler: SmtpUserHandler?) {
+        public fun useUserHandler(handler: SmtpUserHandler?): Unit {
             this.userHandler = handler
         }
 
-        fun useMailingListHandler(handler: SmtpMailingListHandler?) {
+        public fun useMailingListHandler(handler: SmtpMailingListHandler?): Unit {
             this.mailingListHandler = handler
         }
 
-        fun useSpooler(spooler: SmtpSpooler?) {
+        public fun useSpooler(spooler: SmtpSpooler?): Unit {
             this.spooler = spooler
         }
 
-        val features: FeatureFlags = FeatureFlags()
-        val listener: ListenerPolicy = ListenerPolicy()
-        val proxyProtocol: ProxyProtocolPolicy = ProxyProtocolPolicy()
-        val tls: TlsPolicy = TlsPolicy()
-        val rateLimit: RateLimitPolicy = RateLimitPolicy()
-        val authRateLimit: AuthRateLimitPolicy = AuthRateLimitPolicy()
+        public val features: FeatureFlags = FeatureFlags()
+        public val listener: ListenerPolicy = ListenerPolicy()
+        public val proxyProtocol: ProxyProtocolPolicy = ProxyProtocolPolicy()
+        public val tls: TlsPolicy = TlsPolicy()
+        public val rateLimit: RateLimitPolicy = RateLimitPolicy()
+        public val authRateLimit: AuthRateLimitPolicy = AuthRateLimitPolicy()
 
-        fun build(): SmtpServer {
+        public fun build(): SmtpServer {
             val handlerFactory = protocolHandlerFactory
                 ?: error("protocolHandlerFactory is required. Call useProtocolHandlerFactory { }.")
 
@@ -423,41 +423,41 @@ class SmtpServer internal constructor(
         }
     }
 
-    class FeatureFlags {
-        var enableVrfy: Boolean = false
-        var enableEtrn: Boolean = false
-        var enableExpn: Boolean = false
+    public class FeatureFlags {
+        public var enableVrfy: Boolean = false
+        public var enableEtrn: Boolean = false
+        public var enableExpn: Boolean = false
     }
 
-    class ListenerPolicy {
-        var implicitTls: Boolean = false
-        var enableStartTls: Boolean = true
-        var enableAuth: Boolean = true
-        var requireAuthForMail: Boolean = false
+    public class ListenerPolicy {
+        public var implicitTls: Boolean = false
+        public var enableStartTls: Boolean = true
+        public var enableAuth: Boolean = true
+        public var requireAuthForMail: Boolean = false
     }
 
-    class ProxyProtocolPolicy {
-        var enabled: Boolean = false
-        var trustedProxyCidrs: List<String> = listOf("127.0.0.1/32", "::1/128")
+    public class ProxyProtocolPolicy {
+        public var enabled: Boolean = false
+        public var trustedProxyCidrs: List<String> = listOf("127.0.0.1/32", "::1/128")
     }
 
-    class TlsPolicy {
-        var certChainPath: java.nio.file.Path? = null
-        var privateKeyPath: java.nio.file.Path? = null
-        var minTlsVersion: String = "TLSv1.2"
-        var handshakeTimeoutMs: Int = 30_000
-        var cipherSuites: List<String> = emptyList()
+    public class TlsPolicy {
+        public var certChainPath: java.nio.file.Path? = null
+        public var privateKeyPath: java.nio.file.Path? = null
+        public var minTlsVersion: String = "TLSv1.2"
+        public var handshakeTimeoutMs: Int = 30_000
+        public var cipherSuites: List<String> = emptyList()
     }
 
-    class RateLimitPolicy {
-        var maxConnectionsPerIp: Int = 10
-        var maxMessagesPerIpPerHour: Int = 100
+    public class RateLimitPolicy {
+        public var maxConnectionsPerIp: Int = 10
+        public var maxMessagesPerIpPerHour: Int = 100
     }
 
-    class AuthRateLimitPolicy {
-        var enabled: Boolean = true
-        var maxFailuresPerWindow: Int = 5
-        var windowSeconds: Long = 300
-        var lockoutDurationSeconds: Long = 600
+    public class AuthRateLimitPolicy {
+        public var enabled: Boolean = true
+        public var maxFailuresPerWindow: Int = 5
+        public var windowSeconds: Long = 300
+        public var lockoutDurationSeconds: Long = 600
     }
 }

@@ -3,19 +3,19 @@ package io.github.kotlinsmtp.protocol.handler
 import io.github.kotlinsmtp.model.SessionData
 import java.io.InputStream
 
-abstract class SmtpProtocolHandler {
-    lateinit var sessionData: SessionData
+public abstract class SmtpProtocolHandler {
+    public lateinit var sessionData: SessionData
         internal set
 
     internal fun init(sessionData: SessionData) {
         this.sessionData = sessionData
     }
 
-    open suspend fun from(sender: String) {}
+    public open suspend fun from(sender: String): Unit {}
 
-    open suspend fun to(recipient: String) {}
+    public open suspend fun to(recipient: String): Unit {}
 
-    open suspend fun data(inputStream: InputStream, size: Long) {}
+    public open suspend fun data(inputStream: InputStream, size: Long): Unit {}
 
-    open suspend fun done() {}
+    public open suspend fun done(): Unit {}
 }
