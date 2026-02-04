@@ -146,7 +146,9 @@ internal class BdatCommand : SmtpCommand(
             val handlerJob = session.server.serverScope.launch {
                 val result = runCatching {
                     withTimeout(5.minutes) {
-                        session.transactionHandler?.data(dataStream, 0)
+                        val handler = session.transactionHandler
+                            ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "No transaction handler configured")
+                        handler.data(dataStream, 0)
                     }
                 }.map { Unit }
 

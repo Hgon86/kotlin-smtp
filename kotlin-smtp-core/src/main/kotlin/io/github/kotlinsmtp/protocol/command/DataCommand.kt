@@ -83,7 +83,9 @@ internal class DataCommand : SmtpCommand(
         val handlerJob = session.server.serverScope.launch {
             val result = runCatching {
                 withTimeout(5.minutes) { // 타임아웃 설정
-                    session.transactionHandler?.data(dataStream, 0)
+                    val handler = session.transactionHandler
+                        ?: throw SmtpSendResponse(ERROR_IN_PROCESSING.code, "No transaction handler configured")
+                    handler.data(dataStream, 0)
                 }
             }.map { Unit }
 

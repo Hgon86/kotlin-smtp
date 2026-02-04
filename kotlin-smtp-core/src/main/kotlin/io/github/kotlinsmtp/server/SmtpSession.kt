@@ -13,10 +13,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.flow.MutableStateFlow
-import org.slf4j.MDC
 import java.net.InetSocketAddress
 import java.util.*
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.channels.Channel as KChannel
@@ -30,6 +30,7 @@ internal class SmtpSession(
     // 입력 라인 채널 용량 제한으로 폭주 시 메모리 압박 방지
     private val incomingFrames = KChannel<SmtpInboundFrame>(1024)
     private val inflightBdatBytes = AtomicLong(0)
+    private val closing = AtomicBoolean(false)
     private val sessionActive = MutableStateFlow(true)
     private val sessionId = UUID.randomUUID().toString().take(8)
 
@@ -93,11 +94,6 @@ internal class SmtpSession(
         server.sessionTracker.register(sessionId, this)
         
         try {
-            // MDC에 세션 ID 설정 (구조화된 로깅)
-            MDC.put("sessionId", sessionId)
-            // PROXY protocol(v1)을 사용하는 경우에도 "원본 클라이언트 IP"가 찍히도록 합니다.
-            MDC.put("clientIp", ProxyProtocolSupport.effectiveClientIp(channel) ?: "unknown")
-            
             // 세션 컨텍스트 설정
             sessionData.serverHostname = server.hostname
             sessionData.peerAddress = resolvePeer(ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress())
@@ -119,9 +115,6 @@ internal class SmtpSession(
         } finally {
             // Graceful shutdown: 세션 추적에서 제거
             server.sessionTracker.unregister(sessionId)
-            
-            // MDC 정리 (메모리 누수 방지)
-            MDC.clear()
             channel.close()
         }
     }
@@ -263,6 +256,7 @@ internal class SmtpSession(
     }
 
     fun close() {
+        if (!closing.compareAndSet(false, true)) return
         sessionActive.value = false
         // BDAT 등 진행 중인 스트림/잡이 있으면 누수 방지를 위해 정리합니다.
         // close()는 suspend가 아니므로 서버 스코프에서 비동기 정리합니다.
@@ -385,36 +379,47 @@ internal class SmtpSession(
 
     suspend fun startTls() {
         val sslContext = server.sslContext ?: return
-        val pipeline = channel.pipeline()
 
-        // 이미 TLS가 활성인 경우(또는 ssl 핸들러가 이미 있는 경우) 중복 추가 방지
-        if (pipeline.get("ssl") != null) return
+        // Netty pipeline 변경은 channel event loop에서 수행합니다.
+        suspendCancellableCoroutine { cont ->
+            channel.eventLoop().execute {
+                val pipeline = channel.pipeline()
 
-        // STARTTLS 업그레이드: SslHandler를 파이프라인 맨 앞에 추가하면
-        // 이후 inbound/outbound 데이터가 자동으로 복호화/암호화되어 기존 디코더를 건드릴 필요가 없습니다.
-        val sslHandler = sslContext.newHandler(channel.alloc()).also {
-            // 서버 모드로 강제(안전망)
-            it.engine().useClientMode = false
-            // 핸드셰이크 타임아웃 설정
-            it.setHandshakeTimeout(server.tlsHandshakeTimeout, java.util.concurrent.TimeUnit.MILLISECONDS)
-        }
-
-        pipeline.addFirst("ssl", sslHandler)
-
-        // 핸드셰이크 결과에 따라 세션 상태를 전환합니다.
-        sslHandler.handshakeFuture().addListener { future ->
-            if (future.isSuccess) {
-                // 핸드셰이크 성공 이후에만 TLS 플래그/세션 리셋/EHLO 강제를 적용합니다.
-                server.serverScope.launch {
-                    isTls = true
-                    sessionData.tlsActive = true
-                    // STARTTLS 이후에는 인증 상태를 포함해 세션을 리셋해야 합니다.
-                    resetTransaction(preserveGreeting = false, preserveAuth = false)
-                    requireEhloAfterTls = true
+                // 이미 TLS가 활성인 경우(또는 ssl 핸들러가 이미 있는 경우) 중복 추가 방지
+                if (pipeline.get("ssl") != null) {
+                    cont.resume(Unit)
+                    return@execute
                 }
-            } else {
-                log.warn(future.cause()) { "TLS handshake failed; closing connection" }
-                close()
+
+                // STARTTLS 업그레이드: SslHandler를 파이프라인 맨 앞에 추가하면
+                // 이후 inbound/outbound 데이터가 자동으로 복호화/암호화되어 기존 디코더를 건드릴 필요가 없습니다.
+                val sslHandler = sslContext.newHandler(channel.alloc()).also {
+                    // 서버 모드로 강제(안전망)
+                    it.engine().useClientMode = false
+                    // 핸드셰이크 타임아웃 설정
+                    it.setHandshakeTimeout(server.tlsHandshakeTimeout, java.util.concurrent.TimeUnit.MILLISECONDS)
+                }
+
+                pipeline.addFirst("ssl", sslHandler)
+
+                // 핸드셰이크 결과에 따라 세션 상태를 전환합니다.
+                sslHandler.handshakeFuture().addListener { future ->
+                    if (future.isSuccess) {
+                        // 핸드셰이크 성공 이후에만 TLS 플래그/세션 리셋/EHLO 강제를 적용합니다.
+                        server.serverScope.launch {
+                            isTls = true
+                            sessionData.tlsActive = true
+                            // STARTTLS 이후에는 인증 상태를 포함해 세션을 리셋해야 합니다.
+                            resetTransaction(preserveGreeting = false, preserveAuth = false)
+                            requireEhloAfterTls = true
+                        }
+                    } else {
+                        log.warn(future.cause()) { "TLS handshake failed; closing connection" }
+                        close()
+                    }
+                }
+
+                cont.resume(Unit)
             }
         }
     }
