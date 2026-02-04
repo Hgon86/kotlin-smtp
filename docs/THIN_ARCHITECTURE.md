@@ -25,13 +25,22 @@ Non-goals:
 
 3) Session orchestration
 - `io.github.kotlinsmtp.protocol.handler.SmtpChannelHandler` creates one `SmtpSession` per connection.
-- It feeds inbound frames into a per-session coroutine consumer to preserve ordering.
+- Before session start (PROXY/implicit TLS gating), it buffers only a small number of line frames.
+- After session start, it enqueues inbound frames directly into the session via `SmtpSession.tryEnqueueInboundFrame(...)`.
+- Inbound flow-control is handled by `SmtpBackpressureController` (autoRead throttling) and inflight BDAT caps.
 
 4) SMTP state machine
 - `io.github.kotlinsmtp.server.SmtpSession.handle()`:
   - sends greeting (220)
   - reads lines sequentially
   - dispatches via `io.github.kotlinsmtp.protocol.command.api.SmtpCommands.handle(line, session)`
+
+STARTTLS upgrade flow (notable)
+- `StartTlsCommand` triggers a guarded upgrade:
+  - pipelining is rejected
+  - a temporary inbound gate buffers raw bytes until `SslHandler` is installed
+  - handshake is awaited before session state is reset
+  - implementation is isolated in `io.github.kotlinsmtp.server.SmtpTlsUpgradeManager`
 
 5) Command layer
 - Each command updates `SessionData` and/or calls into the transaction handler.

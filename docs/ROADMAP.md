@@ -4,10 +4,9 @@
 
 ## 현재 상태 (Current State)
 
-- **Base Package**: `io.github.kotlinsmtp` (리팩토링 완료)
-- **모듈 구조**: `kotlin-smtp-core` (라이브러리) + `kotlin-smtp-spring-boot-starter` (Spring Boot 자동설정)
-- **최근 커밋**: `8f0e121 refactor: extract core module and rename base package`
+- **모듈 구조**: `kotlin-smtp-core`(Spring-free) + `kotlin-smtp-spring-boot-starter`(wiring)
 - **테스트**: `./gradlew test` 통과
+- **진행 상황 상세**: `docs/STATUS.md` 참고
 
 ---
 
@@ -20,6 +19,15 @@
 - [x] AuthRegistry 전역 제거: `SmtpServer.authService` 주입 방식으로 변경
 - [x] jakarta.mail 의존성 제거: 주소 검증 로직 단순화
 
+### Phase 4: Runtime 안정화 + 유지보수 리팩터링 ✅
+
+- [x] STARTTLS 업그레이드 안정화(파이프라이닝 방지, 게이트, 핸드셰이크 동기화)
+- [x] inbound 이중 버퍼 제거 및 메모리 상한 강화(BDAT inflight cap 우회 방지)
+- [x] 백프레셔 도입(autoRead 토글)
+- [x] 큰 파일 책임 분리(STARTTLS/backpressure/BDAT/reset)
+- [x] DATA/BDAT 공통 처리 유틸 추출
+- [x] 세션 시작 게이팅을 state machine 형태로 명확화
+
 ### a4: Windows 경로 기본값 제거 + 호스트 설정 정리 ✅
 
 - [x] Windows 특정 경로(`C:\smtp-server\...`) 기본값 제거
@@ -31,7 +39,9 @@
 
 ## 남은 작업 (Remaining Work)
 
-### 1. AUTH/STARTTLS 테스트 보강 (a2) - 추천 다음 작업
+남은 작업은 `docs/STATUS.md`에 상세히 정리합니다. 이 파일은 "한눈에 보는 목록"만 유지합니다.
+
+### 1. Public API 경계 확정 (core)
 
 **목표**: 인증 및 TLS 관련 핵심 경로의 테스트 커버리지 확보
 
@@ -51,7 +61,7 @@
 
 ---
 
-### 1.5. Public API 경계 확정 (core) - 라이브러리화 핵심
+### 2. Spring Boot Starter 기능/문서 마감
 
 **목표**: Maven 배포를 염두에 두고, "호스트가 의존해야 하는 타입"만 안정화(semver 대상)하고 나머지는 내부로 숨김
 
@@ -69,7 +79,7 @@
 
 ---
 
-### 1.6. Core 내부 리팩토링/정리 (API 경계 확정 후)
+### 3. 배포 준비(Gradle publish + 라이선스 + 릴리즈 프로세스)
 
 **목표**: 기능 변경 없이 유지보수성/가독성/테스트 용이성 개선 (public API는 그대로 유지)
 
@@ -149,12 +159,12 @@
 - [ ] `docs/` 디렉토리 정리:
   - 통합된 ROADMAP.md는 이미 생성됨
   - 중복/구식 문서 제거 검토 필요
-- [ ] `docs/THIN_ARCHITECTURE.md` 업데이트 (core 모듈 분리 반영)
+- [ ] `docs/THIN_ARCHITECTURE.md` 업데이트 (현재 런타임 흐름 반영)
 - [ ] API 문서화 (KDoc 활용)
 
 **관련 파일**:
 - `docs/*.md`
-- `READMD.md` (이름 변경 필요: README.md)
+- [x] `READMD.md` → `README.md` 정리
 
 **우선순위**: MEDIUM
 
@@ -275,5 +285,5 @@
 
 ---
 
-*최종 업데이트: 2026-02-02*
+*최종 업데이트: 2026-02-04*
 *다음 검토 예정: 작업 완료 시마다 업데이트*
