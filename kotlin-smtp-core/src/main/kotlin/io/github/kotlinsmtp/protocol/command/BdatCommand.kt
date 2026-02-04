@@ -5,16 +5,12 @@ import io.github.kotlinsmtp.protocol.command.api.ParsedCommand
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.CoroutineInputStream
 import io.github.kotlinsmtp.server.SmtpSession
+import io.github.kotlinsmtp.server.SmtpStreamingHandlerRunner
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.kotlinsmtp.utils.Values
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlin.time.Duration.Companion.minutes
 
 /**
  * ESMTP CHUNKING (RFC 3030) - BDAT
@@ -130,20 +126,8 @@ internal class BdatCommand : SmtpCommand(
         if (session.bdatDataChannel == null) {
             val dataChannel = Channel<ByteArray>(Channel.BUFFERED)
             val dataStream = CoroutineInputStream(dataChannel)
-            val handlerResult = CompletableDeferred<Result<Unit>>()
-
-            val handlerJob = session.server.serverScope.launch {
-                val result = runCatching {
-                    withTimeout(5.minutes) {
-                        val handler = session.transactionHandler
-                            ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "No transaction handler configured")
-                        handler.data(dataStream, 0)
-                    }
-                }.map { Unit }
-
-                handlerResult.complete(result)
-                runCatching { dataStream.close() }
-            }
+            val handlerResult = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+            val handlerJob = SmtpStreamingHandlerRunner.launch(session, dataStream, handlerResult)
 
             session.bdatDataChannel = dataChannel
             session.bdatStream = dataStream
@@ -187,24 +171,6 @@ internal class BdatCommand : SmtpCommand(
 
         // 상태 정리(성공/실패 공통)
         session.clearBdatState()
-
-        if (processing.isFailure) {
-            val e = processing.exceptionOrNull()!!
-            when (e) {
-                is TimeoutCancellationException ->
-                    session.sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Processing timeout")
-
-                is SmtpSendResponse ->
-                    session.sendResponse(e.statusCode, e.message)
-
-                else ->
-                    session.sendResponse(SmtpStatusCode.TRANSACTION_FAILED.code, "Transaction failed")
-            }
-            session.resetTransaction(preserveGreeting = true)
-            return
-        }
-
-        session.resetTransaction(preserveGreeting = true)
-        session.sendResponse(SmtpStatusCode.OKAY.code, "Ok")
+        SmtpStreamingHandlerRunner.finalizeTransaction(session, processing)
     }
 }

@@ -5,6 +5,7 @@ import io.github.kotlinsmtp.protocol.command.api.ParsedCommand
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.CoroutineInputStream
 import io.github.kotlinsmtp.server.SmtpSession
+import io.github.kotlinsmtp.server.SmtpStreamingHandlerRunner
 import io.github.kotlinsmtp.utils.SmtpStatusCode.ERROR_IN_PROCESSING
 import io.github.kotlinsmtp.utils.SmtpStatusCode.EXCEEDED_STORAGE_ALLOCATION
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
@@ -12,15 +13,10 @@ import io.github.kotlinsmtp.utils.SmtpStatusCode.START_MAIL_INPUT
 import io.github.kotlinsmtp.utils.SmtpStatusCode.TRANSACTION_FAILED
 import io.github.kotlinsmtp.utils.SmtpStatusCode.BAD_COMMAND_SEQUENCE
 import io.github.kotlinsmtp.utils.Values.MAX_MESSAGE_SIZE
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
-import kotlin.time.Duration.Companion.minutes
 
 internal class DataCommand : SmtpCommand(
     "DATA",
@@ -59,22 +55,11 @@ internal class DataCommand : SmtpCommand(
 
         val dataChannel = Channel<ByteArray>(Channel.BUFFERED) // 코루틴 채널 생성
         val dataStream = CoroutineInputStream(dataChannel) // 데이터 스트림 생성
-        val handlerResult = CompletableDeferred<Result<Unit>>()
+        val handlerResult = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
 
         // 별도 코루틴에서 트랜잭션 핸들러 실행
         // 중요: 여기서 SMTP 응답을 보내지 않고(Result로만 반환) DATA의 최종 응답은 execute()가 "단 한 번"만 보냅니다.
-        val handlerJob = session.server.serverScope.launch {
-            val result = runCatching {
-                withTimeout(5.minutes) { // 타임아웃 설정
-                    val handler = session.transactionHandler
-                        ?: throw SmtpSendResponse(ERROR_IN_PROCESSING.code, "No transaction handler configured")
-                    handler.data(dataStream, 0)
-                }
-            }.map { Unit }
-
-            handlerResult.complete(result)
-            runCatching { dataStream.close() }
-        }
+        val handlerJob = SmtpStreamingHandlerRunner.launch(session, dataStream, handlerResult)
 
         // DATA 본문은 로그에 남기지 않도록 세션 플래그를 켭니다.
         session.inDataMode = true
@@ -160,25 +145,6 @@ internal class DataCommand : SmtpCommand(
         // 핸들러 결과 확인 (성공시에만 250)
         handlerJob.join()
         val processing = handlerResult.await()
-        if (processing.isFailure) {
-            val e = processing.exceptionOrNull()!!
-            when (e) {
-                is TimeoutCancellationException ->
-                    session.sendResponse(ERROR_IN_PROCESSING.code, "Processing timeout")
-
-                is SmtpSendResponse ->
-                    session.sendResponse(e.statusCode, e.message)
-
-                else ->
-                    session.sendResponse(TRANSACTION_FAILED.code, "Transaction failed")
-            }
-            // 실패 시에도 세션은 유지하되(일반적인 SMTP 서버 동작), 트랜잭션은 리셋합니다.
-            session.resetTransaction(preserveGreeting = true)
-            return
-        }
-
-        // 성공: 트랜잭션 상태 리셋(인사 유지) 후 250 응답
-        session.resetTransaction(preserveGreeting = true)
-        session.sendResponse(OKAY.code, "Ok")
+        SmtpStreamingHandlerRunner.finalizeTransaction(session, processing)
     }
 }
