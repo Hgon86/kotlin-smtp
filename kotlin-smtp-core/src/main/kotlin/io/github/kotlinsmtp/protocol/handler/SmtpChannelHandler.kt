@@ -23,6 +23,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import java.net.InetSocketAddress
 import java.util.ArrayDeque
+import java.util.EnumSet
 import java.util.concurrent.atomic.AtomicBoolean
 
 private val log = KotlinLogging.logger {}
@@ -39,11 +40,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
     // - bytes 프레임은 절대 버퍼링하지 않습니다(BDAT 등은 동기화가 깨질 수 있음)
     private val pendingLines: ArrayDeque<SmtpInboundFrame.Line> = ArrayDeque()
 
-    // PROXY protocol을 사용하는 경우, 원본 IP를 알기 전까지 세션을 시작하면 안 됩니다.
-    private var proxyReady: Boolean = !server.proxyProtocolEnabled
-    private var implicitTlsReady: Boolean = !server.implicitTls
-    private val sessionStarted: AtomicBoolean = AtomicBoolean(false)
-    private var pendingRejectMessage: String? = null
+    private val startGate: SessionStartGate = SessionStartGate(server)
 
     override fun channelActive(ctx: ChannelHandlerContext) {
         // PROXY 미사용인 경우: 즉시(프록시 IP가 아니라) 원본 TCP remoteAddress로 레이트리밋을 적용합니다.
@@ -74,11 +71,11 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
                     ctx.close()
                     return@addListener
                 }
-                implicitTlsReady = true
+                startGate.markSatisfied(SessionStartGate.Condition.IMPLICIT_TLS)
                 scope.launch { maybeStartSession(ctx) }
             }
         } else {
-            implicitTlsReady = true
+            startGate.markSatisfied(SessionStartGate.Condition.IMPLICIT_TLS)
         }
 
         // PROXY를 쓰지 않으면 여기서 바로 시작 가능
@@ -86,14 +83,9 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
     }
 
     private suspend fun maybeStartSession(ctx: ChannelHandlerContext) {
-        if (sessionStarted.get()) return
-        if (!proxyReady) return
-        if (!implicitTlsReady) return
+        if (!startGate.tryStartIfReady()) return
 
-        if (!sessionStarted.compareAndSet(false, true)) return
-
-        // PROXY가 활성화된 경우, 여기 시점에는 clientIp가 "원본 클라이언트 IP"로 확정되어 있어야 합니다.
-        pendingRejectMessage?.let { msg ->
+        startGate.pendingRejectMessage?.let { msg ->
             // implicit TLS에서는 최소한 핸드셰이크 이후에만 응답을 보낼 수 있으므로, 여기서 처리합니다.
             ctx.writeAndFlush("$msg\r\n").addListener(ChannelFutureListener.CLOSE)
             return
@@ -184,7 +176,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         val realPeer = InetSocketAddress(sourceAddr, sourcePort)
         ctx.channel().attr(ProxyProtocolSupport.REAL_PEER).set(realPeer)
         clientIp = sourceAddr
-        proxyReady = true
+        startGate.markSatisfied(SessionStartGate.Condition.PROXY)
 
         // 디코더는 1회 처리 후 제거해 오버헤드 및 오동작 가능성을 줄입니다.
         runCatching { ctx.pipeline().remove("proxyDecoder") }
@@ -192,7 +184,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         // PROXY 사용 시에는 여기에서 레이트리밋을 적용해야 "원본 IP" 기준이 됩니다.
         if (clientIp != null && !server.rateLimiter.allowConnection(clientIp!!)) {
             val response = "421 4.7.0 Too many connections from your IP address. Try again later."
-            pendingRejectMessage = response
+            startGate.pendingRejectMessage = response
             log.warn { "Rate limit (proxy): Rejected connection from $clientIp" }
 
             // 평문 리스너는 즉시 응답 가능, implicit TLS는 핸드셰이크 완료 후 maybeStartSession에서 응답
@@ -279,5 +271,31 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         } else {
             super.userEventTriggered(ctx, evt)
         }
+    }
+}
+
+private class SessionStartGate(server: SmtpServer) {
+    enum class Condition {
+        PROXY,
+        IMPLICIT_TLS,
+    }
+
+    private val pending: EnumSet<Condition> = EnumSet.noneOf(Condition::class.java).also {
+        if (server.proxyProtocolEnabled) it.add(Condition.PROXY)
+        if (server.implicitTls) it.add(Condition.IMPLICIT_TLS)
+    }
+
+    private val started = AtomicBoolean(false)
+
+    @Volatile
+    var pendingRejectMessage: String? = null
+
+    fun markSatisfied(condition: Condition) {
+        pending.remove(condition)
+    }
+
+    fun tryStartIfReady(): Boolean {
+        if (pending.isNotEmpty()) return false
+        return started.compareAndSet(false, true)
     }
 }
