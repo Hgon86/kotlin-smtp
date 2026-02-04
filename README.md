@@ -37,12 +37,14 @@ kotlin-smtp/
 
 ## 빠른 시작
 
-### 1. 필수 설정
+### 1. 최소 설정(Starter로 바로 기동)
 
-`application.yml` 또는 환경변수로 저장소 경로를 설정해야 합니다:
+`kotlin-smtp-spring-boot-starter`는 **기본 저장/스풀 구현**을 포함하므로, 아래의 저장 경로만 지정하면 서버가 기동됩니다.
 
 ```yaml
 smtp:
+  port: 2525
+  hostname: localhost
   storage:
     mailboxDir: ./data/mailboxes
     tempDir: ./data/temp
@@ -57,6 +59,8 @@ export SMTP_MAILBOX_DIR=./data/mailboxes
 export SMTP_TEMP_DIR=./data/temp
 export SMTP_LISTS_DIR=./data/lists
 export SMTP_SPOOL_DIR=./data/spool
+export SMTP_PORT=2525
+export SMTP_HOSTNAME=localhost
 ```
 
 ### 2. Spring Boot 앱에서 사용
@@ -82,10 +86,10 @@ smtp:
       serviceName: ESMTP
       enableStartTls: true
       enableAuth: true
-    - port: 2587                # Submission
+    - port: 587                 # Submission
       serviceName: SUBMISSION
       requireAuthForMail: true
-    - port: 2465                # SMTPS
+    - port: 465                 # SMTPS
       serviceName: SMTPS
       implicitTls: true
 
@@ -97,7 +101,7 @@ smtp:
 
   # TLS 설정
   ssl:
-    enabled: true
+    enabled: true               # 인증서/키를 제공하여 STARTTLS/SMTPS를 가능하게 함
     certChainFile: /etc/smtp/certs/tls.crt
     privateKeyFile: /etc/smtp/certs/tls.key
 
@@ -123,6 +127,12 @@ smtp:
       user1: "{bcrypt}$2a$10$..."
 ```
 
+주의:
+- `smtp.ssl.enabled=true`는 "TLS용 인증서/키 제공"을 의미합니다.
+  - STARTTLS를 광고/허용할지는 리스너 정책(`listeners[].enableStartTls`)입니다.
+  - SMTPS(implicit TLS)를 사용할지는 리스너 정책(`listeners[].implicitTls`)입니다.
+- `smtp.listeners`를 지정하면 단일 포트용 `smtp.port`는 무시됩니다.
+
 ### 환경변수 우선순위
 
 모든 설정은 환경변수로 오버라이드 가능합니다:
@@ -131,9 +141,10 @@ smtp:
 |---------|------|------|
 | `SMTP_MAILBOX_DIR` | 메일박스 저장 경로 | `/var/smtp/mailboxes` |
 | `SMTP_TEMP_DIR` | 임시 파일 경로 | `/var/smtp/temp` |
+| `SMTP_LISTS_DIR` | 메일링 리스트 경로 | `/var/smtp/lists` |
 | `SMTP_SPOOL_DIR` | 스풀 디렉토리 | `/var/smtp/spool` |
 | `SMTP_HOSTNAME` | 서버 호스트명 | `smtp.example.com` |
-| `SMTP_TLS_ENABLED` | TLS 활성화 | `true` |
+| `SMTP_SSL_ENABLED` | TLS(인증서/키) 사용 | `true` |
 | `SMTP_RELAY_ENABLED` | 릴레이 활성화 | `false` |
 | `SMTP_AUTH_ENABLED` | 인증 활성화 | `true` |
 
@@ -221,7 +232,7 @@ dependencies {
 ## 보안 가이드
 
 1. **오픈 릴레이 방지**: `smtp.relay.requireAuthForRelay=true` 설정
-2. **TLS 강제**: `trustAll=false` (운영 환경에서만)
+2. **TLS 신뢰**: `trustAll=false` (운영 환경에서만)
 3. **Rate Limiting**: IP당 연결/메시지 수 제한
 4. **PROXY Protocol**: LB 뒤에서만 사용, trustedCidrs 설정 필수
 

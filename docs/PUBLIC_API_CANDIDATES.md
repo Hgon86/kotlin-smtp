@@ -30,6 +30,16 @@ Rule of thumb:
 - Concrete implementations (until we intentionally ship them as defaults):
   - `FileMessageStore`, `InMemoryAuthService`, `LocalMailboxManager`, `MailRelay`, `MailSpooler`, `MailDeliveryService`, `DsnService`
 
+### Note: Storage / Metadata / Events
+
+This library is intended to be infrastructure-agnostic.
+
+- Raw EML storage (S3/Kafka/DB) and metadata persistence are expected to be provided by:
+  - host applications, and/or
+  - optional integration modules.
+
+The core module should only expose minimal extension interfaces (SPI) required for these integrations.
+
 ### Compatibility Note
 
 If we publish, we should treat "public" packages as semver-stable.

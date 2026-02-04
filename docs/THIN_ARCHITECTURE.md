@@ -1,17 +1,19 @@
-## Thin Architecture (Current Codebase)
+## Thin Architecture (현재 코드베이스)
 
-This document is a "thin" map of the current Kotlin SMTP project so we can refactor safely into a library (core) without losing behavior.
+이 문서는 Kotlin SMTP 프로젝트의 현재 구조를 "얇게"(thin) 정리한 지도입니다.
+라이브러리(core)로 발전시키는 과정에서 런타임 동작을 잃지 않기 위해, 흐름/경계/확장점을 최소한으로 기록합니다.
 
-Goals:
-- Capture the end-to-end runtime flow (connection -> commands -> message acceptance -> delivery).
-- Identify extension points (interfaces / pluggable behavior).
-- Define boundaries for the first refactor step: extracting a Spring-free `core` module.
+목표:
+- 런타임 end-to-end 흐름(접속 -> 명령 처리 -> 메시지 수신 -> 저장/전달)을 요약
+- 호스트가 교체 가능한 확장점(SPI)을 식별
+- 범용 라이브러리 경계(core vs starter/host)를 명확히 함
 
-Non-goals:
-- Full RFC documentation.
-- Rewriting the code or adding large amounts of comments.
+범위 밖(Non-goals):
+- RFC 전체 설명
+- MIME 파싱/첨부파일 분리/인라인 이미지 처리 같은 "메일 서비스" 후처리
+- 코드 재작성
 
-### Runtime Flow (Happy Path)
+### 런타임 흐름(정상 시나리오)
 
 1) TCP accept
 - `io.github.kotlinsmtp.server.SmtpServer` creates the Netty pipeline.
@@ -35,7 +37,7 @@ Non-goals:
   - reads lines sequentially
   - dispatches via `io.github.kotlinsmtp.protocol.command.api.SmtpCommands.handle(line, session)`
 
-STARTTLS upgrade flow (notable)
+STARTTLS 업그레이드 흐름(중요)
 - `StartTlsCommand` triggers a guarded upgrade:
   - pipelining is rejected
   - a temporary inbound gate buffers raw bytes until `SslHandler` is installed
@@ -60,7 +62,7 @@ STARTTLS upgrade flow (notable)
   - external: `MailRelay.relayMessage(...)` (DNS MX lookup + Jakarta Mail transport)
 - `io.github.kotlinsmtp.spool.MailSpooler` provides retry/backoff + optional DSN generation via `DsnService`.
 
-### Key State Objects
+### 핵심 상태 객체
 
 - `io.github.kotlinsmtp.model.SessionData`:
   - greeting state (EHLO/HELO)
@@ -73,9 +75,9 @@ STARTTLS upgrade flow (notable)
   - owns DATA/BDAT mode and buffering
   - provides `sendResponse(...)` and `sendMultilineResponse(...)`
 
-### Extension Points (Current)
+### 확장점(현재)
 
-These are the primary seams that already exist (good for library extraction):
+현재 이미 존재하는 주요 경계(SPI 후보)입니다. 범용 라이브러리화를 위해 우선적으로 유지/안정화할 대상입니다.
 
 - `io.github.kotlinsmtp.storage.MessageStore`
   - boundary for storing accepted raw RFC822 (usually .eml)
@@ -97,36 +99,37 @@ These are the primary seams that already exist (good for library extraction):
   - EXPN mailing list expansion
   - current impl: `LocalFileMailingListHandler`
 
-### Spring-Specific Layer (Wiring Only)
+### Spring 전용 레이어(와이어링만)
 
-These classes exist only to wire and run the server via Spring Boot:
+아래 클래스들은 Spring Boot에서 서버를 구성/실행하기 위한 와이어링 계층입니다.
 
 - `io.github.kotlinsmtp.server.SmtpServerRunner` (start/stop on Spring lifecycle)
 - `io.github.kotlinsmtp.config.KotlinSmtpAutoConfiguration` (auto-config wiring)
 - `io.github.kotlinsmtp.config.SmtpServerProperties` (ConfigurationProperties)
 
-Note: a runnable Spring Boot app (portfolio/demo) is intentionally deferred until the library boundary and public API are stable.
+Note: runnable example app(포트폴리오/데모)는 라이브러리 경계와 public API가 안정화된 뒤 마지막 단계에서 추가합니다.
 
-Important: extracting a Spring-free `core` module does NOT mean "the server cannot start".
-It means:
-- `core` provides the SMTP engine types (SmtpServer/SmtpSession/etc.) and can be instantiated by any host.
-- a separate host module (Spring Boot app or starter) creates/wires the objects and calls `server.start()`.
+중요: Spring-free `core`는 "서버를 실행할 수 없다"가 아닙니다.
+- `core`는 SMTP 엔진 타입(SmtpServer/SmtpSession 등)과 확장점(SPI)을 제공합니다.
+- host 모듈(Spring Boot starter 등)이 이를 구성하고 `server.start()`를 호출합니다.
 
-### What We Want After Refactor (Target Boundaries)
+### 범용 라이브러리 경계(현재 방향)
 
-Minimum viable library split:
+최소 경계(권장):
 
 - `kotlin-smtp-core`
   - Netty SMTP engine + protocol state machine
   - public interfaces (MessageStore, AuthService, SmtpProtocolHandler, ...)
   - NO Spring dependencies
 
-- host module (choose one now, add others later):
-  - `kotlin-smtp-spring-boot-starter` (auto-configuration)
+- host/통합 모듈(필요에 따라 선택):
+  - `kotlin-smtp-spring-boot-starter` (auto-configuration + 기본 구현)
+  - 옵션 모듈(예: S3/Kafka/DB 메타 저장 등)
   - `kotlin-smtp-example-app` (separate, last)
 
-### Risks / Couplings To Watch During Extraction
+### 주의할 결합/리스크
 
-- Global registry: `AuthRegistry` (global mutable) makes multi-server tests/config harder.
+- "저장/전달/후처리"가 기본 핸들러에 과도하게 섞이면 교체 비용이 커집니다.
+  - 범용 라이브러리 목표에서는 core에 인프라 의존을 넣지 않고, starter/옵션 모듈로 분리하는 방향을 유지합니다.
 - File-system defaults: Windows paths in config (`C:\smtp-server\...`) are host-specific.
 - Mixed responsibilities in the default handler (`SimpleSmtpProtocolHandler` calls store + delivery + spool).

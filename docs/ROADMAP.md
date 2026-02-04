@@ -17,7 +17,7 @@
 - [x] 패키지명 변경: `com.crinity.kotlinsmtp` → `io.github.kotlinsmtp`
 - [x] Core 모듈 분리: Spring-free 엔진/프로토콜을 `kotlin-smtp-core`로 이동
 - [x] AuthRegistry 전역 제거: `SmtpServer.authService` 주입 방식으로 변경
-- [x] jakarta.mail 의존성 제거: 주소 검증 로직 단순화
+- [x] (core) jakarta.mail 의존성 제거: 주소 검증 로직 단순화
 
 ### Phase 4: Runtime 안정화 + 유지보수 리팩터링 ✅
 
@@ -43,7 +43,7 @@
 
 ### 1. Public API 경계 확정 (core)
 
-**목표**: 인증 및 TLS 관련 핵심 경로의 테스트 커버리지 확보
+**목표**: host가 의존해야 하는 타입만 public으로 안정화(semver 대상)하고, 내부(Netty/프레이밍/세션 구현)는 숨김
 
 **TODO**:
 - [ ] `AUTH PLAIN` 성공/실패 시나리오 테스트
@@ -63,7 +63,7 @@
 
 ### 2. Spring Boot Starter 기능/문서 마감
 
-**목표**: Maven 배포를 염두에 두고, "호스트가 의존해야 하는 타입"만 안정화(semver 대상)하고 나머지는 내부로 숨김
+**목표**: core + starter 의존 + 최소 설정으로 서버가 바로 기동되도록 auto-config/문서/스모크 테스트를 마감
 
 **TODO**:
 - [ ] public package 목록 확정 (기준: host가 구현/호출해야 하는 인터페이스)
@@ -73,7 +73,7 @@
 - [ ] (선택) Java 친화 facade 필요 여부 결정
 
 **출력물**:
-- `docs/PUBLIC_API_POLICY.md` (새 문서): "무엇이 public API인가"와 변경 규칙
+- `docs/PUBLIC_API_POLICY.md`: "무엇이 public API인가"와 변경 규칙
 
 **우선순위**: HIGH
 
@@ -97,7 +97,7 @@
 
 ---
 
-### 2. 설정 시스템 고도화
+### 4. 설정 시스템 고도화
 
 **목표**: 운영환경에서 안전하고 유연한 설정 관리
 
@@ -116,7 +116,7 @@
 
 ---
 
-### 2.5. Maven 배포 준비 (라이브러리)
+### 5. Maven 배포 준비 (라이브러리)
 
 **목표**: core + starter를 독립 artifact로 배포 가능하게 정리
 
@@ -129,7 +129,7 @@
 
 ---
 
-### 3. 메트릭 및 모니터링 (관측성)
+### 6. 메트릭 및 모니터링 (관측성)
 
 **목표**: 운영 환경에서 상태 파악 가능한 메트릭 노출
 
@@ -151,7 +151,7 @@
 
 ---
 
-### 4. 문서 정리 및 통합
+### 7. 문서 정리 및 통합
 
 **목표**: 문서 일관성 확보 및 중복 제거
 
@@ -170,18 +170,17 @@
 
 ---
 
-### 5. Spring Boot Starter 분리 (3모듈 구조로 정리)
+### 8. Spring Boot Starter 구조 재정돈(옵션 모듈 분리)
 
 **목표**: 라이브러리화 최종 형태를 안정화
 
 **TODO**:
-- [ ] `kotlin-smtp-spring-boot-starter` 신규 모듈 생성
-- [ ] starter에서 `@ConfigurationProperties` + auto-config 제공
-- [ ] example app은 가장 마지막(포트폴리오 단계)으로 미룸
+- [ ] (검토) 이 항목은 이미 완료된 것으로 보입니다(현재 저장소에 `kotlin-smtp-spring-boot-starter` 모듈이 존재).
+- [ ] 필요하면 "starter 구조 재정돈"(설정 최소화/기본 구현 범위/옵션 모듈 분리) 같은 형태로 TODO를 재정의
 
 ---
 
-### 6. Example App (포트폴리오용, 마지막에 진행)
+### 9. Example App (포트폴리오용, 마지막에 진행)
 
 **목표**: 라이브러리(core + starter)를 소비해서 SMTP 서버 앱까지 구성
 
@@ -194,7 +193,7 @@
 
 ---
 
-### 6. CI/CD 파이프라인
+### 10. CI/CD 파이프라인
 
 **목표**: 자동화된 빌드/테스트/배포
 

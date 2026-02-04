@@ -48,7 +48,35 @@
 
 ## 앞으로 해야 할 작업(아주 상세)
 
-아래는 "라이브러리로 배포 가능한 수준"을 기준으로, 남은 작업을 큰 목표별로 세분화한 목록입니다.
+아래는 "범용 라이브러리로 배포 가능한 수준"을 기준으로, 남은 작업을 큰 목표별로 세분화한 목록입니다.
+
+### 라이브러리 경계(중요: 범용 목표)
+
+이 프로젝트의 목표는 "SMTP 서버를 **정확하게 수신**하는 core"와 "바로 실행 가능한 기본 구성을 제공하는 starter"를 분리하는 것입니다.
+
+결정 사항(현재 합의):
+- core는 SMTP 수신(프로토콜/세션/TLS/AUTH/프레이밍)과 확장점(SPI)에 집중하고, 인프라(DB/S3/Kafka/MIME 파서)는 강제하지 않습니다.
+- 수신 결과물의 1급 산출물은 Raw EML(RFC822 원문)이며, 후처리(첨부 분리/인라인 이미지 처리/검색 인덱싱 등)는 별도 파이프라인(옵션)으로 둡니다.
+- starter는 "최소 설정으로 기동" 가능한 기본 조합을 제공하되, 특정 인프라 통합은 옵션 모듈/사용자 구현으로 분리합니다.
+
+- core(`kotlin-smtp-core`)의 책임
+  - SMTP 세션/상태머신, 프레이밍(DATA/BDAT), STARTTLS/AUTH, backpressure, timeout 등 **프로토콜 정확성**
+  - 호스트가 확장할 수 있도록 최소한의 **SPI(확장점) 인터페이스** 제공
+  - 수신 결과물은 원문(raw) RFC822 메시지 스트림과 envelope 메타데이터로 표현(아래 참고)
+- starter(`kotlin-smtp-spring-boot-starter`)의 책임
+  - core를 자동 설정하여, 필수 설정만 주면 "SMTP 서버가 바로 뜨는" 기본 경험 제공
+  - 레퍼런스 구현(로컬 파일 기반 store/spool 등)을 제공하되, 특정 인프라(DB/S3/Kafka 등)는 **옵션**으로 둠
+- Non-goals(의도적으로 core 범위 밖)
+  - MIME 파싱/첨부파일 분리/인라인 이미지 추출/이미지 서버 업로드 같은 "메일 서비스" 후처리
+  - 특정 DB/JPA/R2DBC/클라우드 SDK 종속을 core에 포함
+
+용어 정리(권장):
+- **Raw EML**: SMTP로 수신한 RFC822 원문. DATA/BDAT는 대부분 이미 RFC822이므로 별도의 "조립"보다는 BDAT chunk 결합 + 라인엔딩/도트스터핑 정규화가 핵심입니다.
+- **Envelope 메타데이터**: MAIL FROM/RCPT TO, remote ip, helo/ehlo, TLS/AUTH 여부, 수신 시각, 크기/해시 등 운영에 필요한 최소 정보.
+
+보안 메모(원문 저장):
+- Raw EML 암호화(저장 시점의 at-rest 암호화)는 환경/규제/키관리 방식이 다양하므로 core가 강제하지 않습니다.
+- 권장: 스토리지 계층에서 해결(S3 SSE-KMS, 디스크 암호화, DB TDE 등)하거나, starter/옵션 모듈에서 "암호화 MessageStore" 같은 형태로 제공하는 방식을 고려합니다.
 
 ---
 
@@ -74,6 +102,35 @@
 - core에서 "외부가 import할 필요가 없는" 타입이 public으로 남아있지 않음
 - `./gradlew test` + (가능하면) `./gradlew check` 통과
 
+추가(범용 라이브러리 관점에서 꼭 포함):
+- "저장/전달/후처리"를 core에 직접 구현하기보다, host가 구현체를 교체할 수 있도록 **SPI(확장점) 경계**를 명확히 합니다.
+- 특히 S3/Kafka/DB 같은 인프라 의존은 core에 넣지 않고, starter 또는 별도 모듈에서 제공하는 방식을 기본으로 합니다.
+
+---
+
+### 1.5) 수신 결과물/저장/이벤트 훅(SPI) 경계 확정(범용 확장)
+
+목표: Raw EML 저장(S3/파일/메모리), 메시지 메타데이터 저장(DB), 후처리 파이프라인(Kafka 등)을 host가 선택/구현할 수 있게 **경계만 제공**합니다.
+
+배경:
+- 범용 라이브러리에서는 "DB 저장"이나 "S3 업로드"를 core가 강제하면 안 됩니다(기술 선택/운영 정책이 사용자마다 다름).
+- 대신 core는 "수신 결과물"을 표준 형태로 내보내고, starter는 "바로 뜨는 기본 구현"을 제공합니다.
+
+작업:
+1. 수신 결과물 모델(문서 + 타입 후보) 정의
+   - Envelope 메타: `MAIL FROM`, `RCPT TO`, `remoteAddress`, `helo/ehlo`, `tls/auth` 상태, 수신 시각
+   - Raw EML: size, sha256 같은 식별/중복 방지 값(권장)
+2. 이벤트 훅(SPI) 범위/호출 시점 최소화(과설계 방지)
+   - 훅 종류는 최소로 시작(예: Accepted / Stored / Rejected / SessionEnd 수준)
+   - "언제 호출되는지"만 먼저 고정하고, 구현체는 starter/별도 모듈에서 제공(예: DB writer, Kafka publisher)
+3. 레퍼런스 구현 제공 범위 결정
+   - starter: 로컬 파일 기반 raw 저장 + spool(현 구조 유지)
+   - optional: `kotlin-smtp-storage-s3`, `kotlin-smtp-metadata-jdbc`, `kotlin-smtp-event-kafka` 같은 별도 모듈(필요 시)
+
+완료 기준:
+- "core public API 후보" 문서에 SPI가 반영되고(`docs/PUBLIC_API_CANDIDATES.md`), core가 인프라 의존 없이 확장 가능
+- starter MVP가 "최소 설정으로 기동"되는 것이 문서/테스트로 검증
+
 ---
 
 ### 2) Spring Boot Starter 기능/문서 마감
@@ -95,6 +152,38 @@
 완료 기준:
 - starter 기반 통합 테스트(또는 샘플 앱 없이도 가능한 스모크 테스트) 1~2개 추가
 - README의 설정 예시가 실제로 동작
+
+#### Starter MVP: "최소 설정으로 바로 기동"(정확한 기준)
+
+Starter MVP의 정의는 "core + starter 의존" 후, 아래의 **기동 필수 설정만** 맞추면 SMTP 서버가 자동으로 시작되는 것입니다.
+
+기동 필수/권장/선택 설정(기준: `docs/application.example.yml` + `SmtpServerProperties`):
+
+| 구분 | 설정 키 | 단일 포트 모드 | listeners 모드 | 설명 |
+|---|---|---:|---:|---|
+| 기동 필수 | `smtp.storage.mailboxDir` | O | O | 로컬 메일박스(기본 구현에서 사용). 비워두면 starter가 기동을 거부합니다. |
+| 기동 필수 | `smtp.storage.tempDir` | O | O | Raw EML 임시 저장(기본 `FileMessageStore`). 비워두면 starter가 기동을 거부합니다. |
+| 기동 필수 | `smtp.storage.listsDir` | O | O | EXPN/메일링리스트 기본 구현에서 사용. 비워두면 starter가 기동을 거부합니다. |
+| 기동 필수 | `smtp.spool.dir` | O | O | 스풀/재시도 디렉터리. 비워두면 starter가 기동을 거부합니다. |
+| 기동 필수(모드) | `smtp.port` | O | X | `smtp.listeners`가 비어 있을 때 사용(단일 포트 모드). |
+| 기동 필수(모드) | `smtp.listeners[].port` | X | O | listeners 모드 선택 시 필수. |
+| 권장(운영) | `smtp.hostname` | O | O | 서버 호스트명/배너/DSN 등에 사용. 운영에서는 명시 권장. |
+| 권장(보안) | `smtp.rateLimit.*` | O | O | 인터넷 노출 시 권장(기본값 유지 가능). |
+| 선택 | `smtp.auth.*` | O | O | AUTH 사용 여부. Submission에서는 활성화 권장. |
+| 선택 | `smtp.ssl.*` | O | O | STARTTLS/SMTPS 사용 시 필요(인증서/키). 평문 수신만이면 생략 가능. |
+| 선택 | `smtp.proxy.trustedCidrs` | O | O | PROXY protocol을 켜는 리스너가 있을 때만 운영에서 필요. |
+| 선택 | `smtp.relay.*` | O | O | 아웃바운드 릴레이(외부 도메인 전달). 기본 비활성 권장. |
+| 선택 | `smtp.features.*` | O | O | VRFY/ETRN/EXPN 등. 인터넷 노출 기본값은 off 권장. |
+
+주의:
+- listeners 모드를 사용하면, 단일 포트용 `smtp.port`는 무시됩니다(리스너 목록을 기준으로 서버를 생성).
+- Starter MVP는 "기동"이 목표이며, S3/Kafka/DB 메타데이터 저장 같은 인프라 통합은 옵션 모듈/사용자 구현으로 분리합니다.
+
+기본 저장/처리 플로우(레퍼런스):
+- 수신한 Raw EML을 기본 `MessageStore`(현재는 `FileMessageStore`)로 저장
+- 스풀러(`smtp.spool.dir`)로 재시도/전달(릴레이 사용 시) 처리
+- (옵션) 외부 인프라(S3/Kafka/DB 메타 저장)는 사용자 구현 또는 별도 모듈로 연결
+- (옵션) at-rest 암호화는 스토리지/옵션 모듈에서 처리
 
 ---
 
@@ -186,4 +275,7 @@
   - `docs/PUBLIC_API_POLICY.md` 체크
 - 보안 관련 변경(STARTTLS/AUTH/PROXY/RateLimit)은 통합 테스트 추가
 
-*최종 업데이트: 2026-02-04*
+추가(확장 포인트 변경 시):
+- SPI(확장점) 변경은 public API로 취급하고 semver/문서/테스트를 함께 갱신
+
+*최종 업데이트: 2026-02-05*
