@@ -20,7 +20,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.net.InetSocketAddress
 import java.util.*
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -34,16 +33,16 @@ internal class SmtpSession(
 ) {
     // 입력 라인 채널 용량 제한으로 폭주 시 메모리 압박 방지
     private val incomingFrames = KChannel<SmtpInboundFrame>(1024)
-    private val inflightBdatBytes = AtomicLong(0)
     private val closing = AtomicBoolean(false)
     private val tlsUpgrading = AtomicBoolean(false)
-    private val queuedInboundBytes = AtomicLong(0)
-    private val autoReadPausedByBackpressure = AtomicBoolean(false)
     private val sessionActive = MutableStateFlow(true)
     private val sessionId = UUID.randomUUID().toString().take(8)
 
-    private val inboundHighWatermarkBytes: Long = 512L * 1024L
-    private val inboundLowWatermarkBytes: Long = 128L * 1024L
+    private val backpressure = SmtpBackpressureController(
+        scope = server.serverScope,
+        isTlsUpgrading = { tlsUpgrading.get() },
+        setAutoRead = { enabled -> setAutoReadOnEventLoop(enabled) },
+    )
 
     @Volatile
     var shouldQuit = false
@@ -142,7 +141,7 @@ internal class SmtpSession(
         val frame = incomingFrames.receiveCatching().getOrNull() ?: return null
         return when (frame) {
             is SmtpInboundFrame.Line -> {
-                onInboundBytesConsumed(estimatedLineBytes(frame.text))
+                backpressure.onConsumed(backpressure.estimateLineBytes(frame.text))
                 val line = frame.text
 
                 // 보안: AUTH PLAIN 등 크리덴셜이 포함될 수 있는 라인은 그대로 로깅하지 않습니다.
@@ -174,8 +173,8 @@ internal class SmtpSession(
                 line
             }
             is SmtpInboundFrame.Bytes -> {
-                inflightBdatBytes.addAndGet(-frame.bytes.size.toLong())
-                onInboundBytesConsumed(frame.bytes.size.toLong())
+                backpressure.releaseInflightBdatBytes(frame.bytes.size)
+                backpressure.onConsumed(frame.bytes.size.toLong())
                 // 프로토콜 동기화가 깨진 상태: 커맨드/데이터 라인을 기대했는데 raw bytes가 들어옴
                 sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Protocol sync error")
                 shouldQuit = true
@@ -189,8 +188,8 @@ internal class SmtpSession(
         val frame = incomingFrames.receiveCatching().getOrNull() ?: return null
         return when (frame) {
             is SmtpInboundFrame.Bytes -> frame.bytes.also {
-                inflightBdatBytes.addAndGet(-it.size.toLong())
-                onInboundBytesConsumed(it.size.toLong())
+                backpressure.releaseInflightBdatBytes(it.size)
+                backpressure.onConsumed(it.size.toLong())
                 if (it.size != expectedBytes) {
                     // 디코더와 호출부 기대치가 어긋난 경우: 보수적으로 연결 종료
                     sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Protocol sync error")
@@ -199,7 +198,7 @@ internal class SmtpSession(
                 }
             }
             is SmtpInboundFrame.Line -> {
-                onInboundBytesConsumed(estimatedLineBytes(frame.text))
+                backpressure.onConsumed(backpressure.estimateLineBytes(frame.text))
                 sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Protocol sync error")
                 shouldQuit = true
                 close()
@@ -330,16 +329,6 @@ internal class SmtpSession(
             parts.size >= 2 && parts[1].equals("PLAIN", ignoreCase = true) -> "AUTH PLAIN ***"
             parts.size >= 2 -> "AUTH ${parts[1]} ***"
             else -> "AUTH ***"
-        }
-    }
-
-    private fun tryReserveBdatBytes(bytes: Int): Boolean {
-        if (bytes <= 0) return true
-        while (true) {
-            val current = inflightBdatBytes.get()
-            val next = current + bytes
-            if (next > Values.MAX_INFLIGHT_BDAT_BYTES) return false
-            if (inflightBdatBytes.compareAndSet(current, next)) return true
         }
     }
 
@@ -493,10 +482,10 @@ internal class SmtpSession(
             val frame = incomingFrames.tryReceive().getOrNull() ?: break
             drained = true
             if (frame is SmtpInboundFrame.Bytes) {
-                inflightBdatBytes.addAndGet(-frame.bytes.size.toLong())
-                onInboundBytesConsumed(frame.bytes.size.toLong())
+                backpressure.releaseInflightBdatBytes(frame.bytes.size)
+                backpressure.onConsumed(frame.bytes.size.toLong())
             } else if (frame is SmtpInboundFrame.Line) {
-                onInboundBytesConsumed(estimatedLineBytes(frame.text))
+                backpressure.onConsumed(backpressure.estimateLineBytes(frame.text))
             }
         }
         return drained
@@ -516,27 +505,27 @@ internal class SmtpSession(
 
         when (frame) {
             is SmtpInboundFrame.Line -> {
-                val lineBytes = estimatedLineBytes(frame.text)
-                onInboundBytesQueued(lineBytes)
+                val lineBytes = backpressure.estimateLineBytes(frame.text)
+                backpressure.onQueued(lineBytes)
 
                 val result = incomingFrames.trySend(frame)
                 if (result.isFailure) {
-                    onInboundBytesConsumed(lineBytes)
+                    backpressure.onConsumed(lineBytes)
                     return closeWithOverflow()
                 }
                 return true
             }
             is SmtpInboundFrame.Bytes -> {
                 val size = frame.bytes.size
-                if (!tryReserveBdatBytes(size)) {
+                if (!backpressure.tryReserveInflightBdatBytes(size)) {
                     return closeWithOverflow()
                 }
 
-                onInboundBytesQueued(size.toLong())
+                backpressure.onQueued(size.toLong())
                 val result = incomingFrames.trySend(frame)
                 if (result.isFailure) {
-                    inflightBdatBytes.addAndGet(-size.toLong())
-                    onInboundBytesConsumed(size.toLong())
+                    backpressure.releaseInflightBdatBytes(size)
+                    backpressure.onConsumed(size.toLong())
                     return closeWithOverflow()
                 }
                 // 보안: 본문/바이너리 청크는 로그에 남기지 않습니다.
@@ -549,31 +538,6 @@ internal class SmtpSession(
     private fun closeWithOverflow(): Boolean {
         writeAndClose(formatResponseLine(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection."))
         return false
-    }
-
-    private fun onInboundBytesQueued(delta: Long) {
-        val current = queuedInboundBytes.addAndGet(delta)
-        if (current >= inboundHighWatermarkBytes && autoReadPausedByBackpressure.compareAndSet(false, true)) {
-            // 백프레셔: 입력 폭주 시 읽기를 잠시 멈춰 큐 오버플로우/불필요한 연결 종료를 줄입니다.
-            // STARTTLS 업그레이드 중에는 핸드셰이크 진행을 위해 autoRead 토글에 개입하지 않습니다.
-            if (!tlsUpgrading.get()) {
-                server.serverScope.launch { setAutoReadOnEventLoop(false) }
-            }
-        }
-    }
-
-    private fun onInboundBytesConsumed(delta: Long) {
-        val current = queuedInboundBytes.addAndGet(-delta)
-        if (current <= inboundLowWatermarkBytes && autoReadPausedByBackpressure.compareAndSet(true, false)) {
-            if (!tlsUpgrading.get()) {
-                server.serverScope.launch { setAutoReadOnEventLoop(true) }
-            }
-        }
-    }
-
-    private fun estimatedLineBytes(line: String): Long {
-        // 입력 라인은 ISO-8859-1로 1:1 바이트 보존을 가정합니다. CRLF는 프레이밍에서 제거되므로 보수적으로 +2만 더합니다.
-        return (line.length + 2).toLong()
     }
 
     private fun writeAndClose(responseLine: String) {
