@@ -22,16 +22,22 @@
 
 현재 starter는 relay 관련 구현을 포함하고 있고, 이 경로는 상대적으로 무거운 의존(dnsjava, jakarta mail/angus)을 끌어옵니다.
 
-권장 옵션:
+선택지(둘 다 합리적):
 
-- 옵션 A(현상 유지): relay는 starter에 남기되, 계속 "기본 off"로 유지
-  - 장점: starter 하나로 대부분 기능을 체험 가능
+- 옵션 A(완전판 starter): relay는 starter에 남김
+  - 의미: starter 하나로 "수신 + (정책 허용 시) 외부로 SMTP 발송"까지 가능한 구성 제공
+  - 장점: 사용자는 dependency 하나로 "완전한 SMTP 서버"를 구성하기 쉬움
   - 단점: starter 의존이 무거워짐
+  - 운영 안전장치: 오픈 릴레이 방지를 위해 relay는 기본적으로 엄격한 정책(requireAuthForRelay 등)과 함께 제공
 
-- 옵션 B(권장): relay를 별도 모듈로 분리
+- 옵션 B(슬림 starter): relay를 별도 모듈로 분리
   - 예: `kotlin-smtp-relay` + `kotlin-smtp-relay-spring-boot-starter`
-  - starter는 로컬 수신/파일 저장/spool까지만 제공
+  - 의미: 기본 starter는 "수신/저장" 중심(외부 발송은 선택)
   - 장점: starter 기본 의존이 가벼워지고, 인프라 선택지가 더 명확해짐
+  - 단점: "완전판" 구성을 만들려면 모듈을 하나 더 추가해야 함
+
+권장(프로젝트 방향이 "starter로 완전한 SMTP 서버 제공"이라면): 옵션 A.
+다만 장기적으로는, 옵션 A를 유지하면서도 별도 slim starter(옵션 B 계열)를 추가로 제공하는 방식(2종 starter)도 가능합니다.
 
 ### 2) 옵션 모듈의 "starter" 형태를 제공할지 여부
 
