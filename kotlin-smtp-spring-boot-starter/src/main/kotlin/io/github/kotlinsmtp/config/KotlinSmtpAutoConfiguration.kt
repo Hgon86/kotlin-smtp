@@ -12,6 +12,7 @@ import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
 import io.github.kotlinsmtp.relay.DsnService
 import io.github.kotlinsmtp.server.SmtpServer
 import io.github.kotlinsmtp.server.SmtpServerRunner
+import io.github.kotlinsmtp.spi.SmtpEventHook
 import io.github.kotlinsmtp.spool.MailDeliveryService
 import io.github.kotlinsmtp.spool.MailSpooler
 import io.github.kotlinsmtp.storage.FileMessageStore
@@ -113,6 +114,7 @@ class KotlinSmtpAutoConfiguration {
         mailingListHandler: SmtpMailingListHandler,
         messageStore: MessageStore,
         authService: AuthService,
+        eventHooks: List<SmtpEventHook>,
     ): List<SmtpServer> {
         // Validate required storage paths (no OS-specific defaults)
         props.storage.validate()
@@ -157,6 +159,9 @@ class KotlinSmtpAutoConfiguration {
                 useUserHandler(userHandler)
                 useMailingListHandler(mailingListHandler)
                 useSpooler(spooler)
+
+                // SPI hooks: 코어 이벤트를 외부 인프라(S3/Kafka/DB 등)로 연결합니다.
+                eventHooks.forEach { hook -> addEventHook(hook) }
 
                 features.enableVrfy = props.features.vrfyEnabled
                 features.enableEtrn = props.features.etrnEnabled

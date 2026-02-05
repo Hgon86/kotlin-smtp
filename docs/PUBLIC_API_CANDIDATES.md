@@ -36,6 +36,20 @@ Rule of thumb:
 - `io.github.kotlinsmtp.protocol.handler.SmtpUserHandler`
 - `io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler`
 
+### SPI Hooks (Should Be Public)
+
+- `io.github.kotlinsmtp.spi.SmtpEventHook`
+  - minimal non-fatal event hooks for external integrations (S3/Kafka/DB metadata, etc.)
+- `io.github.kotlinsmtp.spi.SmtpSessionContext`
+- `io.github.kotlinsmtp.spi.SmtpMessageEnvelope`
+- `io.github.kotlinsmtp.spi.SmtpMessageTransferMode`
+- `io.github.kotlinsmtp.spi.SmtpMessageStage`
+- `io.github.kotlinsmtp.spi.SmtpSessionEndReason`
+- `io.github.kotlinsmtp.spi.SmtpSessionStartedEvent`
+- `io.github.kotlinsmtp.spi.SmtpSessionEndedEvent`
+- `io.github.kotlinsmtp.spi.SmtpMessageAcceptedEvent`
+- `io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent`
+
 ### Probably NOT Public (Keep Internal Initially)
 
 - Netty pipeline internals:

@@ -2,6 +2,7 @@ package io.github.kotlinsmtp
 
 import io.github.kotlinsmtp.config.KotlinSmtpAutoConfiguration
 import io.github.kotlinsmtp.server.SmtpServer
+import io.github.kotlinsmtp.spi.SmtpEventHook
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -26,6 +27,7 @@ class StarterMvpSmokeTest {
 
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withBean(SmtpEventHook::class.java, { object : SmtpEventHook {} })
             .withPropertyValues(
                 "smtp.hostname=localhost",
                 "smtp.port=0",
