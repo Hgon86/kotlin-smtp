@@ -231,7 +231,7 @@ dependencies {
 
 ## 보안 가이드
 
-1. **오픈 릴레이 방지**: `smtp.relay.requireAuthForRelay=true` 설정
+1. **오픈 릴레이 방지**: `smtp.relay.enabled=false`(기본) + relay 활성 시 `smtp.relay.requireAuthForRelay=true` 유지
 2. **TLS 신뢰**: `trustAll=false` (운영 환경에서만)
 3. **Rate Limiting**: IP당 연결/메시지 수 제한
 4. **PROXY Protocol**: LB 뒤에서만 사용, trustedCidrs 설정 필수
@@ -249,5 +249,6 @@ dependencies {
 - [ROADMAP.md](docs/ROADMAP.md) - 프로젝트 로드맵 및 작업 추적
 - [STATUS.md](docs/STATUS.md) - 진행 상황 및 다음 작업(상세)
 - [MODULE_STRATEGY.md](docs/MODULE_STRATEGY.md) - 옵션 모듈 분리(모듈 전략 초안)
+- [RELAY_MODULES.md](docs/RELAY_MODULES.md) - relay 모듈 경계/활성화/기본 정책
 - [PUBLIC_API_CANDIDATES.md](docs/PUBLIC_API_CANDIDATES.md) - 공개 API 후보
 - [PUBLIC_API_POLICY.md](docs/PUBLIC_API_POLICY.md) - Public API 경계/변경 규칙

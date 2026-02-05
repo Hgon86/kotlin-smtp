@@ -3,13 +3,16 @@ package io.github.kotlinsmtp.config
 import io.github.kotlinsmtp.auth.AuthService
 import io.github.kotlinsmtp.auth.InMemoryAuthService
 import io.github.kotlinsmtp.mail.LocalMailboxManager
-import io.github.kotlinsmtp.mail.MailRelay
 import io.github.kotlinsmtp.protocol.handler.LocalDirectoryUserHandler
 import io.github.kotlinsmtp.protocol.handler.LocalFileMailingListHandler
 import io.github.kotlinsmtp.protocol.handler.SimpleSmtpProtocolHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
-import io.github.kotlinsmtp.relay.DsnService
+import io.github.kotlinsmtp.relay.api.DsnSender
+import io.github.kotlinsmtp.relay.api.DsnStore
+import io.github.kotlinsmtp.relay.api.MailRelay
+import io.github.kotlinsmtp.relay.api.RelayAccessPolicy
+import io.github.kotlinsmtp.relay.api.RelayDefaults
 import io.github.kotlinsmtp.server.SmtpServer
 import io.github.kotlinsmtp.server.SmtpServerRunner
 import io.github.kotlinsmtp.spi.SmtpEventHook
@@ -17,10 +20,10 @@ import io.github.kotlinsmtp.spool.MailDeliveryService
 import io.github.kotlinsmtp.spool.MailSpooler
 import io.github.kotlinsmtp.storage.FileMessageStore
 import io.github.kotlinsmtp.storage.MessageStore
-import kotlinx.coroutines.Dispatchers
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import java.util.stream.Collectors
@@ -43,16 +46,17 @@ class KotlinSmtpAutoConfiguration {
         LocalMailboxManager(props.storage.mailboxPath)
 
     @Bean
+    @ConditionalOnProperty(prefix = "smtp.relay", name = ["enabled"], havingValue = "false", matchIfMissing = true)
     @ConditionalOnMissingBean
-    fun dsnService(props: SmtpServerProperties): DsnService = DsnService(props.hostname)
+    fun mailRelayDisabled(): MailRelay = object : MailRelay {
+        override suspend fun relay(request: io.github.kotlinsmtp.relay.api.RelayRequest): io.github.kotlinsmtp.relay.api.RelayResult {
+            throw io.github.kotlinsmtp.exception.SmtpSendResponse(550, "5.7.1 Relay access denied")
+        }
+    }
 
     @Bean
     @ConditionalOnMissingBean
-    fun mailRelay(props: SmtpServerProperties): MailRelay =
-        MailRelay(
-            dispatcherIO = Dispatchers.IO,
-            tls = props.relay.outboundTls,
-        )
+    fun relayAccessPolicy(): RelayAccessPolicy = RelayDefaults.requireAuthPolicy()
 
     @Bean
     @ConditionalOnMissingBean
@@ -60,27 +64,46 @@ class KotlinSmtpAutoConfiguration {
         props: SmtpServerProperties,
         localMailboxManager: LocalMailboxManager,
         mailRelay: MailRelay,
-        dsnService: DsnService,
+        relayAccessPolicy: RelayAccessPolicy,
+        dsnSenderProvider: ObjectProvider<DsnSender>,
     ): MailDeliveryService =
         MailDeliveryService(
             localMailboxManager = localMailboxManager,
             mailRelay = mailRelay,
-            localDomain = props.relay.localDomain,
-            allowedSenderDomains = props.relay.allowedSenderDomains,
-            requireAuthForRelay = props.relay.requireAuthForRelay,
-        ).apply { attachDsnService(dsnService) }
+            relayAccessPolicy = relayAccessPolicy,
+            dsnSenderProvider = { dsnSenderProvider.getIfAvailable() },
+            localDomain = props.effectiveLocalDomain(),
+        )
 
     @Bean
     @ConditionalOnMissingBean
-    fun mailSpooler(props: SmtpServerProperties, deliveryService: MailDeliveryService, dsnService: DsnService): MailSpooler =
+    fun mailSpooler(
+        props: SmtpServerProperties,
+        deliveryService: MailDeliveryService,
+        dsnSenderProvider: ObjectProvider<DsnSender>,
+    ): MailSpooler =
         MailSpooler(
             spoolDir = props.spool.path,
             maxRetries = props.spool.maxRetries,
             retryDelaySeconds = props.spool.retryDelaySeconds,
             deliveryService = deliveryService,
-            dsnService = dsnService,
-            serverHostname = props.hostname
-        ).also { dsnService.spooler = it }
+            dsnSenderProvider = { dsnSenderProvider.getIfAvailable() },
+        )
+
+    @Bean
+    @ConditionalOnMissingBean
+    fun dsnStore(spooler: MailSpooler): DsnStore = DsnStore { rawMessagePath, envelopeSender, recipients, messageId, authenticated, dsnRet, dsnEnvid, rcptDsn ->
+        spooler.enqueue(
+            rawMessagePath = rawMessagePath,
+            sender = envelopeSender,
+            recipients = recipients,
+            messageId = messageId,
+            authenticated = authenticated,
+            dsnRet = dsnRet,
+            dsnEnvid = dsnEnvid,
+            rcptDsn = rcptDsn,
+        )
+    }
 
     @Bean
     @ConditionalOnMissingBean
@@ -96,7 +119,7 @@ class KotlinSmtpAutoConfiguration {
         //               운영에서는 정책/사용자 저장소를 별도 서비스/DB로 이관 권장
         LocalDirectoryUserHandler(
             mailboxDir = props.storage.mailboxPath,
-            localDomain = props.relay.localDomain,
+            localDomain = props.effectiveLocalDomain(),
         )
 
     @Bean
@@ -121,11 +144,6 @@ class KotlinSmtpAutoConfiguration {
         // Validate required storage paths (no OS-specific defaults)
         props.storage.validate()
         props.spool.validate()
-
-        // 안전장치: relay.enabled를 켜는 순간, 설정 실수로 open relay가 되는 것을 막습니다.
-        if (props.relay.enabled && !props.relay.requireAuthForRelay && props.relay.allowedSenderDomains.isEmpty()) {
-            error("Refusing to start: smtp.relay.enabled=true without smtp.relay.requireAuthForRelay=true or smtp.relay.allowedSenderDomains allowlist")
-        }
 
         val cert = if (props.ssl.enabled) props.ssl.getCertChainFile() else null
         val key = if (props.ssl.enabled) props.ssl.getPrivateKeyFile() else null

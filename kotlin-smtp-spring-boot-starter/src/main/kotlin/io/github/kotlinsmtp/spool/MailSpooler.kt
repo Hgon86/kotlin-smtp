@@ -1,7 +1,8 @@
 package io.github.kotlinsmtp.spool
 
 import io.github.kotlinsmtp.model.RcptDsn
-import io.github.kotlinsmtp.relay.DsnService
+import io.github.kotlinsmtp.relay.api.DsnSender
+import io.github.kotlinsmtp.relay.api.RelayException
 import io.github.kotlinsmtp.server.SmtpSpooler
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
@@ -38,8 +39,7 @@ class MailSpooler(
     private val retryDelaySeconds: Long = 60,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val deliveryService: MailDeliveryService,
-    private val dsnService: DsnService,
-    private val serverHostname: String,
+    private val dsnSenderProvider: () -> DsnSender?,
 ) : SmtpSpooler {
     private val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + dispatcher)
     private var worker: Job? = null
@@ -280,7 +280,7 @@ class MailSpooler(
                     val dsnTargets = permanentFailures
                         .filterKeys { shouldSendFailureDsn(meta.rcptDsn[it]?.notify) }
                     if (dsnTargets.isNotEmpty()) {
-                        dsnService.sendPermanentFailure(
+                        dsnSenderProvider()?.sendPermanentFailure(
                             sender = meta.sender,
                             failedRecipients = dsnTargets.entries.map { it.key to it.value },
                             originalMessageId = meta.messageId,
@@ -311,7 +311,7 @@ class MailSpooler(
                             .filterKeys { shouldSendFailureDsn(meta.rcptDsn[it]?.notify) }
                         val details = dsnTargets.entries.map { it.key to it.value }
                         if (details.isNotEmpty()) {
-                            dsnService.sendPermanentFailure(
+                            dsnSenderProvider()?.sendPermanentFailure(
                                 sender = meta.sender,
                                 failedRecipients = details,
                                 originalMessageId = meta.messageId,
@@ -359,6 +359,7 @@ class MailSpooler(
     private fun isPermanentFailure(t: Throwable): Boolean {
         when (t) {
             is io.github.kotlinsmtp.exception.SmtpSendResponse -> return t.statusCode in 500..599
+            is RelayException -> return !t.isTransient
             is IllegalStateException -> {
                 val m = t.message.orEmpty()
                 return m.contains("No MX records", ignoreCase = true) || m.contains("No valid MX", ignoreCase = true)

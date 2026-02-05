@@ -1,6 +1,5 @@
 package io.github.kotlinsmtp.protocol.handler
 
-import io.github.kotlinsmtp.mail.MailParser
 import io.github.kotlinsmtp.storage.MessageStore
 import io.github.kotlinsmtp.spool.MailDeliveryService
 import io.github.kotlinsmtp.spool.MailSpooler
@@ -25,7 +24,6 @@ class SimpleSmtpProtocolHandler(
 
     private var sender: String? = null
     private val recipients = mutableSetOf<String>()
-    private val mailParser = MailParser()
 
     override suspend fun from(sender: String) {
         this.sender = sender
@@ -41,7 +39,7 @@ class SimpleSmtpProtocolHandler(
                 throw io.github.kotlinsmtp.exception.SmtpSendResponse(550, "5.7.1 Relay access denied")
             }
             // 오픈 릴레이 방지: RCPT 단계에서 정책을 조기 검증합니다.
-            deliveryService.enforceRelayPolicySmtp(sender?.ifBlank { null }, sessionData.isAuthenticated)
+            deliveryService.enforceRelayPolicySmtp(sender?.ifBlank { null }, recipient, sessionData.isAuthenticated)
         }
         recipients.add(recipient)
         log.info { "Recipient added: $recipient" }
@@ -57,7 +55,7 @@ class SimpleSmtpProtocolHandler(
         log.info { "Receiving message data (messageId=$messageId)" }
 
         try {
-            val receivedValue = mailParser.buildReceivedValue(
+            val receivedValue = buildReceivedValue(
                 byServer = sessionData.serverHostname,
                 fromPeer = sessionData.peerAddress,
                 // 기능 우선: 인증 여부를 Received 헤더에 표시(ESMTPA/ESMTPSA)
@@ -104,7 +102,6 @@ class SimpleSmtpProtocolHandler(
     }
 
     private suspend fun deliverSynchronously(tempFile: Path, messageId: String) {
-        mailParser.loadMimeMessage(tempFile, sender, recipients)
         recipients.forEach { recipient ->
             val domain = recipient.substringAfterLast('@', "")
             val isLocal = deliveryService.isLocalDomain(domain)
@@ -134,5 +131,27 @@ class SimpleSmtpProtocolHandler(
         sender = null
         recipients.clear()
         log.info { "Transaction completed" }
+    }
+
+    private fun buildReceivedValue(
+        byServer: String?,
+        fromPeer: String?,
+        withInfo: String?,
+        forRecipient: String? = null,
+        idValue: String? = null,
+    ): String {
+        fun sanitizeHeaderValue(value: String?): String? = value
+            ?.replace(Regex("[\r\n]+"), " ")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+        val dateStr = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME
+            .format(java.time.ZonedDateTime.now())
+        val byPart = sanitizeHeaderValue(byServer)?.let { "by $it" }
+        val fromPart = sanitizeHeaderValue(fromPeer)?.let { "from $it" }
+        val withPart = sanitizeHeaderValue(withInfo)?.let { "with $it" }
+        val forPart = sanitizeHeaderValue(forRecipient)?.let { "for <$it>" }
+        val idPart = sanitizeHeaderValue(idValue)?.let { "id $it" }
+        return listOfNotNull(fromPart, byPart, idPart, withPart, forPart, "; $dateStr").joinToString(" ")
     }
 }

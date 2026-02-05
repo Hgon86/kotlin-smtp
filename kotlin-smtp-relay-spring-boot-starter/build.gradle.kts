@@ -25,8 +25,8 @@ dependencyManagement {
 }
 
 dependencies {
-    api(project(":kotlin-smtp-core"))
-    implementation(project(":kotlin-smtp-relay"))
+    api(project(":kotlin-smtp-relay"))
+    implementation(project(":kotlin-smtp-relay-jakarta-mail"))
 
     implementation("org.springframework.boot:spring-boot-autoconfigure")
     implementation("org.springframework.boot:spring-boot-starter")
@@ -37,12 +37,6 @@ dependencies {
     // For @ConfigurationProperties metadata generation
     compileOnly("org.springframework.boot:spring-boot-configuration-processor")
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
-
-    // Default host-side implementations (not part of core)
-    implementation("org.json:json:20240303")
-
-    // Password hashing (BCrypt)
-    implementation("org.springframework.security:spring-security-crypto")
 
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.springframework.boot:spring-boot-test")

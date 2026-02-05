@@ -10,6 +10,7 @@ class SmtpServerProperties {
     var serviceName: String = "kotlin-smtp"
     var ssl: SslConfig = SslConfig()
     var storage: StorageConfig = StorageConfig()
+    var routing: RoutingConfig = RoutingConfig()
     var relay: RelayConfig = RelayConfig()
     var spool: SpoolConfig = SpoolConfig()
     var auth: AuthConfig = AuthConfig()
@@ -40,31 +41,30 @@ class SmtpServerProperties {
         }
     }
 
-    data class RelayConfig(
-        var enabled: Boolean = false,
-        var localDomain: String = "mydomain.com",
-        var allowedSenderDomains: List<String> = emptyList(),
-        // 안전 기본값: 릴레이는 인증을 요구합니다(운영에서 open relay 방지)
-        var requireAuthForRelay: Boolean = true,
-        var outboundTls: OutboundTlsConfig = OutboundTlsConfig(),
+    /**
+     * 로컬 도메인 판정(로컬 전달 vs 외부 릴레이 분기)에 사용합니다.
+     */
+    data class RoutingConfig(
+        var localDomain: String = "",
     )
 
-    /**
-     * 아웃바운드 릴레이(TCP 25 등)에서의 TLS/STARTTLS 정책
-     *
-     * 운영 기본값은 "검증(verify)"이며,
-     * 로컬 개발/테스트 환경에서만 trustAll 등을 사용하도록 설정으로 분리합니다.
-     */
-    data class OutboundTlsConfig(
-        var ports: List<Int> = listOf(25), // 운영 기본: MX 릴레이는 25 (개발환경에서만 587 등을 추가)
-        var startTlsEnabled: Boolean = true, // 보통은 opportunistic STARTTLS
-        var startTlsRequired: Boolean = false, // true면 상대가 STARTTLS 미지원 시 실패 가능
-        var checkServerIdentity: Boolean = true, // 가능하면 true 권장
-        var trustAll: Boolean = false, // 개발환경 편의용(운영에서는 false 권장)
-        var trustHosts: List<String> = emptyList(), // 특정 호스트만 신뢰(예: ["mx.example.com"])
-        var connectTimeoutMs: Int = 15_000,
-        var readTimeoutMs: Int = 15_000,
+    data class RelayConfig(
+        var enabled: Boolean = false,
+        /**
+         * 레거시 키: `smtp.relay.localDomain`
+         *
+         * - 신규 구성에서는 `smtp.routing.localDomain` 사용을 권장합니다.
+         * - 호환을 위해 유지하며, `smtp.routing.localDomain`이 비어있을 때 fallback으로만 사용합니다.
+         */
+        @Deprecated("Use smtp.routing.localDomain instead")
+        var localDomain: String = "mydomain.com",
     )
+
+    fun effectiveLocalDomain(): String {
+        val r = routing.localDomain.trim()
+        if (r.isNotEmpty()) return r
+        return relay.localDomain.trim()
+    }
 
     data class SpoolConfig(
         var dir: String = "",

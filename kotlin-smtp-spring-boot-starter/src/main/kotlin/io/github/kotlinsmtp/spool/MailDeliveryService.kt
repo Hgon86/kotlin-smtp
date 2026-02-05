@@ -2,36 +2,31 @@ package io.github.kotlinsmtp.spool
 
 import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.mail.LocalMailboxManager
-import io.github.kotlinsmtp.mail.MailRelay
 import io.github.kotlinsmtp.model.RcptDsn
-import io.github.kotlinsmtp.relay.DsnService
+import io.github.kotlinsmtp.relay.api.DsnSender
+import io.github.kotlinsmtp.relay.api.MailRelay
+import io.github.kotlinsmtp.relay.api.RelayAccessDecision
+import io.github.kotlinsmtp.relay.api.RelayAccessPolicy
+import io.github.kotlinsmtp.relay.api.RelayRequest
 import io.github.kotlinsmtp.util.AddressUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
-import jakarta.mail.Session
-import jakarta.mail.internet.MimeMessage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Properties
 
 private val log = KotlinLogging.logger {}
 
 class MailDeliveryService(
     private val localMailboxManager: LocalMailboxManager,
     private val mailRelay: MailRelay,
+    private val relayAccessPolicy: RelayAccessPolicy,
+    private val dsnSenderProvider: () -> DsnSender?,
     private val localDomain: String,
-    private val allowedSenderDomains: List<String> = emptyList(),
-    private val requireAuthForRelay: Boolean = false,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private var dsnService: DsnService? = null
     private val normalizedLocalDomain = AddressUtils.normalizeDomain(localDomain) ?: localDomain.lowercase()
-    private val normalizedAllowedDomains =
-        allowedSenderDomains.mapNotNull { AddressUtils.normalizeDomain(it) ?: it.lowercase() }.toSet()
-
-    fun attachDsnService(service: DsnService) { this.dsnService = service }
 
     fun isLocalDomain(domain: String): Boolean {
         val normalized = AddressUtils.normalizeDomain(domain) ?: domain.lowercase()
@@ -55,19 +50,21 @@ class MailDeliveryService(
         dsnEnvid: String? = null,
         dsnRet: String? = null,
     ) = withContext(dispatcher) {
-        enforceRelayPolicySmtp(envelopeSender, authenticated)
-        val message = Files.newInputStream(rawPath).use { input ->
-            val props = Properties().apply {
-                // SMTPUTF8/UTF-8 헤더 파싱을 위해 허용(최소 구현)
-                // TODO: 구현체 버전별 공식 문서 확인 후 고정
-                this["mail.mime.allowutf8"] = "true"
-            }
-            MimeMessage(Session.getInstance(props), input)
-        }
-        runCatching { mailRelay.relayMessage(envelopeSender, recipient, message, messageId, authenticated) }.getOrElse { ex ->
+        enforceRelayPolicySmtp(envelopeSender, recipient, authenticated)
+        val request = RelayRequest(
+            messageId = messageId,
+            envelopeSender = envelopeSender,
+            recipient = recipient,
+            authenticated = authenticated,
+            rfc822 = io.github.kotlinsmtp.relay.api.Rfc822Source {
+                Files.newInputStream(rawPath)
+            },
+        )
+
+        runCatching { mailRelay.relay(request) }.getOrElse { ex ->
             log.warn(ex) { "Relay failed (rcpt=$recipient msgId=$messageId), dsnOnFailure=$generateDsnOnFailure" }
             if (generateDsnOnFailure && shouldSendFailureDsn(rcptNotify)) {
-                dsnService?.sendPermanentFailure(
+                dsnSenderProvider()?.sendPermanentFailure(
                     sender = envelopeSender,
                     failedRecipients = listOf(recipient to ex.message.orEmpty()),
                     originalMessageId = messageId,
@@ -89,14 +86,26 @@ class MailDeliveryService(
      * NOTE: 여기서 던진 예외는 세션 레벨에서는 즉시 거부 응답으로,
      *       스풀/동기 전달에서는 DSN 처리 경로로 흘러갈 수 있습니다.
      */
-    fun enforceRelayPolicySmtp(sender: String?, authenticated: Boolean) {
-        if (requireAuthForRelay && !authenticated) {
-            throw SmtpSendResponse(530, "5.7.0 Authentication required")
-        }
-        if (normalizedAllowedDomains.isEmpty()) return
-        val domain = sender?.substringAfterLast('@')?.let { AddressUtils.normalizeDomain(it) }
-        if ((domain == null || domain !in normalizedAllowedDomains) && !authenticated) {
-            throw SmtpSendResponse(550, "5.7.1 Relay access denied")
+    fun enforceRelayPolicySmtp(sender: String?, recipient: String, authenticated: Boolean) {
+        val decision = relayAccessPolicy.evaluate(
+            io.github.kotlinsmtp.relay.api.RelayAccessContext(
+                envelopeSender = sender?.ifBlank { null },
+                recipient = recipient,
+                authenticated = authenticated,
+            )
+        )
+        when (decision) {
+            is RelayAccessDecision.Allowed -> Unit
+            is RelayAccessDecision.Denied -> {
+                when (decision.reason) {
+                    io.github.kotlinsmtp.relay.api.RelayDeniedReason.AUTH_REQUIRED ->
+                        throw SmtpSendResponse(530, "5.7.0 Authentication required")
+
+                    io.github.kotlinsmtp.relay.api.RelayDeniedReason.SENDER_DOMAIN_NOT_ALLOWED,
+                    io.github.kotlinsmtp.relay.api.RelayDeniedReason.OTHER_POLICY ->
+                        throw SmtpSendResponse(550, "5.7.1 Relay access denied")
+                }
+            }
         }
     }
 

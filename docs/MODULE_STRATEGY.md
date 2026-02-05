@@ -143,7 +143,15 @@ starter/옵션 starter는 "사용자가 Bean을 주면 그게 우선"이 되도�
 - 이 문서는 설계 초안이며, 실제 구현은 public API 경계가 더 안정화된 뒤에 진행합니다.
 - 모듈 분리는 "기능 분해"보다 "의존성/벤더 종속 분리"를 최우선으로 합니다.
 - 릴레이(외부 도메인 SMTP 전송)
-  - `kotlin-smtp-relay` (Spring-free)
-    - 외부 MX 조회 + SMTP 전송(outbound) 구현
+  - `kotlin-smtp-relay` (Spring-free, API)
+    - `MailRelay`/정책/예외/DSN 경계 등 최소 public API
+  - `kotlin-smtp-relay-jakarta-mail`
+    - dnsjava + jakarta-mail/angus 기반 기본 구현
   - `kotlin-smtp-relay-spring-boot-starter`
-    - relay 설정 바인딩 + outbound 구성 bean auto-config
+    - relay 설정 바인딩 + 가드레일 + Bean auto-config
+
+## Relay 모듈 설계(확정)
+
+outbound relay 분리는 이미 결정되었고(2026-02), 아래 문서에서 **모듈 경계 / 최소 public API / starter 기본 정책**을 확정합니다.
+
+- `docs/RELAY_MODULES.md`

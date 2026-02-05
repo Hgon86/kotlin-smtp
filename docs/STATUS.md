@@ -9,6 +9,7 @@
 - 테스트: `./gradlew test` 통과(최근 변경마다 실행)
 - Public API 원칙: `docs/PUBLIC_API_POLICY.md`
 - 옵션 모듈 분리(설계): `docs/MODULE_STRATEGY.md`
+- relay 모듈 설계 확정: `docs/RELAY_MODULES.md`
 
 결정사항(현재):
 - relay(outbound SMTP 전송)는 starter에서 분리해 옵션 모듈로 제공
