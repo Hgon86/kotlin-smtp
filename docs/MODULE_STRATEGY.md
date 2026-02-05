@@ -16,6 +16,30 @@
 - S3/Kafka/DB 같은 통합은 기본값이 아니라 **옵션 모듈**(또는 사용자가 직접 구현/등록하는 Bean)로 둡니다.
 - 모듈 간 의존 방향은 단방향을 유지합니다: `integration` -> `core` (권장: `core` -> `integration` 금지)
 
+## 가장 먼저 결정할 것(권장 우선순위)
+
+### 1) starter에서 "outbound relay"를 분리할지 여부
+
+현재 starter는 relay 관련 구현을 포함하고 있고, 이 경로는 상대적으로 무거운 의존(dnsjava, jakarta mail/angus)을 끌어옵니다.
+
+권장 옵션:
+
+- 옵션 A(현상 유지): relay는 starter에 남기되, 계속 "기본 off"로 유지
+  - 장점: starter 하나로 대부분 기능을 체험 가능
+  - 단점: starter 의존이 무거워짐
+
+- 옵션 B(권장): relay를 별도 모듈로 분리
+  - 예: `kotlin-smtp-relay` + `kotlin-smtp-relay-spring-boot-starter`
+  - starter는 로컬 수신/파일 저장/spool까지만 제공
+  - 장점: starter 기본 의존이 가벼워지고, 인프라 선택지가 더 명확해짐
+
+### 2) 옵션 모듈의 "starter" 형태를 제공할지 여부
+
+권장: `*-spring-boot-starter`를 별도로 제공해 auto-config를 분리합니다.
+
+- `kotlin-smtp-foo` (Spring-free 구현)
+- `kotlin-smtp-foo-spring-boot-starter` (Spring auto-config)
+
 ## 용어
 
 - core: 엔진/프로토콜/세션 + 최소 SPI
