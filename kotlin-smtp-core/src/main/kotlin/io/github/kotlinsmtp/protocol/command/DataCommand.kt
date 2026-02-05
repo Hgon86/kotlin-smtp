@@ -6,6 +6,10 @@ import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.CoroutineInputStream
 import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.server.SmtpStreamingHandlerRunner
+import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
+import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
+import io.github.kotlinsmtp.spi.SmtpMessageStage
+import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import io.github.kotlinsmtp.utils.SmtpStatusCode.ERROR_IN_PROCESSING
 import io.github.kotlinsmtp.utils.SmtpStatusCode.EXCEEDED_STORAGE_ALLOCATION
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
@@ -133,9 +137,31 @@ internal class DataCommand : SmtpCommand(
             runCatching { handlerJob.join() }
 
             val e = receiveResult.exceptionOrNull()!!
-            when (e) {
-                is SmtpSendResponse -> session.sendResponse(e.statusCode, e.message)
-                else -> session.sendResponse(ERROR_IN_PROCESSING.code, "Error receiving DATA")
+            val envelope = SmtpMessageEnvelope(
+                mailFrom = session.sessionData.mailFrom ?: "",
+                rcptTo = session.envelopeRecipients.toList(),
+                dsnEnvid = session.sessionData.dsnEnvid,
+                dsnRet = session.sessionData.dsnRet,
+                rcptDsn = session.sessionData.rcptDsnView,
+            )
+
+            val (code, message) = when (e) {
+                is SmtpSendResponse -> e.statusCode to e.message
+                else -> ERROR_IN_PROCESSING.code to "Error receiving DATA"
+            }
+
+            session.sendResponse(code, message)
+            session.server.notifyHooks { hook ->
+                hook.onMessageRejected(
+                    SmtpMessageRejectedEvent(
+                        context = session.buildSessionContext(),
+                        envelope = envelope,
+                        transferMode = SmtpMessageTransferMode.DATA,
+                        stage = SmtpMessageStage.RECEIVING,
+                        responseCode = code,
+                        responseMessage = message,
+                    )
+                )
             }
             session.shouldQuit = true
             session.close()
@@ -145,6 +171,10 @@ internal class DataCommand : SmtpCommand(
         // 핸들러 결과 확인 (성공시에만 250)
         handlerJob.join()
         val processing = handlerResult.await()
-        SmtpStreamingHandlerRunner.finalizeTransaction(session, processing)
+        SmtpStreamingHandlerRunner.finalizeTransaction(
+            session = session,
+            processing = processing,
+            transferMode = SmtpMessageTransferMode.DATA,
+        )
     }
 }

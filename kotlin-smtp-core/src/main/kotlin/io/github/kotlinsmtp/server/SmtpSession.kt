@@ -3,6 +3,10 @@ package io.github.kotlinsmtp.server
 import io.github.kotlinsmtp.model.SessionData
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommands
 import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
+import io.github.kotlinsmtp.spi.SmtpSessionContext
+import io.github.kotlinsmtp.spi.SmtpSessionEndedEvent
+import io.github.kotlinsmtp.spi.SmtpSessionEndReason
+import io.github.kotlinsmtp.spi.SmtpSessionStartedEvent
 import io.github.kotlinsmtp.utils.Values
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -32,7 +36,12 @@ internal class SmtpSession(
     private val closing = AtomicBoolean(false)
     private val tlsUpgrading = AtomicBoolean(false)
     private val sessionActive = MutableStateFlow(true)
-    private val sessionId = UUID.randomUUID().toString().take(8)
+    internal val sessionId: String = UUID.randomUUID().toString().take(8)
+
+    @Volatile
+    internal var endReason: SmtpSessionEndReason = SmtpSessionEndReason.UNKNOWN
+
+    internal val envelopeRecipients: MutableList<String> = mutableListOf()
 
     private val backpressure = SmtpBackpressureController(
         scope = server.serverScope,
@@ -114,6 +123,14 @@ internal class SmtpSession(
             log.info { "SMTP session started from ${sessionData.peerAddress}" }
             sendResponse(220, "${server.hostname} ${server.serviceName} Service ready")
 
+            server.notifyHooks { hook ->
+                hook.onSessionStarted(
+                    SmtpSessionStartedEvent(
+                        context = buildSessionContext(),
+                    )
+                )
+            }
+
             while (!shouldQuit && sessionActive.value) {
                 val line = readLine()
                 if (line != null) {
@@ -125,11 +142,30 @@ internal class SmtpSession(
             
             log.info { "SMTP session ended" }
         } finally {
+            runCatching {
+                server.notifyHooks { hook ->
+                    hook.onSessionEnded(
+                        SmtpSessionEndedEvent(
+                            context = buildSessionContext(),
+                            reason = endReason,
+                        )
+                    )
+                }
+            }
             // Graceful shutdown: 세션 추적에서 제거
             server.sessionTracker.unregister(sessionId)
             channel.close()
         }
     }
+
+    internal fun buildSessionContext(): SmtpSessionContext = SmtpSessionContext(
+        sessionId = sessionId,
+        peerAddress = sessionData.peerAddress,
+        serverHostname = sessionData.serverHostname,
+        helo = sessionData.helo,
+        tlsActive = sessionData.tlsActive,
+        authenticated = sessionData.isAuthenticated,
+    )
 
     private fun resolvePeer(address: Any?): String? {
         val inet = (address as? InetSocketAddress) ?: return address?.toString()
@@ -255,6 +291,7 @@ internal class SmtpSession(
         // BDAT 진행 중이던 스트림이 있으면 정리합니다(RSET/트랜잭션 종료 시 안전).
         clearBdatState()
 
+        envelopeRecipients.clear()
         transactionHandler?.done()
         transactionHandler = null
         sessionData = SmtpSessionDataResetter.reset(

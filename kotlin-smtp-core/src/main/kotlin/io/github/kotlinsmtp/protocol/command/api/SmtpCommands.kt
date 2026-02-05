@@ -17,6 +17,10 @@ import io.github.kotlinsmtp.protocol.command.RsetCommand
 import io.github.kotlinsmtp.protocol.command.StartTlsCommand
 import io.github.kotlinsmtp.protocol.command.VrfyCommand
 import io.github.kotlinsmtp.server.SmtpSession
+import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
+import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
+import io.github.kotlinsmtp.spi.SmtpMessageStage
+import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import io.github.kotlinsmtp.utils.SmtpStatusCode.COMMAND_REJECTED
 import io.github.kotlinsmtp.utils.SmtpStatusCode.BAD_COMMAND_SEQUENCE
 import io.github.kotlinsmtp.utils.SmtpStatusCode.ERROR_IN_PROCESSING
@@ -78,6 +82,34 @@ internal enum class SmtpCommands(
                         smtpCommand.instance.execute(parsedCommand, session)
                     } catch (response: SmtpSendResponse) {
                         session.sendResponse(response.statusCode, response.message)
+
+                        // DATA/BDAT 트랜잭션 거부는 메시지 단위 이벤트로도 노출합니다.
+                        val transferMode = when (parsedCommand.commandName) {
+                            "DATA" -> SmtpMessageTransferMode.DATA
+                            "BDAT" -> SmtpMessageTransferMode.BDAT
+                            else -> null
+                        }
+                        if (transferMode != null) {
+                            val envelope = SmtpMessageEnvelope(
+                                mailFrom = session.sessionData.mailFrom ?: "",
+                                rcptTo = session.envelopeRecipients.toList(),
+                                dsnEnvid = session.sessionData.dsnEnvid,
+                                dsnRet = session.sessionData.dsnRet,
+                                rcptDsn = session.sessionData.rcptDsnView,
+                            )
+                            session.server.notifyHooks { hook ->
+                                hook.onMessageRejected(
+                                    SmtpMessageRejectedEvent(
+                                        context = session.buildSessionContext(),
+                                        envelope = envelope,
+                                        transferMode = transferMode,
+                                        stage = SmtpMessageStage.PROCESSING,
+                                        responseCode = response.statusCode,
+                                        responseMessage = response.message,
+                                    )
+                                )
+                            }
+                        }
                     }
                 } else {
                     session.sendResponse(COMMAND_REJECTED.code, "Command unrecognized")

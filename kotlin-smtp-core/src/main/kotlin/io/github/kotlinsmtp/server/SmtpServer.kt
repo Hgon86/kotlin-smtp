@@ -6,6 +6,7 @@ import io.github.kotlinsmtp.protocol.handler.SmtpChannelHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
+import io.github.kotlinsmtp.spi.SmtpEventHook
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.channel.ChannelFuture
@@ -45,6 +46,7 @@ public class SmtpServer internal constructor(
     internal val userHandler: SmtpUserHandler? = null,
     internal val mailingListHandler: SmtpMailingListHandler? = null,
     internal val spooler: SmtpSpooler? = null,
+    internal val eventHooks: List<SmtpEventHook> = emptyList(),
     internal val authRateLimiter: AuthRateLimiter? = null,
     internal val enableVrfy: Boolean = false,
     internal val enableEtrn: Boolean = false,
@@ -76,6 +78,16 @@ public class SmtpServer internal constructor(
 
     // 활성 세션 추적 (graceful shutdown용)
     internal val sessionTracker = ActiveSessionTracker()
+
+    internal suspend fun notifyHooks(block: suspend (SmtpEventHook) -> Unit) {
+        if (eventHooks.isEmpty()) return
+        for (hook in eventHooks) {
+            runCatching { block(hook) }
+                .onFailure { t ->
+                    log.warn(t) { "SmtpEventHook failed: ${hook::class.qualifiedName ?: hook::class.simpleName}" }
+                }
+        }
+    }
 
     // 신뢰 프록시 CIDR 파싱(런타임 오버헤드 최소화)
     internal val trustedProxyCidrsParsed = trustedProxyCidrs.mapNotNull { io.github.kotlinsmtp.utils.IpCidr.parse(it) }
@@ -352,6 +364,8 @@ public class SmtpServer internal constructor(
         private var mailingListHandler: SmtpMailingListHandler? = null
         private var spooler: SmtpSpooler? = null
 
+        private val eventHooks: MutableList<SmtpEventHook> = mutableListOf()
+
         public fun useProtocolHandlerFactory(factory: () -> SmtpProtocolHandler): Unit {
             this.protocolHandlerFactory = factory
         }
@@ -370,6 +384,17 @@ public class SmtpServer internal constructor(
 
         public fun useSpooler(spooler: SmtpSpooler?): Unit {
             this.spooler = spooler
+        }
+
+        /**
+         * 엔진 이벤트 훅(SPI)을 추가합니다.
+         *
+         * - 훅 예외는 기본적으로 Non-fatal이며, 서버 처리는 계속됩니다.
+         *
+         * @param hook 등록할 훅
+         */
+        public fun addEventHook(hook: SmtpEventHook): Unit {
+            eventHooks.add(hook)
         }
 
         public val features: FeatureFlags = FeatureFlags()
@@ -402,6 +427,7 @@ public class SmtpServer internal constructor(
                 userHandler = userHandler,
                 mailingListHandler = mailingListHandler,
                 spooler = spooler,
+                eventHooks = eventHooks.toList(),
                 authRateLimiter = authLimiter,
                 enableVrfy = features.enableVrfy,
                 enableEtrn = features.enableEtrn,

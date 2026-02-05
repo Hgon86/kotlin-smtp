@@ -4,6 +4,7 @@ import io.github.kotlinsmtp.server.SmtpServer
 import io.github.kotlinsmtp.server.SmtpInboundFrame
 import io.github.kotlinsmtp.server.ProxyProtocolSupport
 import io.github.kotlinsmtp.server.SmtpSession
+import io.github.kotlinsmtp.spi.SmtpSessionEndReason
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.netty.buffer.Unpooled
@@ -236,6 +237,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
 
             scope.launch {
                 if (this@SmtpChannelHandler::session.isInitialized) {
+                    session.endReason = SmtpSessionEndReason.PROTOCOL_ERROR
                     runCatching { session.sendResponseAwait(status.code, safeMessage) }
                     ctx.close()
                 } else {
@@ -249,6 +251,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         log.error(cause) { "Error in SMTP session" }
         scope.cancel()
         if (this::session.isInitialized) {
+            session.endReason = SmtpSessionEndReason.PROTOCOL_ERROR
             session.close()
         }
         // Flush any pending writes without sending extra bytes.
@@ -260,6 +263,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         if (evt is IdleStateEvent) {
             scope.launch {
                 if (this@SmtpChannelHandler::session.isInitialized) {
+                    session.endReason = SmtpSessionEndReason.IDLE_TIMEOUT
                     session.sendResponseAwait(
                         421,
                         "4.4.2 Idle timeout. Closing connection."

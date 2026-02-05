@@ -71,6 +71,7 @@ internal class RcptCommand : SmtpCommand(
 
         // 상태 업데이트
         session.sessionData.recipientCount += 1
+        session.envelopeRecipients.add(recipient)
         // DSN 옵션 저장(수신자별)
         val notify = esmtp.parameters["NOTIFY"]?.trim()?.takeIf { it.isNotBlank() }
         val orcpt = esmtp.parameters["ORCPT"]?.trim()?.takeIf { it.isNotBlank() }

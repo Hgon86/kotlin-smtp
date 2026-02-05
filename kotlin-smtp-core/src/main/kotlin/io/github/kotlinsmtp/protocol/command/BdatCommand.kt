@@ -8,6 +8,7 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.server.SmtpStreamingHandlerRunner
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.kotlinsmtp.utils.Values
+import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withContext
@@ -173,6 +174,10 @@ internal class BdatCommand : SmtpCommand(
 
         // 상태 정리(성공/실패 공통)
         session.clearBdatState()
-        SmtpStreamingHandlerRunner.finalizeTransaction(session, processing)
+        SmtpStreamingHandlerRunner.finalizeTransaction(
+            session = session,
+            processing = processing,
+            transferMode = SmtpMessageTransferMode.BDAT,
+        )
     }
 }

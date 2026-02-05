@@ -1,6 +1,11 @@
 package io.github.kotlinsmtp.server
 
 import io.github.kotlinsmtp.exception.SmtpSendResponse
+import io.github.kotlinsmtp.spi.SmtpMessageAcceptedEvent
+import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
+import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
+import io.github.kotlinsmtp.spi.SmtpMessageStage
+import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
@@ -42,25 +47,65 @@ internal object SmtpStreamingHandlerRunner {
      *
      * @return 성공 처리면 true
      */
-    suspend fun finalizeTransaction(session: SmtpSession, processing: Result<Unit>): Boolean {
+    suspend fun finalizeTransaction(
+        session: SmtpSession,
+        processing: Result<Unit>,
+        transferMode: SmtpMessageTransferMode,
+    ): Boolean {
+        val envelope = SmtpMessageEnvelope(
+            mailFrom = session.sessionData.mailFrom ?: "",
+            rcptTo = session.envelopeRecipients.toList(),
+            dsnEnvid = session.sessionData.dsnEnvid,
+            dsnRet = session.sessionData.dsnRet,
+            rcptDsn = session.sessionData.rcptDsnView,
+        )
+
+        val context = session.buildSessionContext()
+        val sizeBytes = session.currentMessageSize.toLong()
+
         if (processing.isFailure) {
-            when (val e = processing.exceptionOrNull()!!) {
+            val (code, message) = when (val e = processing.exceptionOrNull()!!) {
                 is TimeoutCancellationException ->
-                    session.sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Processing timeout")
+                    SmtpStatusCode.ERROR_IN_PROCESSING.code to "Processing timeout"
 
                 is SmtpSendResponse ->
-                    session.sendResponse(e.statusCode, e.message)
+                    e.statusCode to e.message
 
                 else ->
-                    session.sendResponse(SmtpStatusCode.TRANSACTION_FAILED.code, "Transaction failed")
+                    SmtpStatusCode.TRANSACTION_FAILED.code to "Transaction failed"
             }
 
+            session.sendResponse(code, message)
+            session.server.notifyHooks { hook ->
+                hook.onMessageRejected(
+                    SmtpMessageRejectedEvent(
+                        context = context,
+                        envelope = envelope,
+                        transferMode = transferMode,
+                        stage = SmtpMessageStage.PROCESSING,
+                        responseCode = code,
+                        responseMessage = message,
+                    )
+                )
+            }
             session.resetTransaction(preserveGreeting = true)
             return false
         }
 
-        session.resetTransaction(preserveGreeting = true)
         session.sendResponse(SmtpStatusCode.OKAY.code, "Ok")
+
+        session.server.notifyHooks { hook ->
+            hook.onMessageAccepted(
+                SmtpMessageAcceptedEvent(
+                    context = context,
+                    envelope = envelope,
+                    transferMode = transferMode,
+                    sizeBytes = sizeBytes,
+                )
+            )
+        }
+
+        session.resetTransaction(preserveGreeting = true)
         return true
     }
 }
