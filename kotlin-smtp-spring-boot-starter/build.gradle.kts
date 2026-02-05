@@ -49,6 +49,8 @@ dependencies {
     implementation("org.eclipse.angus:angus-mail:2.0.3")
 
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.springframework.boot:spring-boot-test")
+    testImplementation("org.assertj:assertj-core")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
