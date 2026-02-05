@@ -248,5 +248,6 @@ dependencies {
 - [THIN_ARCHITECTURE.md](docs/THIN_ARCHITECTURE.md) - 현재 아키텍처 문서
 - [ROADMAP.md](docs/ROADMAP.md) - 프로젝트 로드맵 및 작업 추적
 - [STATUS.md](docs/STATUS.md) - 진행 상황 및 다음 작업(상세)
+- [MODULE_STRATEGY.md](docs/MODULE_STRATEGY.md) - 옵션 모듈 분리(모듈 전략 초안)
 - [PUBLIC_API_CANDIDATES.md](docs/PUBLIC_API_CANDIDATES.md) - 공개 API 후보
 - [PUBLIC_API_POLICY.md](docs/PUBLIC_API_POLICY.md) - Public API 경계/변경 규칙

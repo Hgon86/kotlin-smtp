@@ -99,6 +99,10 @@ STARTTLS 업그레이드 흐름(중요)
   - EXPN mailing list expansion
   - current impl: `LocalFileMailingListHandler`
 
+- `io.github.kotlinsmtp.spi.SmtpEventHook`
+  - minimal non-fatal event hooks for external integrations
+  - examples: S3/Kafka/DB metadata publishing
+
 ### Spring 전용 레이어(와이어링만)
 
 아래 클래스들은 Spring Boot에서 서버를 구성/실행하기 위한 와이어링 계층입니다.

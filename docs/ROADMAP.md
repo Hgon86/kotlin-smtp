@@ -172,11 +172,16 @@
 
 ### 8. Spring Boot Starter 구조 재정돈(옵션 모듈 분리)
 
-**목표**: 라이브러리화 최종 형태를 안정화
+**목표**: starter는 "기동 경험 + 로컬 기본 구현"만 제공하고, 특정 인프라(S3/Kafka/DB 등) 통합은 옵션 모듈로 분리
+
+**설계 문서**:
+- `docs/MODULE_STRATEGY.md`
 
 **TODO**:
-- [ ] (검토) 이 항목은 이미 완료된 것으로 보입니다(현재 저장소에 `kotlin-smtp-spring-boot-starter` 모듈이 존재).
-- [ ] 필요하면 "starter 구조 재정돈"(설정 최소화/기본 구현 범위/옵션 모듈 분리) 같은 형태로 TODO를 재정의
+- [ ] starter에 남길 "기본 구현" 범위 확정(파일 store/spool/로컬 mailbox/relay 포함 여부)
+- [ ] 옵션 모듈 후보/명명 규칙/의존 방향 확정
+- [ ] (선택) outbound relay(dnsjava/jakarta mail) 분리 여부 결정(가장 무거운 의존)
+- [ ] (선택) `kotlin-smtp-*-spring-boot-starter` 형태로 통합 모듈 auto-config 제공 여부 결정
 
 ---
 
