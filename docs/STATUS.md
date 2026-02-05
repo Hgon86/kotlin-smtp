@@ -8,6 +8,7 @@
 - 모듈 구조: `kotlin-smtp-core`(Spring-free) + `kotlin-smtp-spring-boot-starter`(Spring Boot wiring)
 - 테스트: `./gradlew test` 통과(최근 변경마다 실행)
 - Public API 원칙: `docs/PUBLIC_API_POLICY.md`
+- 옵션 모듈 분리(설계): `docs/MODULE_STRATEGY.md`
 
 ## 최근 완료된 핵심 작업(안정화/리팩터링)
 
