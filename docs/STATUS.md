@@ -30,6 +30,9 @@
   - queued bytes 기준 high/low watermark에서 autoRead 토글로 스파이크 드롭 완화
 - 예외 메시지 노출 제거
   - DATA/BDAT에서 클라이언트 응답에 내부 예외 메시지 노출하지 않도록 고정 메시지화
+- AUTH/STARTTLS 회귀 테스트 보강
+  - STARTTLS 이후 인증 전 `MAIL FROM` 거부(530) 시나리오 고정
+  - `AUTH PLAIN` 실패 시 535 응답 시나리오 고정
 
 ### 유지보수성
 

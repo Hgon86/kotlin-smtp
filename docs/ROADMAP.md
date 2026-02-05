@@ -46,11 +46,11 @@
 **목표**: host가 의존해야 하는 타입만 public으로 안정화(semver 대상)하고, 내부(Netty/프레이밍/세션 구현)는 숨김
 
 **TODO**:
-- [ ] `AUTH PLAIN` 성공/실패 시나리오 테스트
-- [ ] `STARTTLS` 핸드셰이크 성공/실패 테스트
-- [ ] TLS upgrade 후 세션 상태 유지 테스트
-- [ ] 인증 없이 MAIL FROM 거부 테스트 (requireAuthForMail)
-- [ ] STARTTLS 없이 AUTH 시도 거부 테스트
+- [x] `AUTH PLAIN` 성공/실패 시나리오 테스트
+- [x] `STARTTLS` 핸드셰이크 성공/실패 테스트
+- [x] TLS upgrade 후 세션 상태 유지 테스트
+- [x] 인증 없이 MAIL FROM 거부 테스트 (requireAuthForMail)
+- [x] STARTTLS 없이 AUTH 시도 거부 테스트
 
 **관련 파일**:
 - `src/test/kotlin/...` (테스트 디렉토리 확인 필요)

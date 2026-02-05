@@ -179,7 +179,9 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            val ehloLines = readEhloLines(reader)
+            assertTrue(ehloLines.isNotEmpty(), "Expected EHLO response after STARTTLS")
+            assertTrue(ehloLines.last().startsWith("250 "), "Expected final 250 line, got: ${ehloLines.lastOrNull()}")
 
             writer.write(buildAuthPlainLine("user", "password"))
             writer.flush()
@@ -190,6 +192,85 @@ class SmtpAuthStartTlsIntegrationTest {
             writer.flush()
             val mailResp = reader.readLine()
             assertTrue(mailResp.startsWith("250"), "Expected 250 after MAIL FROM, got: $mailResp")
+
+            tlsSocket.close()
+        }
+    }
+
+    /**
+     * STARTTLS 이후 EHLO를 마쳤더라도 인증 전에는 MAIL FROM을 거부해야 합니다.
+     */
+    @Test
+    fun `MAIL FROM is rejected after STARTTLS when auth is required but not authenticated`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            val ehloLines = readEhloLines(reader)
+            assertTrue(ehloLines.isNotEmpty(), "Expected EHLO response after STARTTLS")
+            assertTrue(ehloLines.last().startsWith("250 "), "Expected final 250 line, got: ${ehloLines.lastOrNull()}")
+
+            writer.write("MAIL FROM:<sender@test.com>\r\n")
+            writer.flush()
+            val mailResp = reader.readLine()
+            assertTrue(mailResp.startsWith("530"), "Expected 530 when auth is required, got: $mailResp")
+            assertTrue(mailResp.contains("Authentication required", ignoreCase = true), "Expected auth required hint, got: $mailResp")
+
+            tlsSocket.close()
+        }
+    }
+
+    /**
+     * 잘못된 AUTH PLAIN 자격 증명은 535로 거부되어야 합니다.
+     */
+    @Test
+    fun `AUTH PLAIN failure returns 535`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write(buildAuthPlainLine("user", "wrong-password"))
+            writer.flush()
+            val authResp = reader.readLine()
+            assertTrue(authResp.startsWith("535"), "Expected 535 Authentication credentials invalid, got: $authResp")
 
             tlsSocket.close()
         }
