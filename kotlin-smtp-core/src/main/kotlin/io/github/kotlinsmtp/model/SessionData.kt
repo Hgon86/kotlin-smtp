@@ -1,5 +1,13 @@
 package io.github.kotlinsmtp.model
 
+/**
+ * SMTP 세션(연결/트랜잭션) 처리 중 엔진이 축적하는 상태 데이터입니다.
+ *
+ * - 엔진이 상태 머신을 관리하며, 외부(호스트)에서는 읽기 위주로 사용합니다.
+ * - 컬렉션 등 가변 객체는 외부에서 변이되지 않도록 읽기 전용 뷰만 제공합니다.
+ *
+ * @property rcptDsnView 수신자별 DSN(RFC 3461) 파라미터의 읽기 전용 뷰
+ */
 public class SessionData {
     // 클라이언트 식별 (HELO/EHLO 인자)
     public var helo: String? = null; internal set
@@ -27,9 +35,9 @@ public class SessionData {
     // RFC 3461(DSN) - RCPT TO 확장(수신자별)
     // - NOTIFY=..., ORCPT=...
     // TODO(표준 DSN): RFC 3464 생성 시 각 수신자의 옵션을 반영
-    public var rcptDsn: MutableMap<String, RcptDsn> = mutableMapOf(); internal set
+    internal var rcptDsn: MutableMap<String, RcptDsn> = mutableMapOf()
 
-    // Public read-only view (do not mutate rcptDsn from outside the engine)
+    /** 외부에서 DSN 상태를 변이하지 않도록 읽기 전용 뷰만 제공합니다. */
     public val rcptDsnView: Map<String, RcptDsn>
         get() = rcptDsn
 

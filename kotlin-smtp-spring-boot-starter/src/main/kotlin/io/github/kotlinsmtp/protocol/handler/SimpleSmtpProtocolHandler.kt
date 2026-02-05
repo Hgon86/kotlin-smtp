@@ -47,7 +47,7 @@ class SimpleSmtpProtocolHandler(
         log.info { "Recipient added: $recipient" }
     }
 
-    override suspend fun data(rawInput: InputStream, size: Long) = withContext(dispatcherIO) {
+    override suspend fun data(inputStream: InputStream, size: Long) = withContext(dispatcherIO) {
         if (recipients.isEmpty()) {
             log.warn { "No recipients specified, skipping message" }
             return@withContext
@@ -77,7 +77,7 @@ class SimpleSmtpProtocolHandler(
             val tempFile: Path = messageStore.storeRfc822(
                 messageId = messageId,
                 receivedHeaderValue = receivedValue,
-                rawInput = rawInput,
+                rawInput = inputStream,
             )
 
             if (spooler != null) {
@@ -89,7 +89,7 @@ class SimpleSmtpProtocolHandler(
                     authenticated = sessionData.isAuthenticated,
                     dsnEnvid = sessionData.dsnEnvid,
                     dsnRet = sessionData.dsnRet,
-                    rcptDsn = sessionData.rcptDsn.toMap(),
+                    rcptDsn = sessionData.rcptDsnView,
                 )
                 log.info { "Enqueued to spool only (no immediate delivery)." }
                 Files.deleteIfExists(tempFile)
@@ -104,7 +104,7 @@ class SimpleSmtpProtocolHandler(
     }
 
     private suspend fun deliverSynchronously(tempFile: Path, messageId: String) {
-        val message = mailParser.loadMimeMessage(tempFile, sender, recipients)
+        mailParser.loadMimeMessage(tempFile, sender, recipients)
         recipients.forEach { recipient ->
             val domain = recipient.substringAfterLast('@', "")
             val isLocal = deliveryService.isLocalDomain(domain)
@@ -117,8 +117,8 @@ class SimpleSmtpProtocolHandler(
                     messageId = messageId,
                     authenticated = sessionData.isAuthenticated,
                     generateDsnOnFailure = true,
-                    rcptNotify = sessionData.rcptDsn[recipient]?.notify,
-                    rcptOrcpt = sessionData.rcptDsn[recipient]?.orcpt,
+                    rcptNotify = sessionData.rcptDsnView[recipient]?.notify,
+                    rcptOrcpt = sessionData.rcptDsnView[recipient]?.orcpt,
                     dsnEnvid = sessionData.dsnEnvid,
                     dsnRet = sessionData.dsnRet,
                 )
