@@ -29,6 +29,20 @@ Suggested conventions:
 - Internal implementation: `io.github.kotlinsmtp.internal.*` or `io.github.kotlinsmtp.impl.*`
 - Kotlin visibility: prefer `internal` for non-API types even inside public packages.
 
+### Semver-Stable Package List
+
+We only promise semver compatibility for types inside these packages:
+
+- `io.github.kotlinsmtp.server`
+- `io.github.kotlinsmtp.model`
+- `io.github.kotlinsmtp.exception`
+- `io.github.kotlinsmtp.storage`
+- `io.github.kotlinsmtp.auth`
+- `io.github.kotlinsmtp.protocol.handler`
+- `io.github.kotlinsmtp.spi`
+
+Everything else is treated as internal implementation detail.
+
 ## Compatibility Rules
 
 - Changes to public API follow semver:

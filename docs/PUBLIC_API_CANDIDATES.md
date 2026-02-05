@@ -1,34 +1,46 @@
-## Public API Candidates (For Library Mode)
+## Public API Candidates (Library Mode)
 
-This list is the "likely stable" API surface if we publish this project as a reusable library.
+This file lists the intended semver-stable API surface for publishing `kotlin-smtp-core` as a reusable library.
 
 Rule of thumb:
-- If a type is used by host applications to customize behavior, it should become part of the public API.
-- Everything else should remain internal/impl until we commit to long-term compatibility.
+- If a host application must **call / implement / reference** a type to customize behavior, it belongs in the public API.
+- Everything else remains internal or implementation detail.
 
-### Core Engine (Should Be Public)
+### Semver-Stable Packages (Target)
+
+We treat only the following packages as semver-stable API:
+
+- `io.github.kotlinsmtp.server` (selected types only)
+- `io.github.kotlinsmtp.model`
+- `io.github.kotlinsmtp.exception`
+- `io.github.kotlinsmtp.storage`
+- `io.github.kotlinsmtp.auth`
+- `io.github.kotlinsmtp.protocol.handler`
+- `io.github.kotlinsmtp.spi`
+
+### Core Engine (Public)
 
 - `io.github.kotlinsmtp.server.SmtpServer`
-  - create server instance via `SmtpServer.create(...)` / `SmtpServer.builder(...)`, start/stop
-  - `SmtpServer` implementation constructor should remain internal
+  - preferred entrypoint: `SmtpServer.create(...)` / `SmtpServer.builder(...)`
+  - keep the implementation constructor `internal`
 - `io.github.kotlinsmtp.server.SmtpSpooler`
-  - minimal hook for host-side spool/delivery scheduling
+  - minimal hook to trigger host-side delivery/spool processing
+
+### Core Models (Public)
+
 - `io.github.kotlinsmtp.model.SessionData`
-  - observable state passed into handlers
-
-### Core Models (Should Be Public)
-
+  - engine-owned session/transaction state (read-mostly from host code)
 - `io.github.kotlinsmtp.model.SmtpUser`
   - returned by `SmtpUserHandler`
 - `io.github.kotlinsmtp.model.RcptDsn`
   - DSN-related RCPT parameters surfaced through `SessionData`
 
-### Core Exceptions (Should Be Public)
+### Core Exceptions (Public)
 
 - `io.github.kotlinsmtp.exception.SmtpSendResponse`
-  - host/starter handlers may throw this to send an SMTP response with a specific status code
+  - host/starter handlers may throw this to return a specific SMTP status code/message
 
-### Extension Interfaces (Should Be Public)
+### Extension Interfaces (Public)
 
 - `io.github.kotlinsmtp.storage.MessageStore`
 - `io.github.kotlinsmtp.auth.AuthService`
@@ -36,38 +48,29 @@ Rule of thumb:
 - `io.github.kotlinsmtp.protocol.handler.SmtpUserHandler`
 - `io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler`
 
-### SPI Hooks (Should Be Public)
+### SPI Hooks (Public)
 
 - `io.github.kotlinsmtp.spi.SmtpEventHook`
   - minimal non-fatal event hooks for external integrations (S3/Kafka/DB metadata, etc.)
-- `io.github.kotlinsmtp.spi.SmtpSessionContext`
-- `io.github.kotlinsmtp.spi.SmtpMessageEnvelope`
-- `io.github.kotlinsmtp.spi.SmtpMessageTransferMode`
-- `io.github.kotlinsmtp.spi.SmtpMessageStage`
-- `io.github.kotlinsmtp.spi.SmtpSessionEndReason`
-- `io.github.kotlinsmtp.spi.SmtpSessionStartedEvent`
-- `io.github.kotlinsmtp.spi.SmtpSessionEndedEvent`
-- `io.github.kotlinsmtp.spi.SmtpMessageAcceptedEvent`
-- `io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent`
+- `io.github.kotlinsmtp.spi.*` event/context models
 
-### Probably NOT Public (Keep Internal Initially)
+### Not Public / Internal (Examples)
 
-- Netty pipeline internals:
-  - `SmtpChannelHandler`, `SmtpInboundDecoder`, `SmtpInboundFrame`
-- Concrete implementations (until we intentionally ship them as defaults):
-  - `FileMessageStore`, `InMemoryAuthService`, `LocalMailboxManager`, `MailRelay`, `MailSpooler`, `MailDeliveryService`, `DsnService`
+- Netty pipeline + framing internals (must remain internal):
+  - `io.github.kotlinsmtp.protocol.handler.SmtpChannelHandler`
+  - `io.github.kotlinsmtp.server.SmtpInboundDecoder`
+  - `io.github.kotlinsmtp.server.SmtpInboundFrame`
+- Protocol command implementations:
+  - `io.github.kotlinsmtp.protocol.command.*`
+- Utility/internal helpers:
+  - `io.github.kotlinsmtp.utils.*`
+  - `io.github.kotlinsmtp.server.*` (except the explicitly listed public types)
 
-### Note: Storage / Metadata / Events
+### Note: Implementations Live Outside Core
 
-This library is intended to be infrastructure-agnostic.
+The core module is infrastructure-agnostic.
 
-- Raw EML storage (S3/Kafka/DB) and metadata persistence are expected to be provided by:
-  - host applications, and/or
-  - optional integration modules.
+Concrete implementations such as file-based storage, local mailbox management, or outbound relay are expected to live in:
 
-The core module should only expose minimal extension interfaces (SPI) required for these integrations.
-
-### Compatibility Note
-
-If we publish, we should treat "public" packages as semver-stable.
-Everything else can change without major version bumps.
+- `kotlin-smtp-spring-boot-starter` (convenience wiring + local default implementations)
+- `kotlin-smtp-relay*` optional modules (outbound relay + policy + DSN)
