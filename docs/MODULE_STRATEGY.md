@@ -22,7 +22,12 @@
 
 현재 starter는 relay 관련 구현을 포함하고 있고, 이 경로는 상대적으로 무거운 의존(dnsjava, jakarta mail/angus)을 끌어옵니다.
 
-선택지(둘 다 합리적):
+결정(2026-02): **옵션 B(슬림 starter) 채택**
+
+- 기본 `kotlin-smtp-spring-boot-starter`는 inbound-only(수신/저장/로컬 처리) 경험에 집중합니다.
+- 외부 도메인으로의 SMTP 발신/전달(outbound relay)은 별도 모듈을 추가해서 활성화합니다.
+
+선택지(참고):
 
 - 옵션 A(완전판 starter): relay는 starter에 남김
   - 의미: starter 하나로 "수신 + (정책 허용 시) 외부로 SMTP 발송"까지 가능한 구성 제공
@@ -30,14 +35,14 @@
   - 단점: starter 의존이 무거워짐
   - 운영 안전장치: 오픈 릴레이 방지를 위해 relay는 기본적으로 엄격한 정책(requireAuthForRelay 등)과 함께 제공
 
-- 옵션 B(슬림 starter): relay를 별도 모듈로 분리
+- 옵션 B(슬림 starter): relay를 별도 모듈로 분리 (채택)
   - 예: `kotlin-smtp-relay` + `kotlin-smtp-relay-spring-boot-starter`
   - 의미: 기본 starter는 "수신/저장" 중심(외부 발송은 선택)
   - 장점: starter 기본 의존이 가벼워지고, 인프라 선택지가 더 명확해짐
   - 단점: "완전판" 구성을 만들려면 모듈을 하나 더 추가해야 함
 
-권장(프로젝트 방향이 "starter로 완전한 SMTP 서버 제공"이라면): 옵션 A.
-다만 장기적으로는, 옵션 A를 유지하면서도 별도 slim starter(옵션 B 계열)를 추가로 제공하는 방식(2종 starter)도 가능합니다.
+결과적으로, 발신이 필요한 호스트는 relay 모듈을 추가하면 됩니다.
+즉 "수신 전용" 수요도 만족하면서, "완전한 서버" 구성은 의존성 추가로 달성할 수 있습니다.
 
 ### 2) 옵션 모듈의 "starter" 형태를 제공할지 여부
 
@@ -61,7 +66,7 @@
 
 - `kotlin-smtp-spring-boot-starter`
   - `smtp.*` 설정을 기반으로 `SmtpServer`(들)을 만들고 lifecycle에 연결
-  - 기본 구현: 파일 기반 `MessageStore`, 로컬 mailbox, spool/retry, outbound relay 등
+  - 기본 구현: 파일 기반 `MessageStore`, 로컬 mailbox, spool/retry (outbound relay는 분리 예정)
 
 ## 권장 목표 구조(점진적 분리)
 
@@ -137,3 +142,8 @@ starter/옵션 starter는 "사용자가 Bean을 주면 그게 우선"이 되도�
 
 - 이 문서는 설계 초안이며, 실제 구현은 public API 경계가 더 안정화된 뒤에 진행합니다.
 - 모듈 분리는 "기능 분해"보다 "의존성/벤더 종속 분리"를 최우선으로 합니다.
+- 릴레이(외부 도메인 SMTP 전송)
+  - `kotlin-smtp-relay` (Spring-free)
+    - 외부 MX 조회 + SMTP 전송(outbound) 구현
+  - `kotlin-smtp-relay-spring-boot-starter`
+    - relay 설정 바인딩 + outbound 구성 bean auto-config

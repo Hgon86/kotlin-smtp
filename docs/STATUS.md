@@ -10,6 +10,9 @@
 - Public API 원칙: `docs/PUBLIC_API_POLICY.md`
 - 옵션 모듈 분리(설계): `docs/MODULE_STRATEGY.md`
 
+결정사항(현재):
+- relay(outbound SMTP 전송)는 starter에서 분리해 옵션 모듈로 제공
+
 ## 최근 완료된 핵심 작업(안정화/리팩터링)
 
 아래는 "Section 4(Runtime/Netty + Session)" 중심으로 진행한 변경들입니다.
