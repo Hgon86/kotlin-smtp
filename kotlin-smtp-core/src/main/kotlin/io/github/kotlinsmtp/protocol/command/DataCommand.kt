@@ -6,7 +6,6 @@ import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.CoroutineInputStream
 import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.server.SmtpStreamingHandlerRunner
-import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
 import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
 import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
@@ -137,13 +136,6 @@ internal class DataCommand : SmtpCommand(
             runCatching { handlerJob.join() }
 
             val e = receiveResult.exceptionOrNull()!!
-            val envelope = SmtpMessageEnvelope(
-                mailFrom = session.sessionData.mailFrom ?: "",
-                rcptTo = session.envelopeRecipients.toList(),
-                dsnEnvid = session.sessionData.dsnEnvid,
-                dsnRet = session.sessionData.dsnRet,
-                rcptDsn = session.sessionData.rcptDsnView,
-            )
 
             val (code, message) = when (e) {
                 is SmtpSendResponse -> e.statusCode to e.message
@@ -151,17 +143,21 @@ internal class DataCommand : SmtpCommand(
             }
 
             session.sendResponse(code, message)
-            session.server.notifyHooks { hook ->
-                hook.onMessageRejected(
-                    SmtpMessageRejectedEvent(
-                        context = session.buildSessionContext(),
-                        envelope = envelope,
-                        transferMode = SmtpMessageTransferMode.DATA,
-                        stage = SmtpMessageStage.RECEIVING,
-                        responseCode = code,
-                        responseMessage = message,
+            if (session.server.hasEventHooks()) {
+                val context = session.buildSessionContext()
+                val envelope = session.buildMessageEnvelopeSnapshot()
+                session.server.notifyHooks { hook ->
+                    hook.onMessageRejected(
+                        SmtpMessageRejectedEvent(
+                            context = context,
+                            envelope = envelope,
+                            transferMode = SmtpMessageTransferMode.DATA,
+                            stage = SmtpMessageStage.RECEIVING,
+                            responseCode = code,
+                            responseMessage = message,
+                        )
                     )
-                )
+                }
             }
             session.shouldQuit = true
             session.close()

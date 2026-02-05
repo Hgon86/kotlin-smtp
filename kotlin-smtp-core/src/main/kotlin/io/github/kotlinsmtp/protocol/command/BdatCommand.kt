@@ -8,6 +8,8 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.server.SmtpStreamingHandlerRunner
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.kotlinsmtp.utils.Values
+import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
+import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -145,15 +147,40 @@ internal class BdatCommand : SmtpCommand(
             ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "BDAT internal state error")
 
         // IO 디스패처에서 batch 처리(추후 청크 분할/스풀링 최적화 여지)
-        runCatching {
+        val sendChunk = runCatching {
             withContext(Dispatchers.IO) {
                 // 작은 청크는 그대로, 큰 청크도 한 번에 전달(청크 상한으로 메모리 폭주 방지)
                 // BDAT 0 케이스는 불필요한 전송을 피합니다.
                 if (bytes.isNotEmpty()) dataChannel.send(bytes)
             }
-        }.onFailure { _ ->
+        }
+        if (sendChunk.isFailure) {
+            // 프로토콜 동기화를 위해: 오류 응답 후 연결을 종료(보수적)
             session.clearBdatState()
-            throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Error receiving BDAT")
+            val code = SmtpStatusCode.ERROR_IN_PROCESSING.code
+            val message = "Error receiving BDAT"
+            session.sendResponse(code, message)
+
+            if (session.server.hasEventHooks()) {
+                val context = session.buildSessionContext()
+                val envelope = session.buildMessageEnvelopeSnapshot()
+                session.server.notifyHooks { hook ->
+                    hook.onMessageRejected(
+                        SmtpMessageRejectedEvent(
+                            context = context,
+                            envelope = envelope,
+                            transferMode = SmtpMessageTransferMode.BDAT,
+                            stage = SmtpMessageStage.RECEIVING,
+                            responseCode = code,
+                            responseMessage = message,
+                        )
+                    )
+                }
+            }
+
+            session.shouldQuit = true
+            session.close()
+            return
         }
 
         if (!isLast) {

@@ -3,6 +3,7 @@ package io.github.kotlinsmtp.server
 import io.github.kotlinsmtp.model.SessionData
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommands
 import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
+import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
 import io.github.kotlinsmtp.spi.SmtpSessionContext
 import io.github.kotlinsmtp.spi.SmtpSessionEndedEvent
 import io.github.kotlinsmtp.spi.SmtpSessionEndReason
@@ -123,12 +124,14 @@ internal class SmtpSession(
             log.info { "SMTP session started from ${sessionData.peerAddress}" }
             sendResponse(220, "${server.hostname} ${server.serviceName} Service ready")
 
-            server.notifyHooks { hook ->
-                hook.onSessionStarted(
-                    SmtpSessionStartedEvent(
-                        context = buildSessionContext(),
+            if (server.hasEventHooks()) {
+                server.notifyHooks { hook ->
+                    hook.onSessionStarted(
+                        SmtpSessionStartedEvent(
+                            context = buildSessionContext(),
+                        )
                     )
-                )
+                }
             }
 
             while (!shouldQuit && sessionActive.value) {
@@ -143,13 +146,15 @@ internal class SmtpSession(
             log.info { "SMTP session ended" }
         } finally {
             runCatching {
-                server.notifyHooks { hook ->
-                    hook.onSessionEnded(
-                        SmtpSessionEndedEvent(
-                            context = buildSessionContext(),
-                            reason = endReason,
+                if (server.hasEventHooks()) {
+                    server.notifyHooks { hook ->
+                        hook.onSessionEnded(
+                            SmtpSessionEndedEvent(
+                                context = buildSessionContext(),
+                                reason = endReason,
+                            )
                         )
-                    )
+                    }
                 }
             }
             // Graceful shutdown: 세션 추적에서 제거
@@ -165,6 +170,14 @@ internal class SmtpSession(
         helo = sessionData.helo,
         tlsActive = sessionData.tlsActive,
         authenticated = sessionData.isAuthenticated,
+    )
+
+    internal fun buildMessageEnvelopeSnapshot(): SmtpMessageEnvelope = SmtpMessageEnvelope(
+        mailFrom = sessionData.mailFrom ?: "",
+        rcptTo = envelopeRecipients.toList(),
+        dsnEnvid = sessionData.dsnEnvid,
+        dsnRet = sessionData.dsnRet,
+        rcptDsn = sessionData.rcptDsnView.toMap(),
     )
 
     private fun resolvePeer(address: Any?): String? {

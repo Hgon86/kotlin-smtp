@@ -2,7 +2,6 @@ package io.github.kotlinsmtp.server
 
 import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.spi.SmtpMessageAcceptedEvent
-import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
 import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
 import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
@@ -52,16 +51,7 @@ internal object SmtpStreamingHandlerRunner {
         processing: Result<Unit>,
         transferMode: SmtpMessageTransferMode,
     ): Boolean {
-        val envelope = SmtpMessageEnvelope(
-            mailFrom = session.sessionData.mailFrom ?: "",
-            rcptTo = session.envelopeRecipients.toList(),
-            dsnEnvid = session.sessionData.dsnEnvid,
-            dsnRet = session.sessionData.dsnRet,
-            rcptDsn = session.sessionData.rcptDsnView,
-        )
-
-        val context = session.buildSessionContext()
-        val sizeBytes = session.currentMessageSize.toLong()
+        val shouldNotify = session.server.hasEventHooks()
 
         if (processing.isFailure) {
             val (code, message) = when (val e = processing.exceptionOrNull()!!) {
@@ -76,17 +66,21 @@ internal object SmtpStreamingHandlerRunner {
             }
 
             session.sendResponse(code, message)
-            session.server.notifyHooks { hook ->
-                hook.onMessageRejected(
-                    SmtpMessageRejectedEvent(
-                        context = context,
-                        envelope = envelope,
-                        transferMode = transferMode,
-                        stage = SmtpMessageStage.PROCESSING,
-                        responseCode = code,
-                        responseMessage = message,
+            if (shouldNotify) {
+                val context = session.buildSessionContext()
+                val envelope = session.buildMessageEnvelopeSnapshot()
+                session.server.notifyHooks { hook ->
+                    hook.onMessageRejected(
+                        SmtpMessageRejectedEvent(
+                            context = context,
+                            envelope = envelope,
+                            transferMode = transferMode,
+                            stage = SmtpMessageStage.PROCESSING,
+                            responseCode = code,
+                            responseMessage = message,
+                        )
                     )
-                )
+                }
             }
             session.resetTransaction(preserveGreeting = true)
             return false
@@ -94,15 +88,20 @@ internal object SmtpStreamingHandlerRunner {
 
         session.sendResponse(SmtpStatusCode.OKAY.code, "Ok")
 
-        session.server.notifyHooks { hook ->
-            hook.onMessageAccepted(
-                SmtpMessageAcceptedEvent(
-                    context = context,
-                    envelope = envelope,
-                    transferMode = transferMode,
-                    sizeBytes = sizeBytes,
+        if (shouldNotify) {
+            val context = session.buildSessionContext()
+            val envelope = session.buildMessageEnvelopeSnapshot()
+            val sizeBytes = session.currentMessageSize.toLong()
+            session.server.notifyHooks { hook ->
+                hook.onMessageAccepted(
+                    SmtpMessageAcceptedEvent(
+                        context = context,
+                        envelope = envelope,
+                        transferMode = transferMode,
+                        sizeBytes = sizeBytes,
+                    )
                 )
-            )
+            }
         }
 
         session.resetTransaction(preserveGreeting = true)

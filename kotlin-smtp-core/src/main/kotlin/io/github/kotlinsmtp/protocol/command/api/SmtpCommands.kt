@@ -17,7 +17,6 @@ import io.github.kotlinsmtp.protocol.command.RsetCommand
 import io.github.kotlinsmtp.protocol.command.StartTlsCommand
 import io.github.kotlinsmtp.protocol.command.VrfyCommand
 import io.github.kotlinsmtp.server.SmtpSession
-import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
 import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
 import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
@@ -89,18 +88,13 @@ internal enum class SmtpCommands(
                             "BDAT" -> SmtpMessageTransferMode.BDAT
                             else -> null
                         }
-                        if (transferMode != null) {
-                            val envelope = SmtpMessageEnvelope(
-                                mailFrom = session.sessionData.mailFrom ?: "",
-                                rcptTo = session.envelopeRecipients.toList(),
-                                dsnEnvid = session.sessionData.dsnEnvid,
-                                dsnRet = session.sessionData.dsnRet,
-                                rcptDsn = session.sessionData.rcptDsnView,
-                            )
+                        if (transferMode != null && session.server.hasEventHooks()) {
+                            val context = session.buildSessionContext()
+                            val envelope = session.buildMessageEnvelopeSnapshot()
                             session.server.notifyHooks { hook ->
                                 hook.onMessageRejected(
                                     SmtpMessageRejectedEvent(
-                                        context = session.buildSessionContext(),
+                                        context = context,
                                         envelope = envelope,
                                         transferMode = transferMode,
                                         stage = SmtpMessageStage.PROCESSING,

@@ -19,11 +19,43 @@ class StarterMvpSmokeTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `minimal properties start and stop server`() {
+    fun `minimal properties start and stop server without hooks`() {
         val mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes"))
         val messageTempDir = Files.createDirectories(tempDir.resolve("message-temp"))
         val listsDir = Files.createDirectories(tempDir.resolve("lists"))
         val spoolDir = Files.createDirectories(tempDir.resolve("spool"))
+
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withPropertyValues(
+                "smtp.hostname=localhost",
+                "smtp.port=0",
+                "smtp.storage.mailboxDir=${mailboxDir.toString()}",
+                "smtp.storage.tempDir=${messageTempDir.toString()}",
+                "smtp.storage.listsDir=${listsDir.toString()}",
+                "smtp.spool.dir=${spoolDir.toString()}",
+            )
+            .run { context ->
+                val servers = context.getBean("smtpServers") as List<*>
+                assertEquals(1, servers.size)
+
+                val server = servers.single() as SmtpServer
+                assertEquals(0, server.port)
+                assertEquals("localhost", server.hostname)
+
+                runBlocking {
+                    assertTrue(server.start())
+                    assertTrue(server.stop())
+                }
+            }
+    }
+
+    @Test
+    fun `minimal properties start and stop server with hook bean`() {
+        val mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes-hook"))
+        val messageTempDir = Files.createDirectories(tempDir.resolve("message-temp-hook"))
+        val listsDir = Files.createDirectories(tempDir.resolve("lists-hook"))
+        val spoolDir = Files.createDirectories(tempDir.resolve("spool-hook"))
 
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))

@@ -8,6 +8,7 @@ import io.github.kotlinsmtp.model.RcptDsn
  * - 저장(S3/DB), 메타데이터 기록, Kafka 발행 같은 구현은 코어에 포함하지 않고,
  *   호스트가 이 훅을 통해 호출 시점을 연결할 수 있게 합니다.
  * - 훅 예외는 기본 정책상 서버 동작을 실패시키지 않으며(Non-fatal), 코어에서 로깅만 수행합니다.
+ * - 훅 구현은 가능하면 빠르게 반환해야 하며, 장기 작업은 내부에서 비동기로 위임하는 것을 권장합니다.
  */
 public interface SmtpEventHook {
 

@@ -79,6 +79,8 @@ public class SmtpServer internal constructor(
     // 활성 세션 추적 (graceful shutdown용)
     internal val sessionTracker = ActiveSessionTracker()
 
+    internal fun hasEventHooks(): Boolean = eventHooks.isNotEmpty()
+
     internal suspend fun notifyHooks(block: suspend (SmtpEventHook) -> Unit) {
         if (eventHooks.isEmpty()) return
         for (hook in eventHooks) {

@@ -18,10 +18,12 @@ import io.github.kotlinsmtp.spool.MailSpooler
 import io.github.kotlinsmtp.storage.FileMessageStore
 import io.github.kotlinsmtp.storage.MessageStore
 import kotlinx.coroutines.Dispatchers
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
+import java.util.stream.Collectors
 
 @AutoConfiguration
 @EnableConfigurationProperties(SmtpServerProperties::class)
@@ -114,7 +116,7 @@ class KotlinSmtpAutoConfiguration {
         mailingListHandler: SmtpMailingListHandler,
         messageStore: MessageStore,
         authService: AuthService,
-        eventHooks: List<SmtpEventHook>,
+        eventHooksProvider: ObjectProvider<SmtpEventHook>,
     ): List<SmtpServer> {
         // Validate required storage paths (no OS-specific defaults)
         props.storage.validate()
@@ -150,6 +152,11 @@ class KotlinSmtpAutoConfiguration {
                 )
             )
         } else props.listeners
+
+        // Spring Boot starter 안정성:
+        // - 훅 Bean이 아예 없어도(0개) 부팅이 실패하지 않도록 ObjectProvider로 받습니다.
+        // - @Order / Ordered가 붙은 훅은 orderedStream()으로 순서를 반영합니다.
+        val eventHooks = eventHooksProvider.orderedStream().collect(Collectors.toList())
 
         return effectiveListeners.map { l ->
             SmtpServer.create(l.port, props.hostname) {
