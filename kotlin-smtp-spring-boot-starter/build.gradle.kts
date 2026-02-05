@@ -47,6 +47,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.springframework.boot:spring-boot-test")
     testImplementation("org.assertj:assertj-core")
+    testImplementation(project(":kotlin-smtp-relay-spring-boot-starter"))
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

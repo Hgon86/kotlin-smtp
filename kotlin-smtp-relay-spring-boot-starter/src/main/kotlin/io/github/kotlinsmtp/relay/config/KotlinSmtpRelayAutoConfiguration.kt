@@ -22,19 +22,20 @@ import org.springframework.core.env.Environment
 
 private val log = KotlinLogging.logger {}
 
-@AutoConfiguration
+@AutoConfiguration(
+    beforeName = [
+        // kotlin-smtp-spring-boot-starter의 기본 빈보다 먼저 적용되어야 합니다.
+        // (RelayAccessPolicy 등 @ConditionalOnMissingBean 충돌을 방지)
+        "io.github.kotlinsmtp.config.KotlinSmtpAutoConfiguration",
+    ]
+)
 @ConditionalOnClass(JakartaMailMxMailRelay::class)
 @EnableConfigurationProperties(RelayProperties::class)
 class KotlinSmtpRelayAutoConfiguration {
 
     @Bean
     @ConditionalOnProperty(prefix = "smtp.relay", name = ["enabled"], havingValue = "true")
-    fun relayGuardrails(props: RelayProperties) {
-        if (!props.requireAuthForRelay && props.allowedSenderDomains.isEmpty()) {
-            error("Refusing to start: smtp.relay.enabled=true without smtp.relay.requireAuthForRelay=true or smtp.relay.allowedSenderDomains allowlist")
-        }
-        log.info { "Outbound relay enabled (requireAuthForRelay=${props.requireAuthForRelay}, allowedSenderDomains=${props.allowedSenderDomains.size})" }
-    }
+    fun relayGuardrails(props: RelayProperties): RelayGuardrails = RelayGuardrails(props)
 
     @Bean
     @ConditionalOnProperty(prefix = "smtp.relay", name = ["enabled"], havingValue = "true")
@@ -77,5 +78,14 @@ class KotlinSmtpRelayAutoConfiguration {
     fun dsnSender(env: Environment, store: DsnStore): DsnSender {
         val hostname = env.getProperty("smtp.hostname")?.takeIf { it.isNotBlank() } ?: "localhost"
         return JakartaMailDsnSender(serverHostname = hostname, store = store)
+    }
+
+    class RelayGuardrails(props: RelayProperties) {
+        init {
+            if (!props.requireAuthForRelay && props.allowedSenderDomains.isEmpty()) {
+                error("Refusing to start: smtp.relay.enabled=true without smtp.relay.requireAuthForRelay=true or smtp.relay.allowedSenderDomains allowlist")
+            }
+            log.info { "Outbound relay enabled (requireAuthForRelay=${props.requireAuthForRelay}, allowedSenderDomains=${props.allowedSenderDomains.size})" }
+        }
     }
 }
