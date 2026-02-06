@@ -86,6 +86,22 @@ internal object AddressUtils {
         IDN.toASCII(d, IDN.ALLOW_UNASSIGNED).lowercase()
     }.getOrNull()
 
+    /**
+     * 도메인을 정규화하고 유효성(라벨/길이 규칙)을 함께 확인합니다.
+     */
+    fun normalizeValidDomain(domain: String): String? {
+        val normalized = normalizeDomain(domain) ?: return null
+        if (!asciiDomainRegex.matches(normalized)) return null
+        return normalized
+    }
+
+    /**
+     * 도메인 문자열이 정책상 허용 가능한 형태인지 확인합니다.
+     */
+    fun isValidDomain(domain: String): Boolean {
+        return normalizeValidDomain(domain) != null
+    }
+
     fun isAllAscii(value: String): Boolean = value.all { it.code in 0x20..0x7E }
 
     /**

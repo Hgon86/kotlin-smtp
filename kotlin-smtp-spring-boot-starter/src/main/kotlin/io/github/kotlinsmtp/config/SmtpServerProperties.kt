@@ -57,9 +57,10 @@ class SmtpServerProperties {
          * - 호환을 위해 유지하며, `smtp.routing.localDomain`이 비어있을 때 fallback으로만 사용합니다.
          */
         @Deprecated("Use smtp.routing.localDomain instead")
-        var localDomain: String = "mydomain.com",
+        var localDomain: String = "",
     )
 
+    @Suppress("DEPRECATION")
     fun effectiveLocalDomain(): String {
         val r = routing.localDomain.trim()
         if (r.isNotEmpty()) return r

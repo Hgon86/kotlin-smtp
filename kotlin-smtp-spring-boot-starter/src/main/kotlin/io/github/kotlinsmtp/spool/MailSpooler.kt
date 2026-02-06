@@ -3,6 +3,7 @@ package io.github.kotlinsmtp.spool
 import io.github.kotlinsmtp.model.RcptDsn
 import io.github.kotlinsmtp.relay.api.DsnSender
 import io.github.kotlinsmtp.relay.api.RelayException
+import io.github.kotlinsmtp.server.SmtpDomainSpooler
 import io.github.kotlinsmtp.server.SmtpSpooler
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
@@ -23,6 +24,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.net.UnknownHostException
+import java.net.IDN
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.notExists
@@ -40,7 +42,7 @@ class MailSpooler(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val deliveryService: MailDeliveryService,
     private val dsnSenderProvider: () -> DsnSender?,
-) : SmtpSpooler {
+) : SmtpDomainSpooler {
     private val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + dispatcher)
     private var worker: Job? = null
     private val staleLockThreshold = Duration.ofMinutes(15)
@@ -64,6 +66,27 @@ class MailSpooler(
                 runOnce()
             }.onFailure { e ->
                 log.warn(e) { "Spooler triggerOnce failed" }
+            }
+        }
+    }
+
+    /**
+     * 지정 도메인에 대해서만 "즉시 한 번" 스풀 처리를 수행합니다.
+     *
+     * @param domain ETRN 인자로 전달된 도메인
+     */
+    override fun triggerOnce(domain: String) {
+        val normalized = normalizeDomain(domain)
+        if (normalized == null) {
+            log.warn { "Spooler triggerOnce(domain) skipped: invalid domain=$domain" }
+            return
+        }
+
+        scope.launch {
+            runCatching {
+                runOnce(normalized)
+            }.onFailure { e ->
+                log.warn(e) { "Spooler triggerOnce(domain) failed domain=$normalized" }
             }
         }
     }
@@ -214,12 +237,12 @@ class MailSpooler(
         }
     }
 
-    private suspend fun runOnce() {
+    private suspend fun runOnce(targetDomain: String? = null) {
         // 기능 우선: 단일 노드 기준으로는 파일락(.lock)만으로도 중복 처리를 대부분 방지하지만,
         // triggerOnce()가 연속 호출되거나 워커 루프와 겹치면 불필요한 스캔/락 시도가 발생합니다.
         // 따라서 프로세스 내에서는 뮤텍스로 1회 실행을 직렬화합니다.
         runMutex.withLock {
-            processQueueOnce()
+            processQueueOnce(targetDomain)
             purgeOrphanedLocks()
         }
     }
@@ -232,7 +255,7 @@ class MailSpooler(
         return (bounded * jitterFactor).toLong().coerceAtLeast(retryDelaySeconds)
     }
 
-    private suspend fun processQueueOnce() {
+    private suspend fun processQueueOnce(targetDomain: String? = null) {
         val files = spoolDir.listDirectoryEntries("*.eml")
         for (file in files) {
             if (!tryLock(file)) continue
@@ -240,11 +263,14 @@ class MailSpooler(
                 val meta = readMeta(file) ?: continue
                 if (meta.nextAttemptAt.isAfter(Instant.now())) continue
 
+                val recipientsToProcess = recipientsToProcess(meta.recipients, targetDomain)
+                if (recipientsToProcess.isEmpty()) continue
+
                 val delivered = mutableListOf<String>()
                 val transientFailures = linkedMapOf<String, String>()
                 val permanentFailures = linkedMapOf<String, String>()
 
-                for (rcpt in meta.recipients.toList()) {
+                for (rcpt in recipientsToProcess) {
                     val domain = rcpt.substringAfterLast('@')
                     runCatching {
                         if (deliveryService.isLocalDomain(domain)) deliveryService.deliverLocal(rcpt, file)
@@ -261,8 +287,9 @@ class MailSpooler(
                         delivered.add(rcpt)
                     }.onFailure { t ->
                         val reason = t.message ?: t::class.simpleName.orEmpty()
-                        if (isPermanentFailure(t)) permanentFailures[rcpt] = reason else transientFailures[rcpt] = reason
-                        log.warn(t) { "Spool delivery failed for rcpt=$rcpt (id=${meta.id}) permanent=${isPermanentFailure(t)}" }
+                        val permanent = isPermanentFailure(t)
+                        if (permanent) permanentFailures[rcpt] = reason else transientFailures[rcpt] = reason
+                        log.warn(t) { "Spool delivery failed for rcpt=$rcpt (id=${meta.id}) permanent=$permanent" }
                     }
                 }
 
@@ -335,6 +362,29 @@ class MailSpooler(
             } finally {
                 unlock(file)
             }
+        }
+    }
+
+    /**
+     * 도메인을 IDNA ASCII 소문자로 정규화합니다.
+     *
+     * @param domain 비교 대상 도메인
+     * @return 정규화된 도메인 또는 유효하지 않으면 null
+     */
+    private fun normalizeDomain(domain: String): String? = runCatching {
+        val trimmed = domain.trim().trimEnd('.')
+        if (trimmed.isEmpty()) return null
+        IDN.toASCII(trimmed, IDN.ALLOW_UNASSIGNED).lowercase()
+    }.getOrNull()
+
+    /**
+     * 대상 도메인이 지정되면 해당 도메인 수신자만 반환합니다.
+     */
+    private fun recipientsToProcess(recipients: List<String>, targetDomain: String?): List<String> {
+        if (targetDomain == null) return recipients.toList()
+        return recipients.filter { recipient ->
+            val recipientDomain = recipient.substringAfterLast('@', "")
+            normalizeDomain(recipientDomain) == targetDomain
         }
     }
 

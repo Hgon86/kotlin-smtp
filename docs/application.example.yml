@@ -67,9 +67,16 @@ smtp:
     listsDir: ${SMTP_LISTS_DIR:./data/lists}
 
   ssl:
-    enabled: false # SSL/TLS 사용 여부
-    certChainFile: /path/to/cert # 인증서 체인 파일 경로
-    privateKeyFile: /path/to/key # 개인 키 파일 경로
+    # STARTTLS/SMTPS(implicit TLS)을 쓰려면 enabled=true + 인증서/키 파일이 필요합니다.
+    # - 파일이 실제로 존재해야 TLS 컨텍스트가 활성화됩니다.
+    enabled: false
+    # certChainFile: /path/to/cert # 인증서 체인 파일 경로
+    # privateKeyFile: /path/to/key # 개인 키 파일 경로
+
+    # TLS 하드닝(선택)
+    minTlsVersion: TLSv1.2 # TLSv1.2, TLSv1.3
+    handshakeTimeoutMs: 30000
+    cipherSuites: [] # 예: ["TLS_AES_128_GCM_SHA256"] (비우면 JVM 기본값)
 
   # 릴레이(외부 도메인 전달) 설정
   # - 활성화하려면 `kotlin-smtp-relay-spring-boot-starter` 의존성을 추가해야 합니다.
@@ -99,6 +106,13 @@ smtp:
   auth:
     enabled: true
     required: false
+
+    # AUTH 브루트포스 방지(기본 on)
+    rateLimitEnabled: true
+    rateLimitMaxFailures: 5
+    rateLimitWindowSeconds: 300
+    rateLimitLockoutSeconds: 600
+
     users:
       user: password
       secure: "$2a$10$CwTycUXWue0Thq9StjUM0uJ8ZrYcGQpFvWY9Y1KfK1aG1H0a4V/2m"

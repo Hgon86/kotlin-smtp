@@ -72,7 +72,7 @@ class KotlinSmtpAutoConfiguration {
             mailRelay = mailRelay,
             relayAccessPolicy = relayAccessPolicy,
             dsnSenderProvider = { dsnSenderProvider.getIfAvailable() },
-            localDomain = props.effectiveLocalDomain(),
+            localDomain = props.effectiveLocalDomain().trim(),
         )
 
     @Bean
@@ -119,7 +119,7 @@ class KotlinSmtpAutoConfiguration {
         //               운영에서는 정책/사용자 저장소를 별도 서비스/DB로 이관 권장
         LocalDirectoryUserHandler(
             mailboxDir = props.storage.mailboxPath,
-            localDomain = props.effectiveLocalDomain(),
+            localDomain = props.effectiveLocalDomain().trim(),
         )
 
     @Bean
@@ -144,6 +144,14 @@ class KotlinSmtpAutoConfiguration {
         // Validate required storage paths (no OS-specific defaults)
         props.storage.validate()
         props.spool.validate()
+
+        val localDomain = props.effectiveLocalDomain().trim()
+        require(localDomain.isNotBlank()) {
+            "smtp.routing.localDomain must be configured (e.g., mydomain.com)"
+        }
+
+        // TLS 설정이 활성화된 경우, 인증서/키 경로가 올바른지 부팅 단계에서 검증합니다.
+        props.ssl.validate()
 
         val cert = if (props.ssl.enabled) props.ssl.getCertChainFile() else null
         val key = if (props.ssl.enabled) props.ssl.getPrivateKeyFile() else null
@@ -170,6 +178,13 @@ class KotlinSmtpAutoConfiguration {
                 )
             )
         } else props.listeners
+
+        // SMTPS(implicit TLS) 리스너는 TLS 설정이 없으면 정상 동작할 수 없으므로 fail-fast 합니다.
+        if (effectiveListeners.any { it.implicitTls }) {
+            require(props.ssl.enabled && cert != null && key != null) {
+                "smtp.ssl.enabled=true and valid ssl.certChainFile/privateKeyFile are required when any listener uses implicitTls=true"
+            }
+        }
 
         // Spring Boot starter 안정성:
         // - 훅 Bean이 아예 없어도(0개) 부팅이 실패하지 않도록 ObjectProvider로 받습니다.

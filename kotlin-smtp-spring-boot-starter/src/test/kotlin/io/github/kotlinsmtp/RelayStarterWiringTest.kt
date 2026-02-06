@@ -26,6 +26,7 @@ class RelayStarterWiringTest {
         return arrayOf(
             "smtp.hostname=localhost",
             "smtp.port=0",
+            "smtp.routing.localDomain=local.test",
             "smtp.storage.mailboxDir=${mailboxDir.toString()}",
             "smtp.storage.tempDir=${messageTempDir.toString()}",
             "smtp.storage.listsDir=${listsDir.toString()}",

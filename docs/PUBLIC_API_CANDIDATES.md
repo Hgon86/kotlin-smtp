@@ -25,6 +25,8 @@ We treat only the following packages as semver-stable API:
   - keep the implementation constructor `internal`
 - `io.github.kotlinsmtp.server.SmtpSpooler`
   - minimal hook to trigger host-side delivery/spool processing
+- `io.github.kotlinsmtp.server.SmtpDomainSpooler`
+  - optional extension hook to trigger spool processing for a specific domain (ETRN)
 
 ### Core Models (Public)
 

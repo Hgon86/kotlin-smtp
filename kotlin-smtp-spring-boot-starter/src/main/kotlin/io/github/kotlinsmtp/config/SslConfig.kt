@@ -13,4 +13,21 @@ data class SslConfig(
 ) {
     fun getCertChainFile(): File? = certChainFile?.let { File(it).takeIf { f -> f.exists() } }
     fun getPrivateKeyFile(): File? = privateKeyFile?.let { File(it).takeIf { f -> f.exists() } }
+
+    fun validate() {
+        if (!enabled) return
+
+        require(!certChainFile.isNullOrBlank()) {
+            "smtp.ssl.certChainFile must be configured when smtp.ssl.enabled=true"
+        }
+        require(!privateKeyFile.isNullOrBlank()) {
+            "smtp.ssl.privateKeyFile must be configured when smtp.ssl.enabled=true"
+        }
+        require(File(certChainFile!!).exists()) {
+            "smtp.ssl.certChainFile does not exist: ${certChainFile}"
+        }
+        require(File(privateKeyFile!!).exists()) {
+            "smtp.ssl.privateKeyFile does not exist: ${privateKeyFile}"
+        }
+    }
 }

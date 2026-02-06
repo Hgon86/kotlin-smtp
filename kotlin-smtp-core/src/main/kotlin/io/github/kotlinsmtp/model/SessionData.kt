@@ -39,7 +39,7 @@ public class SessionData {
 
     /** 외부에서 DSN 상태를 변이하지 않도록 읽기 전용 뷰만 제공합니다. */
     public val rcptDsnView: Map<String, RcptDsn>
-        get() = rcptDsn
+        get() = java.util.Collections.unmodifiableMap(rcptDsn)
 
     // 연결 컨텍스트
     public var peerAddress: String? = null; internal set // 클라이언트 IP:port

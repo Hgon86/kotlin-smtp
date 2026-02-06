@@ -58,9 +58,11 @@ STARTTLS 업그레이드 흐름(중요)
 
 7) Delivery
 - `io.github.kotlinsmtp.spool.MailDeliveryService`:
-  - local: `LocalMailboxManager.deliverToLocalMailbox(...)`
-  - external: `MailRelay.relayMessage(...)` (DNS MX lookup + Jakarta Mail transport)
-- `io.github.kotlinsmtp.spool.MailSpooler` provides retry/backoff + optional DSN generation via `DsnService`.
+   - local: `LocalMailboxManager.deliverToLocalMailbox(...)`
+   - external: `MailRelay.relay(RelayRequest)`
+     - relay access policy는 `RelayAccessPolicy`로 분리되어 RCPT 단계에서 조기 거부(530/550)할 수 있습니다.
+- `io.github.kotlinsmtp.spool.MailSpooler`는 retry/backoff를 제공하고,
+  영구 실패 시(또는 max retry 초과 시) `DsnSender`가 제공되는 경우 DSN 발송을 시도합니다.
 
 ### 핵심 상태 객체
 

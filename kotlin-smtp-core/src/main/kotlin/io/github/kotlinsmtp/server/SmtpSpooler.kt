@@ -8,3 +8,15 @@ package io.github.kotlinsmtp.server
 public interface SmtpSpooler {
     public fun triggerOnce(): Unit
 }
+
+/**
+ * ETRN 도메인 인자를 반영할 수 있는 스풀러 확장 훅입니다.
+ */
+public interface SmtpDomainSpooler : SmtpSpooler {
+    /**
+     * 지정한 도메인에 대해 스풀 처리를 즉시 1회 트리거합니다.
+     *
+     * @param domain ETRN 인자로 정규화된 ASCII 도메인
+     */
+    public fun triggerOnce(domain: String): Unit
+}

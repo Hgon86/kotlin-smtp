@@ -1,6 +1,7 @@
 package io.github.kotlinsmtp
 
 import io.github.kotlinsmtp.auth.AuthService
+import io.github.kotlinsmtp.server.SmtpDomainSpooler
 import io.github.kotlinsmtp.server.SmtpServer
 import io.netty.handler.ssl.util.SelfSignedCertificate
 import kotlinx.coroutines.runBlocking
@@ -24,6 +25,7 @@ class SmtpAuthStartTlsIntegrationTest {
     private lateinit var server: SmtpServer
     private var testPort: Int = 0
     private lateinit var ssc: SelfSignedCertificate
+    private var lastTriggeredDomain: String? = null
 
     private val authService: AuthService = object : AuthService {
         override val enabled: Boolean = true
@@ -37,16 +39,27 @@ class SmtpAuthStartTlsIntegrationTest {
     fun setup() {
         testPort = ServerSocket(0).use { it.localPort }
         ssc = SelfSignedCertificate()
+        lastTriggeredDomain = null
 
         server = SmtpServer.create(testPort, "test-smtp.local") {
             serviceName = "test-smtp"
             useAuthService(this@SmtpAuthStartTlsIntegrationTest.authService)
             useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useSpooler(object : SmtpDomainSpooler {
+                override fun triggerOnce() {
+                    // no-op
+                }
+
+                override fun triggerOnce(domain: String) {
+                    lastTriggeredDomain = domain
+                }
+            })
 
             listener.enableStartTls = true
             listener.enableAuth = true
             listener.requireAuthForMail = true
             listener.implicitTls = false
+            features.enableEtrn = true
 
             proxyProtocol.enabled = false
 
@@ -271,6 +284,128 @@ class SmtpAuthStartTlsIntegrationTest {
             writer.flush()
             val authResp = reader.readLine()
             assertTrue(authResp.startsWith("535"), "Expected 535 Authentication credentials invalid, got: $authResp")
+
+            tlsSocket.close()
+        }
+    }
+
+    @Test
+    fun `ETRN with empty argument returns syntax error`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write(buildAuthPlainLine("user", "password"))
+            writer.flush()
+            val authResp = reader.readLine()
+            assertTrue(authResp.startsWith("250"), "Expected 250 Authentication successful, got: $authResp")
+
+            writer.write("ETRN\r\n")
+            writer.flush()
+            val etrnResp = reader.readLine()
+            assertTrue(etrnResp.startsWith("501"), "Expected 501 for empty ETRN argument, got: $etrnResp")
+
+            tlsSocket.close()
+        }
+    }
+
+    @Test
+    fun `ETRN with domain succeeds after auth`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write(buildAuthPlainLine("user", "password"))
+            writer.flush()
+            val authResp = reader.readLine()
+            assertTrue(authResp.startsWith("250"), "Expected 250 Authentication successful, got: $authResp")
+
+            writer.write("ETRN example.com\r\n")
+            writer.flush()
+            val etrnResp = reader.readLine()
+            assertTrue(etrnResp.startsWith("250"), "Expected 250 for valid ETRN, got: $etrnResp")
+            assertTrue(etrnResp.contains("example.com"), "Expected domain in ETRN response, got: $etrnResp")
+            assertTrue(lastTriggeredDomain == "example.com", "Expected domain-aware spool trigger, got: $lastTriggeredDomain")
+
+            tlsSocket.close()
+        }
+    }
+
+    @Test
+    fun `ETRN with invalid domain returns syntax error`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write(buildAuthPlainLine("user", "password"))
+            writer.flush()
+            val authResp = reader.readLine()
+            assertTrue(authResp.startsWith("250"), "Expected 250 Authentication successful, got: $authResp")
+
+            writer.write("ETRN !!invalid!!\r\n")
+            writer.flush()
+            val etrnResp = reader.readLine()
+            assertTrue(etrnResp.startsWith("501"), "Expected 501 for invalid ETRN domain, got: $etrnResp")
 
             tlsSocket.close()
         }

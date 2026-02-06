@@ -3,7 +3,9 @@ package io.github.kotlinsmtp.protocol.command
 import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.protocol.command.api.ParsedCommand
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
+import io.github.kotlinsmtp.server.SmtpDomainSpooler
 import io.github.kotlinsmtp.server.SmtpSession
+import io.github.kotlinsmtp.utils.AddressUtils
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 
 /**
@@ -27,11 +29,39 @@ internal class EtrnCommand : SmtpCommand(
             throw SmtpSendResponse(530, "5.7.0 Authentication required")
         }
 
-        // 기능 우선: 도메인 인자 유무와 관계없이 현재 스풀 큐를 한 번 처리하도록 트리거합니다.
-        // TODO: <domain> 기반 필터링/정책(관리망/권한) 강화
-        session.server.spooler?.triggerOnce()
+        val queueDomain = normalizeQueueDomain(command.rawWithoutCommand)
+            ?: respondSyntax("Invalid ETRN domain argument")
+
+        val spooler = session.server.spooler
             ?: throw SmtpSendResponse(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Queue service not available")
 
-        session.sendResponse(SmtpStatusCode.OKAY.code, "Queue run triggered")
+        val responseMessage = runCatching {
+            if (spooler is SmtpDomainSpooler) {
+                spooler.triggerOnce(queueDomain)
+                "Queue run triggered for $queueDomain"
+            } else {
+                // 도메인 미지원 스풀러는 기존 동작(전체 큐 트리거)으로 폴백합니다.
+                spooler.triggerOnce()
+                "Queue run triggered (domain filter not supported)"
+            }
+        }.getOrElse { t ->
+            throw SmtpSendResponse(451, "4.3.0 Queue trigger failed: ${t.message ?: "unknown error"}")
+        }
+
+        session.sendResponse(SmtpStatusCode.OKAY.code, responseMessage)
+    }
+
+    /**
+     * ETRN 인자를 도메인 형태로 정규화합니다.
+     *
+     * @param rawArg 커맨드 원문에서 command 토큰을 제외한 인자 문자열
+     * @return 정규화된 ASCII 도메인 또는 유효하지 않으면 null
+     */
+    private fun normalizeQueueDomain(rawArg: String): String? {
+        val term = rawArg.trim()
+        if (term.isEmpty()) return null
+        val withoutPrefix = term.removePrefix("@").trim()
+        if (withoutPrefix.isEmpty()) return null
+        return AddressUtils.normalizeValidDomain(withoutPrefix)
     }
 }
