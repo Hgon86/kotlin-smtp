@@ -33,6 +33,10 @@ dependencies {
     implementation("jakarta.mail:jakarta.mail-api")
     implementation("org.eclipse.angus:angus-mail:2.0.3")
     implementation("jakarta.activation:jakarta.activation-api")
+
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.withType<Test> {

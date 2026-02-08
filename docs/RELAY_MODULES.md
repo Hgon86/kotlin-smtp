@@ -7,6 +7,9 @@
 - outbound relay(MX 조회, DNS, SMTP outbound, DSN 생성)는 `kotlin-smtp-relay*` 모듈로 분리
 - 최우선 원칙: **의도치 않은 오픈 릴레이(open relay) 방지**
 
+**최종 업데이트:** 2026-02-08  
+**구현 상태:** ✅ 완료
+
 ---
 
 ## 결론(확정)
@@ -23,18 +26,26 @@
 
 ## 모듈 구성(확정)
 
-- `kotlin-smtp-relay`
-  - public API: `MailRelay`, `RelayAccessPolicy`, `RelayException`, DSN 경계(`DsnSender`, `DsnStore`)
-  - 의존: `kotlin-smtp-core`만
+### `kotlin-smtp-relay`
+- **public API:** `MailRelay`, `RelayAccessPolicy`, `RelayException`, DSN 경계(`DsnSender`, `DsnStore`)
+- **의존:** `kotlin-smtp-core`만
+- **위치:** `kotlin-smtp-relay/src/main/kotlin/io/github/kotlinsmtp/relay/api/`
 
-- `kotlin-smtp-relay-jakarta-mail`
-  - 기본 구현: `JakartaMailMxMailRelay`, `JakartaMailDsnSender`
-  - 의존: dnsjava + jakarta mail/angus + activation
+### `kotlin-smtp-relay-jakarta-mail`
+- **기본 구현:** `JakartaMailMxMailRelay`, `JakartaMailDsnSender`
+- **의존:** dnsjava + jakarta mail/angus + activation
+- **기능:**
+  - MX 레코드 조회 (dnsjava)
+  - SMTP outbound 전송 (jakarta-mail)
+  - STARTTLS/TLS 지원
+  - DSN(RFC 3464) 생성 및 발송
 
-- `kotlin-smtp-relay-spring-boot-starter`
-  - `smtp.relay.*` properties 바인딩
+### `kotlin-smtp-relay-spring-boot-starter`
+- **역할:** `smtp.relay.*` properties 바인딩
+- **기능:**
   - `smtp.relay.enabled` 토글 + 오픈 릴레이 가드레일
   - enabled일 때 `MailRelay`/`RelayAccessPolicy`/`DsnSender` Bean 제공
+  - outbound TLS 설정 (`smtp.relay.outboundTls.*`)
 
 ---
 
@@ -42,13 +53,105 @@
 
 패키지: `io.github.kotlinsmtp.relay.api`
 
-- `MailRelay` / `RelayRequest` / `Rfc822Source` / `RelayResult`
-- `RelayAccessPolicy` / `RelayAccessContext` / `RelayAccessDecision` / `RelayDeniedReason`
-- `RelayException` / `RelayTransientException` / `RelayPermanentException`
-- `DsnSender` / `DsnStore`
+### Core Interfaces
+
+- **`MailRelay`** - 외부 도메인으로 메시지 릴레이
+  - `suspend fun relay(request: RelayRequest): RelayResult`
+
+- **`RelayRequest`** - 릴레이 요청 데이터
+  - `messageId`, `envelopeSender`, `recipient`, `authenticated`, `rfc822`
+
+- **`RelayResult`** - 릴레이 성공 결과
+  - `remoteHost`, `remotePort`, `serverGreeting`
+
+### Access Policy
+
+- **`RelayAccessPolicy`** - 릴레이 접근 정책 (오픈 릴레이 방지)
+  - `fun evaluate(context: RelayAccessContext): RelayAccessDecision`
+
+- **`RelayAccessContext`** - 정책 평가 컨텍스트
+  - `envelopeSender`, `recipient`, `authenticated`
+
+- **`RelayAccessDecision`** - 정책 결정 (sealed interface)
+  - `Allowed`, `Denied(reason, message)`
+
+- **`RelayDeniedReason`** - 거부 사유 enum
+  - `AUTH_REQUIRED`, `SENDER_DOMAIN_NOT_ALLOWED`, `OTHER_POLICY`
+
+### Exceptions
+
+- **`RelayException`** (sealed) - 릴레이 실패 기반 예외
+  - `isTransient: Boolean` - 재시도 가능 여부
+  - `enhancedStatusCode: String?` - RFC 3463 enhanced status code
+  - `remoteReply: String?` - 원격 서버 응답
+
+- **`RelayTransientException`** - 일시적 실패 (재시도 가능)
+
+- **`RelayPermanentException`** - 영구적 실패 (재시도 불가)
+
+### DSN (Delivery Status Notification)
+
+- **`DsnSender`** - DSN 발송 인터페이스
+  - `fun sendPermanentFailure(...)` - 영구 실패 DSN 발송
+
+- **`DsnStore`** - DSN 메시지 큐 등록
+  - `fun enqueue(...)` - DSN 메시지를 스풀에 등록
+
+### Utilities
+
+- **`RelayDefaults`** - 기본 정책 팩토리
+  - `requireAuthPolicy(): RelayAccessPolicy` - 인증 필수 정책
 
 원칙:
 - outbound 구현 상세(자카르타 메일 세션, dnsjava 레코드 타입 등)를 public API에 노출하지 않는다.
+
+---
+
+## 구현체 상세 (`kotlin-smtp-relay-jakarta-mail`)
+
+### `JakartaMailMxMailRelay`
+
+MX 조회 및 SMTP 전송을 담당하는 기본 구현체입니다.
+
+**특징:**
+- dnsjava를 사용한 MX 레코드 조회 (캐싱 지원)
+- MX 레코드 우선순위에 따른 순차 시도
+- A/AAAA 레코드 fallback (MX 없을 시)
+- jakarta-mail을 사용한 SMTP 전송
+- STARTTLS 지원 (opportunistic/required)
+- TLS 서버 인증서 검증 (활성화 가능)
+- SMTPUTF8 지원
+
+**구성:**
+```kotlin
+public class JakartaMailMxMailRelay(
+    private val dispatcherIO: CoroutineDispatcher = Dispatchers.IO,
+    private val tls: OutboundTlsConfig,
+) : MailRelay
+```
+
+### `OutboundTlsConfig`
+
+아웃바운드 TLS 설정 데이터 클래스:
+- `ports: List<Int>` - 시도할 포트 목록 (기본: [25])
+- `startTlsEnabled: Boolean` - STARTTLS 활성화 (기본: true)
+- `startTlsRequired: Boolean` - STARTTLS 필수 (기본: false)
+- `checkServerIdentity: Boolean` - 서버 ID 검증 (기본: true)
+- `trustAll: Boolean` - 모든 인증서 신뢰 (개발용, 기본: false)
+- `trustHosts: List<String>` - 신뢰 호스트 목록
+- `connectTimeoutMs: Int` - 연결 타임아웃 (기본: 15000ms)
+- `readTimeoutMs: Int` - 읽기 타임아웃 (기본: 15000ms)
+
+### `JakartaMailDsnSender`
+
+RFC 3464 compliant DSN 생성 및 발송 구현체입니다.
+
+**필드 매핑:**
+- `Action: failed` - 영구 실패
+- `Status: 5.x.x` - RFC 3463 status code
+- `Diagnostic-Code:` - 상세 오류 정보
+- `Original-Recipient:` - 원본 수신자 (ORCPT)
+- `Final-Recipient:` - 최종 수신자
 
 ---
 
@@ -68,22 +171,22 @@
 
 ### 설정 키(권장)
 
-- 라우팅(로컬 판정)
-  - `smtp.routing.localDomain` (권장)
-  - `smtp.relay.localDomain` (레거시 fallback)
+**라우팅(로컬 판정):**
+- `smtp.routing.localDomain` (권장)
+- `smtp.relay.localDomain` (레거시 fallback)
 
-- relay 토글/정책
-  - `smtp.relay.enabled` (기본값: `false`)
-  - `smtp.relay.requireAuthForRelay` (기본값: `true`)
-  - `smtp.relay.allowedSenderDomains` (기본값: `[]`)
-  - `smtp.relay.outboundTls.*` (기본값: 안전한 verify 정책)
+**relay 토글/정책:**
+- `smtp.relay.enabled` (기본값: `false`)
+- `smtp.relay.requireAuthForRelay` (기본값: `true`)
+- `smtp.relay.allowedSenderDomains` (기본값: `[]`)
+- `smtp.relay.outboundTls.*` (기본값: 안전한 verify 정책)
 
 ### relay starter 미탑재 시
 
 - `smtp.relay.enabled=false`(기본): inbound-only로 동작
   - 외부 도메인 RCPT는 `550 5.7.1 Relay access denied`로 거부
 - `smtp.relay.enabled=true`: **부팅 실패(fail-fast)**
-  - 이유: “설정만 켰는데 릴레이가 실제로 동작하지 않는” 운영 장애 방지
+  - 이유: "설정만 켰는데 릴레이가 실제로 동작하지 않는" 운영 장애 방지
 
 ### relay 활성화(`smtp.relay.enabled=true`) 기본 정책
 
@@ -99,4 +202,60 @@
   - `smtp.relay.allowedSenderDomains`가 비어있음
 
 에러 메시지 예:
-- `Refusing to start: smtp.relay.enabled=true without smtp.relay.requireAuthForRelay=true or smtp.relay.allowedSenderDomains allowlist`
+```
+Refusing to start: smtp.relay.enabled=true without smtp.relay.requireAuthForRelay=true or smtp.relay.allowedSenderDomains allowlist
+```
+
+---
+
+## 사용 예시
+
+### 1. Core-only (Spring 없이)
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("io.github.kotlinsmtp:kotlin-smtp-core:VERSION")
+    implementation("io.github.kotlinsmtp:kotlin-smtp-relay:VERSION")
+    implementation("io.github.kotlinsmtp:kotlin-smtp-relay-jakarta-mail:VERSION")
+}
+
+// 사용
+val relay = JakartaMailMxMailRelay(
+    tls = OutboundTlsConfig(
+        ports = listOf(25),
+        startTlsEnabled = true,
+        trustAll = false, // 운영에서는 false
+    )
+)
+```
+
+### 2. Spring Boot Starter 사용
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:VERSION")
+    implementation("io.github.kotlinsmtp:kotlin-smtp-relay-spring-boot-starter:VERSION")
+}
+
+// application.yml
+smtp:
+  relay:
+    enabled: true
+    requireAuthForRelay: true
+    outboundTls:
+      trustAll: false
+```
+
+---
+
+## 테스트
+
+Relay 모듈 테스트:
+- `JakartaMailDsnSenderTest` - DSN 생성 및 필드 검증
+- `RelayStarterWiringTest` - Spring Boot auto-configuration 검증
+
+---
+
+*이 문서는 relay 모듈 설계 및 구현의 참조 문서입니다.*

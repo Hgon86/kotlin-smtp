@@ -28,6 +28,11 @@ public class JakartaMailDsnSender(
 ) : DsnSender {
     private val maxAttachBytes = 256 * 1024
 
+    private companion object {
+        val ENHANCED_STATUS_RE: Regex = Regex("\\b([245]\\.\\d\\.\\d)\\b")
+        val SMTP_REPLY_CODE_RE: Regex = Regex("\\b([245]\\d{2})\\b")
+    }
+
     override fun sendPermanentFailure(
         sender: String?,
         failedRecipients: List<Pair<String, String>>,
@@ -124,14 +129,15 @@ public class JakartaMailDsnSender(
         appendLine()
 
         failedRecipients.forEachIndexed { idx, (rcpt, reason) ->
+            val statusField = mapFailureToDsnFields(reason)
             appendLine("Final-Recipient: rfc822; ${sanitizeHeaderValue(rcpt)}")
             val orcpt = rcptDsn[rcpt]?.orcpt
             if (!orcpt.isNullOrBlank()) {
                 appendLine("Original-Recipient: ${sanitizeHeaderValue(orcpt)}")
             }
             appendLine("Action: failed")
-            appendLine("Status: ${extractEnhancedStatus(reason) ?: "5.0.0"}")
-            appendLine("Diagnostic-Code: smtp; ${sanitizeHeaderValue(reason.ifBlank { "Delivery failed" })}")
+            appendLine("Status: ${statusField.status}")
+            appendLine("Diagnostic-Code: ${statusField.diagnosticType}; ${sanitizeHeaderValue(statusField.diagnosticText)}")
             if (idx != failedRecipients.lastIndex) appendLine()
         }
     }
@@ -171,13 +177,96 @@ public class JakartaMailDsnSender(
         }
     }
 
+    /**
+     * 실패 사유 문자열을 RFC 3464 핵심 필드(Status/Diagnostic-Code)로 매핑합니다.
+     *
+     * @param reason 릴레이/전달 계층에서 올라온 실패 사유
+     * @return RFC 3464에 맞춘 상태 코드와 진단 코드 표현
+     */
+    private fun mapFailureToDsnFields(reason: String?): DsnStatusFields {
+        val diagnosticText = reason?.ifBlank { null } ?: "Delivery failed"
+        val enhancedFromText = extractEnhancedStatus(reason)
+        val smtpCode = smtpReplyCode(reason)
+        val status = when {
+            enhancedFromText?.startsWith("5.") == true -> enhancedFromText
+            enhancedFromText != null -> "5.0.0"
+            smtpCode != null -> mapSmtpCodeToEnhancedStatus(smtpCode)
+            reasonContainsAny(reason, "user unknown", "no such user", "unknown user") -> "5.1.1"
+            reasonContainsAny(reason, "unknown host", "domain not found", "no mx records") -> "5.1.2"
+            reasonContainsAny(reason, "mailbox full", "quota exceeded", "over quota") -> "5.2.2"
+            else -> "5.0.0"
+        }
+        val diagnosticType = if (smtpCode != null) "smtp" else "x-kotlin-smtp"
+        return DsnStatusFields(
+            status = status,
+            diagnosticType = diagnosticType,
+            diagnosticText = diagnosticText,
+        )
+    }
+
+    /**
+     * 실패 사유에서 RFC 3464 enhanced status code를 추출합니다.
+     *
+     * @param reason 실패 사유 문자열
+     * @return 추출된 enhanced status code, 없으면 null
+     */
     private fun extractEnhancedStatus(reason: String?): String? {
         if (reason.isNullOrBlank()) return null
-        val m = Regex("\\b(\\d\\.\\d\\.\\d)\\b").find(reason) ?: return null
-        val code = m.groupValues.getOrNull(1) ?: return null
-        return if (code.startsWith("5.")) code else null
+        val m = ENHANCED_STATUS_RE.find(reason) ?: return null
+        return m.groupValues.getOrNull(1)
+    }
+
+    /**
+     * 실패 사유에서 SMTP 응답 코드를 추출합니다.
+     *
+     * @param reason 실패 사유 문자열
+     * @return SMTP 3자리 응답 코드, 없으면 null
+     */
+    private fun smtpReplyCode(reason: String?): Int? {
+        if (reason.isNullOrBlank()) return null
+        val m = SMTP_REPLY_CODE_RE.find(reason) ?: return null
+        return m.groupValues.getOrNull(1)?.toIntOrNull()
+    }
+
+    /**
+     * SMTP 응답 코드를 RFC 3464 enhanced status code로 단순 매핑합니다.
+     *
+     * @param code SMTP 응답 코드
+     * @return 매핑된 RFC 3464 enhanced status code
+     */
+    private fun mapSmtpCodeToEnhancedStatus(code: Int): String = when (code) {
+        550, 551, 553 -> "5.1.1"
+        552 -> "5.2.2"
+        554 -> "5.0.0"
+        in 500..599 -> "5.0.0"
+        else -> "5.0.0"
+    }
+
+    /**
+     * 주어진 사유 문자열이 키워드 중 하나를 포함하는지 확인합니다.
+     *
+     * @param reason 실패 사유 문자열
+     * @param keywords 점검할 키워드 목록
+     * @return 포함 여부
+     */
+    private fun reasonContainsAny(reason: String?, vararg keywords: String): Boolean {
+        if (reason.isNullOrBlank()) return false
+        return keywords.any { keyword -> reason.contains(keyword, ignoreCase = true) }
     }
 
     private fun sanitizeHeaderValue(value: String): String =
         value.replace("\r", " ").replace("\n", " ").trim().take(500)
+
+    /**
+     * RFC 3464의 per-recipient 상태 표현을 담는 내부 모델입니다.
+     *
+     * @property status enhanced status code
+     * @property diagnosticType Diagnostic-Code 타입(smtp, x-*)
+     * @property diagnosticText Diagnostic-Code 본문
+     */
+    private data class DsnStatusFields(
+        val status: String,
+        val diagnosticType: String,
+        val diagnosticText: String,
+    )
 }

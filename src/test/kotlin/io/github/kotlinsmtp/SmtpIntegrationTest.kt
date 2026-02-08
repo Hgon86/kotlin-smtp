@@ -163,6 +163,78 @@ class SmtpIntegrationTest {
     }
 
     /**
+     * SMTPUTF8 미선언 상태에서 UTF-8 local-part 주소는 거부되어야 합니다.
+     */
+    @Test
+    fun `test MAIL FROM rejects UTF8 local part without SMTPUTF8`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val out = socket.getOutputStream()
+
+            reader.readLine() // Greeting
+
+            out.write("EHLO test.client.local\r\n".toByteArray(Charsets.US_ASCII))
+            out.flush()
+            skipEhloResponse(reader)
+
+            out.write("MAIL FROM:<\uC0AC\uC6A9\uC790@example.com>\r\n".toByteArray(Charsets.UTF_8))
+            out.flush()
+            val mailResp = reader.readLine()
+            assertTrue(mailResp.startsWith("553"), "Expected 553 SMTPUTF8 required, got: $mailResp")
+            assertTrue(mailResp.contains("SMTPUTF8", ignoreCase = true), "Expected SMTPUTF8 hint, got: $mailResp")
+        }
+    }
+
+    /**
+     * SMTPUTF8 선언 시 IDN(punycode) 수신자 경로가 정상 동작해야 합니다.
+     */
+    @Test
+    fun `test RCPT TO accepts IDN recipient with SMTPUTF8`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val out = socket.getOutputStream()
+
+            reader.readLine() // Greeting
+
+            out.write("EHLO test.client.local\r\n".toByteArray(Charsets.US_ASCII))
+            out.flush()
+            skipEhloResponse(reader)
+
+            out.write("MAIL FROM:<sender@example.com> SMTPUTF8\r\n".toByteArray(Charsets.US_ASCII))
+            out.flush()
+            val mailResp = reader.readLine()
+            assertTrue(mailResp.startsWith("250"), "Expected 250 after MAIL FROM SMTPUTF8, got: $mailResp")
+
+            out.write("RCPT TO:<recipient@xn--9t4b11yi5a.xn--3e0b707e>\r\n".toByteArray(Charsets.US_ASCII))
+            out.flush()
+            val rcptResp = reader.readLine()
+            assertTrue(rcptResp.startsWith("250"), "Expected 250 for IDN recipient with SMTPUTF8, got: $rcptResp")
+        }
+    }
+
+    /**
+     * ASCII local-part + IDN 도메인 주소는 SMTPUTF8 없이도 수용되어야 합니다.
+     */
+    @Test
+    fun `test MAIL FROM accepts IDN domain without SMTPUTF8 when local part is ASCII`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val out = socket.getOutputStream()
+
+            reader.readLine() // Greeting
+
+            out.write("EHLO test.client.local\r\n".toByteArray(Charsets.US_ASCII))
+            out.flush()
+            skipEhloResponse(reader)
+
+            out.write("MAIL FROM:<sender@xn--9t4b11yi5a.xn--3e0b707e>\r\n".toByteArray(Charsets.US_ASCII))
+            out.flush()
+            val mailResp = reader.readLine()
+            assertTrue(mailResp.startsWith("250"), "Expected 250 for IDN domain without SMTPUTF8, got: $mailResp")
+        }
+    }
+
+    /**
      * DATA 본문이 파이프라인으로 들어와도 프레이밍이 깨지지 않아야 합니다.
      *
      * 특히 본문 라인이 "BDAT ..."로 시작하더라도 BDAT로 오인하면 안 됩니다.

@@ -4,6 +4,14 @@ plugins {
     id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.18.1"
 }
 
+val publishableModules = setOf(
+    "kotlin-smtp-core",
+    "kotlin-smtp-relay",
+    "kotlin-smtp-relay-jakarta-mail",
+    "kotlin-smtp-relay-spring-boot-starter",
+    "kotlin-smtp-spring-boot-starter",
+)
+
 group = "io.github.kotlinsmtp"
 version = "0.0.1-SNAPSHOT"
 
@@ -51,11 +59,34 @@ apiValidation {
         listOf(
             // root project는 라이브러리 모듈이 아니라 테스트 harness/docs 용도이므로 API 검증에서 제외합니다.
             "kotlin-smtp",
+            "kotlin-smtp-example-app",
             "kotlin-smtp-spring-boot-starter",
             "kotlin-smtp-relay-spring-boot-starter",
             "kotlin-smtp-relay-jakarta-mail",
         )
     )
+}
+
+subprojects {
+    if (name in publishableModules) {
+        apply(plugin = "maven-publish")
+
+        plugins.withId("java") {
+            extensions.configure<org.gradle.api.publish.PublishingExtension> {
+                publications {
+                    create<org.gradle.api.publish.maven.MavenPublication>("mavenJava") {
+                        from(components["java"])
+                        groupId = project.group.toString()
+                        artifactId = project.name
+                        version = project.version.toString()
+                    }
+                }
+                repositories {
+                    mavenLocal()
+                }
+            }
+        }
+    }
 }
 
 // Gradle 8.x에서는 같은 빌드에서 apiDump + apiCheck를 함께 실행할 때

@@ -47,6 +47,9 @@ class MailSpooler(
     private var worker: Job? = null
     private val staleLockThreshold = Duration.ofMinutes(15)
     private val runMutex = Mutex() // triggerOnce()와 백그라운드 워커의 동시 실행 방지
+    private val triggerStateMutex = Mutex()
+    private var triggerDrainerRunning = false
+    private val triggerCoalescer = TriggerCoalescer()
 
     init {
         Files.createDirectories(spoolDir)
@@ -61,13 +64,7 @@ class MailSpooler(
      * - TODO: rate-limit(관리 기능 남용 방지)
      */
     override fun triggerOnce() {
-        scope.launch {
-            runCatching {
-                runOnce()
-            }.onFailure { e ->
-                log.warn(e) { "Spooler triggerOnce failed" }
-            }
-        }
+        submitTrigger(targetDomain = null)
     }
 
     /**
@@ -82,11 +79,56 @@ class MailSpooler(
             return
         }
 
+        submitTrigger(targetDomain = normalized)
+    }
+
+    /**
+     * 외부 트리거 요청을 coalescing 큐에 적재하고 드레이너를 시작합니다.
+     *
+     * @param targetDomain null이면 전체 큐 트리거, 값이 있으면 해당 도메인만 트리거
+     */
+    private fun submitTrigger(targetDomain: String?) {
         scope.launch {
+            val shouldStartDrainer = triggerStateMutex.withLock {
+                triggerCoalescer.submit(targetDomain)
+                if (triggerDrainerRunning) {
+                    false
+                } else {
+                    triggerDrainerRunning = true
+                    true
+                }
+            }
+
+            if (shouldStartDrainer) {
+                drainPendingTriggers()
+            }
+        }
+    }
+
+    /**
+     * 적재된 트리거를 순차 실행합니다.
+     */
+    private suspend fun drainPendingTriggers() {
+        while (true) {
+            val nextTarget = triggerStateMutex.withLock {
+                when (val next = triggerCoalescer.poll()) {
+                    is SpoolTrigger.Full -> null
+                    is SpoolTrigger.Domain -> next.domain
+                    null -> {
+                        triggerDrainerRunning = false
+                        return
+                    }
+                }
+            }
+
             runCatching {
-                runOnce(normalized)
+                runOnce(nextTarget)
             }.onFailure { e ->
-                log.warn(e) { "Spooler triggerOnce(domain) failed domain=$normalized" }
+                if (nextTarget == null) {
+                    log.warn(e) { "Spooler triggerOnce failed" }
+                } else {
+                    log.warn(e) { "Spooler triggerOnce(domain) failed domain=$nextTarget" }
+                }
             }
         }
     }
@@ -265,6 +307,7 @@ class MailSpooler(
 
                 val recipientsToProcess = recipientsToProcess(meta.recipients, targetDomain)
                 if (recipientsToProcess.isEmpty()) continue
+                val attemptedAllRecipients = recipientsToProcess.size == meta.recipients.size
 
                 val delivered = mutableListOf<String>()
                 val transientFailures = linkedMapOf<String, String>()
@@ -329,6 +372,17 @@ class MailSpooler(
 
                 // 일시 실패가 남아 있으면 재시도 스케줄링
                 if (transientFailures.isNotEmpty()) {
+                    if (!attemptedAllRecipients) {
+                        // ETRN 도메인 트리거처럼 일부 수신자만 처리한 경우,
+                        // 메시지 전역 attempt/backoff를 올리면 미처리 수신자까지 페널티를 받습니다.
+                        // 부분 처리에서는 상태만 저장하고, 전역 재시도 카운터는 유지합니다.
+                        writeMeta(meta)
+                        log.info {
+                            "Spool partial run saved without retry increment: id=${meta.id} targetDomain=$targetDomain transientFail=${transientFailures.size} remainingRcpt=${meta.recipients.size}"
+                        }
+                        continue
+                    }
+
                     meta.attempt += 1
                     if (meta.attempt >= maxRetries) {
                         log.warn { "Spool drop after max retries: $file (id=${meta.id})" }
@@ -379,6 +433,10 @@ class MailSpooler(
 
     /**
      * 대상 도메인이 지정되면 해당 도메인 수신자만 반환합니다.
+     *
+     * @param recipients 전체 수신자 목록
+     * @param targetDomain null이면 전체, 아니면 지정 도메인만 처리
+     * @return 실제 처리 대상 수신자 목록
      */
     private fun recipientsToProcess(recipients: List<String>, targetDomain: String?): List<String> {
         if (targetDomain == null) return recipients.toList()
@@ -392,6 +450,9 @@ class MailSpooler(
      * NOTIFY 파라미터를 최소한으로 반영해 불필요한 DSN(특히 NOTIFY=NEVER)을 억제합니다.
      *
      * RFC 3461 기본값/세부 규칙은 구현 범위 밖이므로, 실사용에 안전한(보수적) 규칙으로 둡니다.
+     *
+     * @param notify RCPT 단위 NOTIFY 파라미터 원문
+     * @return FAILURE DSN을 발송해야 하면 true
      */
     private fun shouldSendFailureDsn(notify: String?): Boolean {
         val raw = notify?.trim().orEmpty()
@@ -405,6 +466,9 @@ class MailSpooler(
     /**
      * 재시도 여부(일시/영구 실패)를 보수적으로 분류합니다.
      * - 기본은 "일시 실패(재시도)"로 두고, 확실한 5xx/정책/구성 오류만 영구 실패로 판단합니다.
+     *
+     * @param t 전달 실패 원인 예외
+     * @return 영구 실패로 분류되면 true
      */
     private fun isPermanentFailure(t: Throwable): Boolean {
         when (t) {

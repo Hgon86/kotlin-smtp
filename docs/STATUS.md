@@ -11,6 +11,18 @@
 - 옵션 모듈 분리(설계): `docs/MODULE_STRATEGY.md`
 - relay 모듈 설계 확정: `docs/RELAY_MODULES.md`
 
+### 라이브러리화 진척률(요약)
+
+- 코어 SMTP 엔진/프로토콜 안정화: **90%** ✅
+- Starter 최소 기동 경험(MVP): **95%** ✅ (설정 검증 강화 완료)
+- Public API 경계 확정: **95%** ✅ (PUBLIC_API_CANDIDATES.md 업데이트 완료)
+- Relay 모듈 완성: **90%** ✅ (구현 및 문서화 완료)
+- 문서 정합성(README/STATUS/ROADMAP): **85%**
+- 배포 준비(publish/license/release): **55%**
+- CI/CD 자동화: **20%**
+- Example app(소비자 예제 모듈): **45%**
+- 전체 체감 진척률(가중): **약 82%**
+
 결정사항(현재):
 - relay(outbound SMTP 전송)는 starter에서 분리해 옵션 모듈로 제공
 
@@ -55,6 +67,17 @@
 - `ETRN` 스풀 트리거 예외를 451로 매핑해 커맨드 실패를 SMTP 응답으로 일관되게 전달
 - 도메인 검증 유틸을 `normalizeValidDomain`으로 단순화해 검증/정규화 중복 호출 제거
 - `MailSpooler` 내부에서 영구 실패 판정 중복 호출 제거 및 도메인 수신자 선택 로직을 함수로 분리
+- `MailSpooler` 부분 도메인 처리에서 메시지 전역 재시도 카운터가 불필요하게 증가하지 않도록 보정
+- `MailSpooler` 트리거 coalescing을 추가해 연속 `triggerOnce`/`triggerOnce(domain)` 호출을 병합 처리
+- `TriggerCoalescer`를 분리해 트리거 병합 규칙(Full 우선/도메인 중복 제거)을 단위 테스트 가능 구조로 정리
+- `JakartaMailDsnSender`의 RFC 3464 필드 매핑을 보강해 `Status`/`Diagnostic-Code`를 사유 기반으로 정교화
+- `SmtpIntegrationTest`에 SMTPUTF8/IDN 경계 케이스(UTF-8 local-part, IDN 도메인 조합) 회귀 테스트 추가
+- `MAIL FROM`/`RCPT TO`의 SMTPUTF8 사전 검증을 local-part 기준으로 조정해 IDN 도메인 입력 경계를 보수적으로 개선
+- `JakartaMailDsnSenderTest` 추가로 DSN 상태값/진단코드/ORCPT 반영을 회귀 테스트로 고정
+- `TriggerCoalescerTest` 추가로 연속 트리거 병합 규칙을 회귀 테스트로 고정
+- `kotlin-smtp-example-app` 모듈을 추가해 starter 소비 예제(bootRun) 경로를 제공
+- 멀티모듈 `publishToMavenLocal` 기반을 위해 publishable 모듈에 `maven-publish` 공통 설정 추가
+- 프로젝트 라이선스를 `Apache-2.0`으로 명시(`LICENSE`)
 
 ### 유지보수성
 
@@ -308,4 +331,27 @@ Starter MVP의 정의는 "core + starter 의존" 후, 아래의 **기동 필수 
 추가(확장 포인트 변경 시):
 - SPI(확장점) 변경은 public API로 취급하고 semver/문서/테스트를 함께 갱신
 
-*최종 업데이트: 2026-02-06*
+### 최근 완료된 작업 (2026-02-09)
+
+#### Public API 경계 확정 ✅
+- `PUBLIC_API_CANDIDATES.md` 실제 코드와 1:1 정합 완료
+- Public/Internal 타입 명확히 분리 및 문서화
+- 핵심 Public API(SmtpServer, SPI, Handler 등) 상세 문서화
+- KDoc 주석 품질 개선
+
+#### Starter 기능 마감 ✅
+- `SmtpServerProperties.validate()` 메서드 추가 - 모든 설정 중앙화 검증
+- 포트 범위(0-65535), 필수 경로, 로컬 도메인, TLS 설정 검증 강화
+- Rate limit 및 AUTH rate limit 설정 검증 추가
+- 스모크 테스트 보강 (잘못된 포트/리스너 포트 검증 테스트 추가)
+- `application.example.yml`과 실제 프로퍼티 정합
+
+#### Relay 모듈 완성 ✅
+- `RELAY_MODULES.md` 구현 상태 반영 및 상세화
+- Public API 경계 문서화 (`MailRelay`, `RelayAccessPolicy`, `DsnSender` 등)
+- 구현체 문서화 (`JakartaMailMxMailRelay`, `JakartaMailDsnSender`)
+- 오픈 릴레이 방지 가드레일 및 활성화 정책 문서화
+
+---
+
+*최종 업데이트: 2026-02-09*

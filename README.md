@@ -69,6 +69,51 @@ export SMTP_HOSTNAME=localhost
 
 본인의 Spring Boot 앱에서 아래처럼 starter를 추가하면, `application.yml` 설정만으로 SMTP 서버가 뜨는 구성을 목표로 합니다.
 
+외부 프로젝트에서 가장 빠르게 띄우는 최소 예시는 다음과 같습니다.
+
+```kotlin
+// build.gradle.kts
+plugins {
+    kotlin("jvm") version "1.9.25"
+    kotlin("plugin.spring") version "1.9.25"
+    id("org.springframework.boot") version "3.5.3"
+    id("io.spring.dependency-management") version "1.1.7"
+}
+
+dependencies {
+    implementation("org.springframework.boot:spring-boot-starter")
+    implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:VERSION")
+}
+```
+
+```kotlin
+// src/main/kotlin/com/example/SmtpApp.kt
+import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.runApplication
+
+@SpringBootApplication
+class SmtpApp
+
+fun main(args: Array<String>) {
+    runApplication<SmtpApp>(*args)
+}
+```
+
+```yaml
+# src/main/resources/application.yml
+smtp:
+  port: 2525
+  hostname: localhost
+  routing:
+    localDomain: local.test
+  storage:
+    mailboxDir: ./data/mailboxes
+    tempDir: ./data/temp
+    listsDir: ./data/lists
+  spool:
+    dir: ./data/spool
+```
+
 ## 설정 가이드
 
 ### 기본 설정 (application.yml)
@@ -190,6 +235,26 @@ dependencies {
 
 `kotlin-smtp-spring-boot-starter`는 `smtp.*` 설정을 통해 `SmtpServer`들을 자동 생성/시작하는 구성을 제공합니다.
 
+### 로컬 Maven으로 소비(라이브러리 테스트)
+
+배포 전 로컬 소비 테스트가 필요하면 먼저 퍼블리시합니다.
+
+```bash
+./gradlew publishToMavenLocal
+```
+
+그 다음 외부 프로젝트에서 `mavenLocal()` + 좌표를 추가하면 됩니다.
+
+### Example App 모듈로 바로 실행
+
+저장소 내 예제 모듈(`kotlin-smtp-example-app`)로 바로 실행할 수 있습니다.
+
+```bash
+./gradlew :kotlin-smtp-example-app:bootRun
+```
+
+기본 포트는 `2526`이며, 설정은 `kotlin-smtp-example-app/src/main/resources/application.yml`에서 확인할 수 있습니다.
+
 ## 아키텍처
 
 ```
@@ -238,7 +303,7 @@ dependencies {
 
 ## 라이선스
 
-[라이선스 정보 추가 필요]
+Apache License 2.0 (`LICENSE`)
 
 ---
 

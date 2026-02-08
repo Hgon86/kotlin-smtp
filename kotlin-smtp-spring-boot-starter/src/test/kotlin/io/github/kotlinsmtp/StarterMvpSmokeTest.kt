@@ -20,10 +20,7 @@ class StarterMvpSmokeTest {
 
     @Test
     fun `minimal properties start and stop server without hooks`() {
-        val mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes"))
-        val messageTempDir = Files.createDirectories(tempDir.resolve("message-temp"))
-        val listsDir = Files.createDirectories(tempDir.resolve("lists"))
-        val spoolDir = Files.createDirectories(tempDir.resolve("spool"))
+        val dirs = createTestDirectories("base")
 
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
@@ -31,10 +28,10 @@ class StarterMvpSmokeTest {
                 "smtp.hostname=localhost",
                 "smtp.port=0",
                 "smtp.routing.localDomain=local.test",
-                "smtp.storage.mailboxDir=${mailboxDir.toString()}",
-                "smtp.storage.tempDir=${messageTempDir.toString()}",
-                "smtp.storage.listsDir=${listsDir.toString()}",
-                "smtp.spool.dir=${spoolDir.toString()}",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
             )
             .run { context ->
                 val servers = context.getBean("smtpServers") as List<*>
@@ -53,10 +50,7 @@ class StarterMvpSmokeTest {
 
     @Test
     fun `minimal properties start and stop server with hook bean`() {
-        val mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes-hook"))
-        val messageTempDir = Files.createDirectories(tempDir.resolve("message-temp-hook"))
-        val listsDir = Files.createDirectories(tempDir.resolve("lists-hook"))
-        val spoolDir = Files.createDirectories(tempDir.resolve("spool-hook"))
+        val dirs = createTestDirectories("hook")
 
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
@@ -65,10 +59,10 @@ class StarterMvpSmokeTest {
                 "smtp.hostname=localhost",
                 "smtp.port=0",
                 "smtp.routing.localDomain=local.test",
-                "smtp.storage.mailboxDir=${mailboxDir.toString()}",
-                "smtp.storage.tempDir=${messageTempDir.toString()}",
-                "smtp.storage.listsDir=${listsDir.toString()}",
-                "smtp.spool.dir=${spoolDir.toString()}",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
             )
             .run { context ->
                 val servers = context.getBean("smtpServers") as List<*>
@@ -87,10 +81,7 @@ class StarterMvpSmokeTest {
 
     @Test
     fun `documented example properties boot in single-port mode`() {
-        val mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes-doc"))
-        val messageTempDir = Files.createDirectories(tempDir.resolve("message-temp-doc"))
-        val listsDir = Files.createDirectories(tempDir.resolve("lists-doc"))
-        val spoolDir = Files.createDirectories(tempDir.resolve("spool-doc"))
+        val dirs = createTestDirectories("doc")
 
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
@@ -102,10 +93,10 @@ class StarterMvpSmokeTest {
 
                 "smtp.routing.localDomain=mydomain.com",
 
-                "smtp.storage.mailboxDir=${mailboxDir.toString()}",
-                "smtp.storage.tempDir=${messageTempDir.toString()}",
-                "smtp.storage.listsDir=${listsDir.toString()}",
-                "smtp.spool.dir=${spoolDir.toString()}",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
 
                 // AUTH + rate limit (docs와 동기화 목적)
                 "smtp.auth.enabled=true",
@@ -137,10 +128,7 @@ class StarterMvpSmokeTest {
 
     @Test
     fun `listeners mode ignores smtp port and creates multiple servers`() {
-        val mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes-listeners"))
-        val messageTempDir = Files.createDirectories(tempDir.resolve("message-temp-listeners"))
-        val listsDir = Files.createDirectories(tempDir.resolve("lists-listeners"))
-        val spoolDir = Files.createDirectories(tempDir.resolve("spool-listeners"))
+        val dirs = createTestDirectories("listeners")
 
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
@@ -151,10 +139,10 @@ class StarterMvpSmokeTest {
 
                 "smtp.routing.localDomain=local.test",
 
-                "smtp.storage.mailboxDir=${mailboxDir.toString()}",
-                "smtp.storage.tempDir=${messageTempDir.toString()}",
-                "smtp.storage.listsDir=${listsDir.toString()}",
-                "smtp.spool.dir=${spoolDir.toString()}",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
 
                 "smtp.auth.enabled=true",
                 "smtp.auth.required=false",
@@ -200,10 +188,7 @@ class StarterMvpSmokeTest {
 
     @Test
     fun `missing local domain fails fast at boot`() {
-        val mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes-nodomain"))
-        val messageTempDir = Files.createDirectories(tempDir.resolve("message-temp-nodomain"))
-        val listsDir = Files.createDirectories(tempDir.resolve("lists-nodomain"))
-        val spoolDir = Files.createDirectories(tempDir.resolve("spool-nodomain"))
+        val dirs = createTestDirectories("nodomain")
 
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
@@ -212,10 +197,10 @@ class StarterMvpSmokeTest {
                 "smtp.port=0",
 
                 // intentionally omit smtp.routing.localDomain
-                "smtp.storage.mailboxDir=${mailboxDir.toString()}",
-                "smtp.storage.tempDir=${messageTempDir.toString()}",
-                "smtp.storage.listsDir=${listsDir.toString()}",
-                "smtp.spool.dir=${spoolDir.toString()}",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
             )
             .run { context ->
                 assertTrue(context.startupFailure?.message?.contains("smtp.routing.localDomain") == true)
@@ -224,10 +209,7 @@ class StarterMvpSmokeTest {
 
     @Test
     fun `ssl enabled without existing files fails fast at boot`() {
-        val mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes-ssl"))
-        val messageTempDir = Files.createDirectories(tempDir.resolve("message-temp-ssl"))
-        val listsDir = Files.createDirectories(tempDir.resolve("lists-ssl"))
-        val spoolDir = Files.createDirectories(tempDir.resolve("spool-ssl"))
+        val dirs = createTestDirectories("ssl")
 
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
@@ -236,10 +218,10 @@ class StarterMvpSmokeTest {
                 "smtp.port=0",
                 "smtp.routing.localDomain=local.test",
 
-                "smtp.storage.mailboxDir=${mailboxDir.toString()}",
-                "smtp.storage.tempDir=${messageTempDir.toString()}",
-                "smtp.storage.listsDir=${listsDir.toString()}",
-                "smtp.spool.dir=${spoolDir.toString()}",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
 
                 "smtp.ssl.enabled=true",
                 "smtp.ssl.certChainFile=${tempDir.resolve("missing.crt")}",
@@ -249,4 +231,75 @@ class StarterMvpSmokeTest {
                 assertTrue(context.startupFailure?.message?.contains("smtp.ssl.") == true)
             }
     }
+
+    @Test
+    fun `invalid port fails fast at boot`() {
+        val dirs = createTestDirectories("port")
+
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withPropertyValues(
+                "smtp.hostname=localhost",
+                "smtp.port=70000", // invalid port
+                "smtp.routing.localDomain=local.test",
+
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
+            )
+            .run { context ->
+                assertTrue(context.startupFailure?.message?.contains("port") == true)
+            }
+    }
+
+    @Test
+    fun `invalid listener port fails fast at boot`() {
+        val dirs = createTestDirectories("lport")
+
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withPropertyValues(
+                "smtp.hostname=localhost",
+                "smtp.routing.localDomain=local.test",
+
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
+
+                "smtp.listeners[0].port=99999", // invalid port
+            )
+            .run { context ->
+                assertTrue(context.startupFailure?.message?.contains("port") == true)
+            }
+    }
+
+    /**
+     * 테스트별 임시 디렉터리 묶음을 생성합니다.
+     *
+     * @param suffix 테스트 구분 접미사
+     * @return 생성된 테스트 디렉터리 정보
+     */
+    private fun createTestDirectories(suffix: String): TestDirectories = TestDirectories(
+        mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes-$suffix")),
+        messageTempDir = Files.createDirectories(tempDir.resolve("message-temp-$suffix")),
+        listsDir = Files.createDirectories(tempDir.resolve("lists-$suffix")),
+        spoolDir = Files.createDirectories(tempDir.resolve("spool-$suffix")),
+    )
+
+    /**
+     * 스모크 테스트용 디렉터리 경로 묶음입니다.
+     *
+     * @property mailboxDir 로컬 메일박스 디렉터리
+     * @property messageTempDir 메시지 임시 저장 디렉터리
+     * @property listsDir 메일링 리스트 파일 디렉터리
+     * @property spoolDir 스풀 디렉터리
+     */
+    private data class TestDirectories(
+        val mailboxDir: Path,
+        val messageTempDir: Path,
+        val listsDir: Path,
+        val spoolDir: Path,
+    )
 }

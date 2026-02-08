@@ -141,17 +141,10 @@ class KotlinSmtpAutoConfiguration {
         authService: AuthService,
         eventHooksProvider: ObjectProvider<SmtpEventHook>,
     ): List<SmtpServer> {
-        // Validate required storage paths (no OS-specific defaults)
-        props.storage.validate()
-        props.spool.validate()
+        // Validate all configuration properties (throws on invalid config)
+        props.validate()
 
         val localDomain = props.effectiveLocalDomain().trim()
-        require(localDomain.isNotBlank()) {
-            "smtp.routing.localDomain must be configured (e.g., mydomain.com)"
-        }
-
-        // TLS 설정이 활성화된 경우, 인증서/키 경로가 올바른지 부팅 단계에서 검증합니다.
-        props.ssl.validate()
 
         val cert = if (props.ssl.enabled) props.ssl.getCertChainFile() else null
         val key = if (props.ssl.enabled) props.ssl.getPrivateKeyFile() else null

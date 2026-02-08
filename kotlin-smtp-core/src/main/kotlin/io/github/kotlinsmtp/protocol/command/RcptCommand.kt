@@ -56,7 +56,8 @@ internal class RcptCommand : SmtpCommand(
         }
 
         // 최종 수신자 주소 검증
-        if (!session.sessionData.smtpUtf8 && !AddressUtils.isAllAscii(recipient)) {
+        val recipientLocalPart = recipient.substringBeforeLast('@', "")
+        if (!session.sessionData.smtpUtf8 && !AddressUtils.isAllAscii(recipientLocalPart)) {
             throw SmtpSendResponse(553, "5.6.7 SMTPUTF8 required")
         }
         val ok = if (session.sessionData.smtpUtf8) AddressUtils.validateSmtpUtf8Address(recipient) else recipient.isValidEmailAddress()

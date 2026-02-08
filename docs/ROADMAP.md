@@ -8,6 +8,12 @@
 - **테스트**: `./gradlew test` 통과
 - **진행 상황 상세**: `docs/STATUS.md` 참고
 
+### 최근 완료(2026-02-06)
+
+- [x] `MailSpooler` 트리거 coalescing 구현 + `TriggerCoalescerTest`로 병합 규칙 고정
+- [x] DSN RFC 3464 세부 필드 매핑 보강 + `JakartaMailDsnSenderTest` 추가
+- [x] SMTPUTF8/IDN 경계 테스트 추가 및 local-part 기준 검증 보정
+
 ---
 
 ## 완료된 작업 (Completed)
@@ -69,21 +75,24 @@
 
 ---
 
-### 2. Spring Boot Starter 기능/문서 마감
+### 2. Spring Boot Starter 기능/문서 마감 ✅
 
 **목표**: core + starter 의존 + 최소 설정으로 서버가 바로 기동되도록 auto-config/문서/스모크 테스트를 마감
 
 **TODO**:
-- [ ] public package 목록 확정 (기준: host가 구현/호출해야 하는 인터페이스)
-- [ ] internal/impl 패키지로 이동 대상 분류 (Netty 파이프라인/디코더/프레임 등)
-- [ ] Kotlin `internal` + 패키지 네이밍(`...internal...` 또는 `...impl...`) 정책 결정
-- [ ] `PUBLIC_API_CANDIDATES.md`를 실제 코드와 1:1로 맞추기
+- [x] public package 목록 확정 (기준: host가 구현/호출해야 하는 인터페이스)
+- [x] internal/impl 패키지로 이동 대상 분류 (Netty 파이프라인/디코더/프레임 등)
+- [x] Kotlin `internal` + 패키지 네이밍 정책 적용
+- [x] `PUBLIC_API_CANDIDATES.md`를 실제 코드와 1:1로 맞추기
+- [x] Starter 설정값 검증 강화 (`SmtpServerProperties.validate()`)
+- [x] application.example.yml과 실제 프로퍼티 정합
+- [x] 스모크 테스트 보강 (설정 검증 테스트)
 - [ ] (선택) Java 친화 facade 필요 여부 결정
 
 **출력물**:
-- `docs/PUBLIC_API_POLICY.md`: "무엇이 public API인가"와 변경 규칙
+- `docs/PUBLIC_API_CANDIDATES.md`: "무엇이 public API인가"와 변경 규칙 (업데이트 완료)
 
-**우선순위**: HIGH
+**우선순위**: HIGH ✅ 완료
 
 ---
 
@@ -129,9 +138,13 @@
 **목표**: core + starter를 독립 artifact로 배포 가능하게 정리
 
 **TODO**:
-- [ ] gradle publish 설정(artifactId, POM, license, scm)
+- [~] gradle publish 설정(artifactId, POM, license, scm)
 - [ ] 버전 정책(semver) 문서화
 - [ ] starter의 의존성 범위 점검 (core는 Spring-free 유지)
+
+진행 메모:
+- publishable 모듈(`core/relay/relay-jakarta-mail/relay-spring-boot-starter/spring-boot-starter`)에 `maven-publish` 공통 설정을 추가해 `publishToMavenLocal` 경로를 확보함.
+- `LICENSE`를 추가해 라이선스 명시를 시작함. (POM metadata/scm/developers는 후속)
 
 **우선순위**: MEDIUM
 
@@ -178,7 +191,7 @@
 
 ---
 
-### 8. Spring Boot Starter 구조 재정돈(옵션 모듈 분리)
+### 8. Spring Boot Starter 구조 재정돈(옵션 모듈 분리) ✅
 
 **목표**: starter는 "기동 경험 + 로컬 기본 구현"만 제공하고, 특정 인프라(S3/Kafka/DB 등) 통합은 옵션 모듈로 분리
 
@@ -187,12 +200,15 @@
 - `docs/RELAY_MODULES.md` (relay 경계/정책 확정)
 
 **TODO**:
-- [ ] starter에 남길 "기본 구현" 범위 확정(파일 store/spool/로컬 mailbox/relay 포함 여부)
-- [ ] 옵션 모듈 후보/명명 규칙/의존 방향 확정
-- [ ] (결정) relay(outbound)를 옵션 모듈로 분리(`kotlin-smtp-relay`)
-- [ ] relay 모듈 public API/기본 정책 문서 확정 (`docs/RELAY_MODULES.md`)
+- [x] starter에 남길 "기본 구현" 범위 확정(파일 store/spool/로컬 mailbox)
+- [x] 옵션 모듈 후보/명명 규칙/의존 방향 확정
+- [x] (결정) relay(outbound)를 옵션 모듈로 분리(`kotlin-smtp-relay`)
 - [x] relay 모듈 public API/기본 정책 문서 확정 (`docs/RELAY_MODULES.md`)
+- [x] 구현체 완성 (`JakartaMailMxMailRelay`, `JakartaMailDsnSender`)
+- [x] Relay 모듈 문서화 (API + 구현체 상세)
 - [ ] (선택) `kotlin-smtp-*-spring-boot-starter` 형태로 통합 모듈 auto-config 제공 여부 결정
+
+**우선순위**: HIGH ✅ 완료
 
 ---
 
@@ -201,8 +217,8 @@
 **목표**: 라이브러리(core + starter)를 소비해서 SMTP 서버 앱까지 구성
 
 **TODO**:
-- [ ] `kotlin-smtp-example-app` 모듈 생성
-- [ ] core + starter 의존
+- [x] `kotlin-smtp-example-app` 모듈 생성
+- [x] core + starter 의존
 - [ ] 실제 운영/배포는 목적이 아니라 "사용 예시 + 포트폴리오"로 구성
 
 **우선순위**: MEDIUM
@@ -229,32 +245,39 @@
 
 ### 다음 작업 추천 (다음 세션용)
 
-**옵션 A**: `a2` - AUTH/STARTTLS 테스트 보강
-- 보안 관련 기능의 신뢰성 확보
-- 회귀 방지
-
-**옵션 B**: `5` - Spring Boot Starter 분리
-- core를 라이브러리로 쓰기 쉽게 만듦(자동 설정)
-
-**옵션 C**: `3` - 메트릭 및 모니터링
+**옵션 A**: `6` - 메트릭 및 모니터링 (추천)
+- Micrometer 메트릭 추가 (연결 수, 메시지 수, 스풀 크기 등)
+- Health indicators 구현
 - 운영 환경에서 필수적인 관측성 확보
+
+**옵션 B**: `7` - 문서 정리 및 통합
+- `docs/THIN_ARCHITECTURE.md` 최신화 (현재 런타임 흐름 반영)
+- 중복/구식 문서 제거 검토
+- API 문서화 (KDoc 활용)
+
+**옵션 C**: `3` - 배포 준비
+- Maven Central 배포 설정 완료
+- 버전 정책 문서화
+- 릴리즈 체크리스트 작성
 
 ### 장기 로드맵
 
-1. **안정화 단계** (현재 ~ 2주)
-   - 테스트 보강 (a2)
-   - 설정 고도화
-   - 메트릭 추가
+1. **안정화 단계** (현재 ~ 1주) ✅ 대부분 완료
+   - [x] Public API 경계 확정
+   - [x] Starter 기능 마감
+   - [x] Relay 모듈 완성
+   - [ ] 메트릭 및 모니터링
+   - [ ] 문서 정리
 
-2. **운영화 단계** (2~4주)
+2. **운영화 단계** (1~3주)
    - Docker/K8s 배포
-   - 문서 완성
-   - CI/CD
+   - CI/CD (GitHub Actions)
+   - Maven Central 배포
 
-3. **확장 단계** (4주+)
+3. **확장 단계** (3주+)
    - PostgreSQL/R2DBC 지원 (auth + 메타데이터)
    - S3 저장소 지원
-   - Spring Boot Starter 모듈
+   - 고급 모니터링/알림
 
 ---
 
@@ -301,5 +324,5 @@
 
 ---
 
-*최종 업데이트: 2026-02-06*
+*최종 업데이트: 2026-02-09*
 *다음 검토 예정: 작업 완료 시마다 업데이트*

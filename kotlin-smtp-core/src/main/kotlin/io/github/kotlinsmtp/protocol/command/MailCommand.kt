@@ -55,7 +55,8 @@ internal class MailCommand : SmtpCommand(
 
         if (from != null) {
             // SMTPUTF8 파라미터 없이 UTF-8 주소를 받으면 RFC 의미상 거부해야 합니다(기능 위주 최소 준수).
-            if (!smtpUtf8 && !AddressUtils.isAllAscii(from)) {
+            val localPart = from.substringBeforeLast('@', "")
+            if (!smtpUtf8 && !AddressUtils.isAllAscii(localPart)) {
                 throw SmtpSendResponse(553, "5.6.7 SMTPUTF8 required")
             }
             val ok = if (smtpUtf8) AddressUtils.validateSmtpUtf8Address(from) else from.isValidEmailAddress()

@@ -1,0 +1,22 @@
+smtp:
+  port: 2526
+  hostname: localhost
+  serviceName: EXAMPLE-SMTP
+
+  routing:
+    localDomain: local.test
+
+  storage:
+    mailboxDir: ./example-data/mailboxes
+    tempDir: ./example-data/temp
+    listsDir: ./example-data/lists
+
+  spool:
+    dir: ./example-data/spool
+
+  auth:
+    enabled: false
+    required: false
+
+  relay:
+    enabled: false

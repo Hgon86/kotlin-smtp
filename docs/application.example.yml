@@ -15,11 +15,14 @@ management:
         enabled: true
 
 smtp:
-  port: 2525 # listeners 미설정 시 단일 포트로 동작
+  # 단일 포트 모드: listeners가 비어있을 때 사용됩니다.
+  # listeners를 설정하면 이 값은 무시됩니다.
+  port: 2525
   hostname: localhost
   serviceName: ESMTP
 
   # 로컬 도메인 판정(로컬 전달 vs 외부 릴레이 분기)
+  # - 필수 설정: 로컬 도메인 메일 수신/처리를 위해 필요합니다.
   routing:
     localDomain: mydomain.com
 
