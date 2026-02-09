@@ -30,6 +30,7 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-autoconfigure")
     implementation("org.springframework.boot:spring-boot-starter")
+    implementation("io.micrometer:micrometer-core")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
     implementation("io.github.oshai:kotlin-logging-jvm:7.0.4")

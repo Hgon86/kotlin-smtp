@@ -3,6 +3,9 @@ package io.github.kotlinsmtp.config
 import io.github.kotlinsmtp.auth.AuthService
 import io.github.kotlinsmtp.auth.InMemoryAuthService
 import io.github.kotlinsmtp.mail.LocalMailboxManager
+import io.github.kotlinsmtp.metrics.MicrometerSmtpEventHook
+import io.github.kotlinsmtp.metrics.MicrometerSpoolMetrics
+import io.github.kotlinsmtp.metrics.SpoolMetrics
 import io.github.kotlinsmtp.protocol.handler.LocalDirectoryUserHandler
 import io.github.kotlinsmtp.protocol.handler.LocalFileMailingListHandler
 import io.github.kotlinsmtp.protocol.handler.SimpleSmtpProtocolHandler
@@ -20,8 +23,11 @@ import io.github.kotlinsmtp.spool.MailDeliveryService
 import io.github.kotlinsmtp.spool.MailSpooler
 import io.github.kotlinsmtp.storage.FileMessageStore
 import io.github.kotlinsmtp.storage.MessageStore
+import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -81,6 +87,7 @@ class KotlinSmtpAutoConfiguration {
         props: SmtpServerProperties,
         deliveryService: MailDeliveryService,
         dsnSenderProvider: ObjectProvider<DsnSender>,
+        spoolMetrics: SpoolMetrics,
     ): MailSpooler =
         MailSpooler(
             spoolDir = props.spool.path,
@@ -88,7 +95,38 @@ class KotlinSmtpAutoConfiguration {
             retryDelaySeconds = props.spool.retryDelaySeconds,
             deliveryService = deliveryService,
             dsnSenderProvider = { dsnSenderProvider.getIfAvailable() },
+            spoolMetrics = spoolMetrics,
         )
+
+    @Bean
+    @ConditionalOnMissingBean
+    fun spoolMetrics(): SpoolMetrics = SpoolMetrics.NOOP
+
+    /**
+     * Micrometer 레지스트리가 있을 때 스풀 메트릭 구현을 활성화합니다.
+     *
+     * @param meterRegistry Micrometer 메트릭 레지스트리
+     * @return Micrometer 기반 스풀 메트릭 기록기
+     */
+    @Bean
+    @ConditionalOnClass(MeterRegistry::class)
+    @ConditionalOnBean(MeterRegistry::class)
+    @ConditionalOnMissingBean(SpoolMetrics::class)
+    fun micrometerSpoolMetrics(meterRegistry: MeterRegistry): SpoolMetrics =
+        MicrometerSpoolMetrics(meterRegistry)
+
+    /**
+     * Micrometer 레지스트리가 있을 때 SMTP 이벤트 메트릭 훅을 등록합니다.
+     *
+     * @param meterRegistry Micrometer 메트릭 레지스트리
+     * @return SMTP 이벤트를 계측하는 훅 구현
+     */
+    @Bean
+    @ConditionalOnClass(MeterRegistry::class)
+    @ConditionalOnBean(MeterRegistry::class)
+    @ConditionalOnMissingBean(MicrometerSmtpEventHook::class)
+    fun micrometerSmtpEventHook(meterRegistry: MeterRegistry): SmtpEventHook =
+        MicrometerSmtpEventHook(meterRegistry)
 
     @Bean
     @ConditionalOnMissingBean
@@ -143,8 +181,6 @@ class KotlinSmtpAutoConfiguration {
     ): List<SmtpServer> {
         // Validate all configuration properties (throws on invalid config)
         props.validate()
-
-        val localDomain = props.effectiveLocalDomain().trim()
 
         val cert = if (props.ssl.enabled) props.ssl.getCertChainFile() else null
         val key = if (props.ssl.enabled) props.ssl.getPrivateKeyFile() else null

@@ -70,8 +70,14 @@ apiValidation {
 subprojects {
     if (name in publishableModules) {
         apply(plugin = "maven-publish")
+        apply(plugin = "signing")
 
         plugins.withId("java") {
+            extensions.configure<JavaPluginExtension> {
+                withSourcesJar()
+                withJavadocJar()
+            }
+
             extensions.configure<org.gradle.api.publish.PublishingExtension> {
                 publications {
                     create<org.gradle.api.publish.maven.MavenPublication>("mavenJava") {
@@ -79,10 +85,79 @@ subprojects {
                         groupId = project.group.toString()
                         artifactId = project.name
                         version = project.version.toString()
+
+                        pom {
+                            name.set(project.name)
+                            description.set("Kotlin SMTP server libraries and Spring Boot starters")
+                            url.set("https://github.com/kotlinsmtp/kotlin-smtp")
+
+                            licenses {
+                                license {
+                                    name.set("Apache License 2.0")
+                                    url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                                }
+                            }
+
+                            scm {
+                                connection.set("scm:git:https://github.com/kotlinsmtp/kotlin-smtp.git")
+                                developerConnection.set("scm:git:ssh://git@github.com/kotlinsmtp/kotlin-smtp.git")
+                                url.set("https://github.com/kotlinsmtp/kotlin-smtp")
+                            }
+
+                            developers {
+                                developer {
+                                    id.set("kotlinsmtp")
+                                    name.set("kotlin-smtp contributors")
+                                    email.set("opensource@kotlinsmtp.github.io")
+                                }
+                            }
+                        }
                     }
                 }
                 repositories {
                     mavenLocal()
+
+                    val ossrhUsername = providers.gradleProperty("ossrhUsername")
+                        .orElse(providers.environmentVariable("OSSRH_USERNAME"))
+                    val ossrhPassword = providers.gradleProperty("ossrhPassword")
+                        .orElse(providers.environmentVariable("OSSRH_PASSWORD"))
+
+                    if (ossrhUsername.isPresent && ossrhPassword.isPresent) {
+                        maven {
+                            name = "OSSRH"
+                            val isSnapshot = project.version.toString().endsWith("SNAPSHOT")
+                            url = uri(
+                                if (isSnapshot) {
+                                    "https://s01.oss.sonatype.org/content/repositories/snapshots/"
+                                } else {
+                                    "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
+                                }
+                            )
+                            credentials {
+                                username = ossrhUsername.get()
+                                password = ossrhPassword.get()
+                            }
+                        }
+                    }
+                }
+            }
+
+            extensions.configure<org.gradle.plugins.signing.SigningExtension> {
+                val signingKey = providers.gradleProperty("signingKey")
+                    .orElse(providers.environmentVariable("SIGNING_KEY"))
+                    .orNull
+                val signingPassword = providers.gradleProperty("signingPassword")
+                    .orElse(providers.environmentVariable("SIGNING_PASSWORD"))
+                    .orNull
+                val isSnapshot = project.version.toString().endsWith("SNAPSHOT")
+
+                if (!signingKey.isNullOrBlank()) {
+                    useInMemoryPgpKeys(signingKey, signingPassword)
+                    sign(extensions.getByType<org.gradle.api.publish.PublishingExtension>().publications)
+                }
+
+                setRequired {
+                    gradle.taskGraph.allTasks.any { task -> task.name.startsWith("publish") } && !isSnapshot
                 }
             }
         }

@@ -1,106 +1,48 @@
-# Kotlin SMTP Server
+# Kotlin SMTP
 
-Kotlin 기반의 SMTP 서버 라이브러리 및 실행 애플리케이션입니다.
-Netty 프레임워크를 기반으로 하며, 코루틴을 활용한 비동기 처리를 지원합니다.
+Netty 기반 Kotlin SMTP 서버 라이브러리입니다. `core`는 Spring 없이 동작하는 SMTP 엔진을 제공하고,
+`starter` 계열 모듈은 Spring Boot에서 바로 실행 가능한 구성을 제공합니다.
 
-## 프로젝트 구조
+## 모듈 구성
 
-이 프로젝트는 라이브러리화(core)와 Spring Boot 자동설정(starter)을 우선으로 정리합니다.
-
-포트폴리오용 runnable example app은 **가장 마지막 단계**에서 별도 모듈로 추가하는 방향입니다.
-
-```
+```text
 kotlin-smtp/
-├── kotlin-smtp-core/                     # Spring-free SMTP 엔진 라이브러리
-│   ├── server/               # Netty 기반 SMTP 서버
-│   ├── protocol/             # SMTP 프로토콜 구현
-│   ├── auth/                 # 인증 인터페이스
-│   └── storage/              # 메시지 저장 인터페이스
-│
-├── kotlin-smtp-spring-boot-starter/     # Spring Boot auto-config (core 기반)
-│   ├── config/                          # @ConfigurationProperties + AutoConfiguration
-│   └── ...                              # starter 기본 구현체(파일 store/spool/relay)
-│
-└── docs/
-    └── application.example.yml          # 설정 예시
+├── kotlin-smtp-core                         # Spring-free SMTP 엔진
+├── kotlin-smtp-spring-boot-starter          # inbound 중심 starter(auto-config + 기본 구현)
+├── kotlin-smtp-relay                        # outbound relay API 경계
+├── kotlin-smtp-relay-jakarta-mail           # relay 구현체(dnsjava + jakarta-mail)
+├── kotlin-smtp-relay-spring-boot-starter    # relay auto-config
+└── kotlin-smtp-example-app                  # 소비 예제 앱
 ```
 
-## 주요 기능
+현재 구조는 의도된 분리입니다.
+- `core`: 프로토콜/세션/TLS/AUTH/프레이밍 정확성
+- `starter`: 빠른 기동 경험 + 기본 파일 기반 구현
+- `relay*`: 외부 전달(outbound) 경계를 옵션 모듈로 분리
 
-- **SMTP 프로토콜 구현**: RFC 5321 기반 SMTP 명령어 지원
-- **TLS 보안 연결**: STARTTLS 및 Implicit TLS(SMTPS) 지원
-- **AUTH 인증**: PLAIN 인증 구현
-- **메일 릴레이**: MX 레코드 조회 및 외부 전달
-- **로컬 메일박스**: 로컬 도메인 메일 저장
-- **스풀 및 재시도**: 실패 메일 자동 재시도
-- **Rate Limiting**: DoS 방지를 위한 연결/메시지 제한
+## 핵심 기능
 
-## 빠른 시작
+- RFC 5321 기본 명령: `EHLO/HELO`, `MAIL`, `RCPT`, `DATA`, `RSET`, `QUIT`
+- `BDAT`(Chunking), `STARTTLS`, `AUTH PLAIN`
+- SMTPUTF8/IDN 경계 처리
+- PROXY protocol(v1), rate limit
+- ETRN/VRFY/EXPN(기능 플래그)
+- 스풀/재시도/DSN(RFC 3464) 처리
 
-### 1. 최소 설정(Starter로 바로 기동)
+## 빠른 시작 (Starter)
 
-`kotlin-smtp-spring-boot-starter`는 **기본 저장/스풀 구현**을 포함하므로, 아래의 저장 경로만 지정하면 서버가 기동됩니다.
-
-```yaml
-smtp:
-  port: 2525
-  hostname: localhost
-  storage:
-    mailboxDir: ./data/mailboxes
-    tempDir: ./data/temp
-    listsDir: ./data/lists
-  spool:
-    dir: ./data/spool
-```
-
-또는 환경변수 사용:
-```bash
-export SMTP_MAILBOX_DIR=./data/mailboxes
-export SMTP_TEMP_DIR=./data/temp
-export SMTP_LISTS_DIR=./data/lists
-export SMTP_SPOOL_DIR=./data/spool
-export SMTP_PORT=2525
-export SMTP_HOSTNAME=localhost
-```
-
-### 2. Spring Boot 앱에서 사용
-
-이 저장소는 runnable app을 먼저 만들기보다, 라이브러리(core + starter)를 안정화하는 것을 우선합니다.
-
-본인의 Spring Boot 앱에서 아래처럼 starter를 추가하면, `application.yml` 설정만으로 SMTP 서버가 뜨는 구성을 목표로 합니다.
-
-외부 프로젝트에서 가장 빠르게 띄우는 최소 예시는 다음과 같습니다.
+### 1) 의존성
 
 ```kotlin
-// build.gradle.kts
-plugins {
-    kotlin("jvm") version "1.9.25"
-    kotlin("plugin.spring") version "1.9.25"
-    id("org.springframework.boot") version "3.5.3"
-    id("io.spring.dependency-management") version "1.1.7"
-}
-
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter")
     implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:VERSION")
 }
 ```
 
-```kotlin
-// src/main/kotlin/com/example/SmtpApp.kt
-import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.boot.runApplication
-
-@SpringBootApplication
-class SmtpApp
-
-fun main(args: Array<String>) {
-    runApplication<SmtpApp>(*args)
-}
-```
+### 2) 최소 설정
 
 ```yaml
-# src/main/resources/application.yml
 smtp:
   port: 2525
   hostname: localhost
@@ -114,206 +56,96 @@ smtp:
     dir: ./data/spool
 ```
 
-## 설정 가이드
+전체 예시는 `docs/application.example.yml`를 참고하세요.
 
-### 기본 설정 (application.yml)
-
-설정 예시는 `docs/application.example.yml`를 참고하세요.
-
-```yaml
-smtp:
-  port: 2525                    # 단일 포트 모드
-  hostname: smtp.example.com
-  
-  # 또는 멀티 리스너 모드
-  listeners:
-    - port: 2525                # MTA 수신
-      serviceName: ESMTP
-      enableStartTls: true
-      enableAuth: true
-    - port: 587                 # Submission
-      serviceName: SUBMISSION
-      requireAuthForMail: true
-    - port: 465                 # SMTPS
-      serviceName: SMTPS
-      implicitTls: true
-
-  # 저장소 (필수)
-  storage:
-    mailboxDir: /var/smtp/mailboxes
-    tempDir: /var/smtp/temp
-    listsDir: /var/smtp/lists
-
-  # TLS 설정
-  ssl:
-    enabled: true               # 인증서/키를 제공하여 STARTTLS/SMTPS를 가능하게 함
-    certChainFile: /etc/smtp/certs/tls.crt
-    privateKeyFile: /etc/smtp/certs/tls.key
-
-  # 릴레이 설정
-  relay:
-    enabled: true
-    localDomain: example.com
-    requireAuthForRelay: true   # 오픈 릴레이 방지
-    outboundTls:
-      trustAll: false           # 운영에서는 반드시 false
-
-  # 스풀 설정
-  spool:
-    dir: /var/smtp/spool
-    maxRetries: 5
-    retryDelaySeconds: 60
-
-  # 인증
-  auth:
-    enabled: true
-    required: true
-    users:
-      user1: "{bcrypt}$2a$10$..."
-```
-
-주의:
-- `smtp.ssl.enabled=true`는 "TLS용 인증서/키 제공"을 의미합니다.
-  - STARTTLS를 광고/허용할지는 리스너 정책(`listeners[].enableStartTls`)입니다.
-  - SMTPS(implicit TLS)를 사용할지는 리스너 정책(`listeners[].implicitTls`)입니다.
-- `smtp.listeners`를 지정하면 단일 포트용 `smtp.port`는 무시됩니다.
-
-### 환경변수 우선순위
-
-모든 설정은 환경변수로 오버라이드 가능합니다:
-
-| 환경변수 | 설명 | 예시 |
-|---------|------|------|
-| `SMTP_MAILBOX_DIR` | 메일박스 저장 경로 | `/var/smtp/mailboxes` |
-| `SMTP_TEMP_DIR` | 임시 파일 경로 | `/var/smtp/temp` |
-| `SMTP_LISTS_DIR` | 메일링 리스트 경로 | `/var/smtp/lists` |
-| `SMTP_SPOOL_DIR` | 스풀 디렉토리 | `/var/smtp/spool` |
-| `SMTP_HOSTNAME` | 서버 호스트명 | `smtp.example.com` |
-| `SMTP_SSL_ENABLED` | TLS(인증서/키) 사용 | `true` |
-| `SMTP_RELAY_ENABLED` | 릴레이 활성화 | `false` |
-| `SMTP_AUTH_ENABLED` | 인증 활성화 | `true` |
-
-## 라이브러리 사용
-
-### Core만 사용 (Spring 없이 직접 실행)
-
-`kotlin-smtp-core`를 의존성으로 사용하여 커스텀 SMTP 서버를 직접 구성할 수 있습니다:
-
-```kotlin
-// build.gradle.kts
-dependencies {
-    implementation("io.github.kotlinsmtp:kotlin-smtp-core:VERSION")
-}
-```
+## Core 단독 사용
 
 ```kotlin
 import io.github.kotlinsmtp.server.SmtpServer
 
-val server = SmtpServer.create(port = 2525, hostname = "smtp.example.com") {
+val server = SmtpServer.create(2525, "smtp.example.com") {
     serviceName = "example-smtp"
-    useProtocolHandlerFactory { MyProtocolHandler() }
-
-    // 선택: 기능/정책
     listener.enableStartTls = true
     listener.enableAuth = false
-    proxyProtocol.enabled = false
 }
 
-// 코루틴 컨텍스트에서 호출
 server.start()
 ```
 
-### Spring Boot에서 사용 (starter)
+## 관측성(Observability)
+
+Micrometer 연동은 **SMTP 포트에 엔드포인트를 추가하지 않습니다**.
+- SMTP는 기존 포트(예: 2525) 그대로 동작
+- 메트릭 노출은 Spring Actuator 관리 채널(옵트인)에서만 수행
+
+기본 계측 항목:
+- `smtp.connections.active`
+- `smtp.sessions.started.total`, `smtp.sessions.ended.total`
+- `smtp.messages.accepted.total`, `smtp.messages.rejected.total`
+- `smtp.spool.pending`, `smtp.spool.queued.total`, `smtp.spool.completed.total`
+- `smtp.spool.dropped.total`, `smtp.spool.retry.scheduled.total`
+- `smtp.spool.delivery.recipients.total{result=delivered|transient_failure|permanent_failure}`
+
+Prometheus 노출 예시(옵션):
 
 ```kotlin
-// build.gradle.kts
 dependencies {
-    implementation("io.github.kotlinsmtp:kotlin-smtp-core:VERSION")
-    implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:VERSION")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 }
 ```
 
-`kotlin-smtp-spring-boot-starter`는 `smtp.*` 설정을 통해 `SmtpServer`들을 자동 생성/시작하는 구성을 제공합니다.
+```yaml
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+```
 
-### 로컬 Maven으로 소비(라이브러리 테스트)
+이 경우 `/actuator/prometheus`가 **관리 포트**에서만 열립니다.
 
-배포 전 로컬 소비 테스트가 필요하면 먼저 퍼블리시합니다.
+## 로컬 배포 검증
 
 ```bash
 ./gradlew publishToMavenLocal
 ```
 
-그 다음 외부 프로젝트에서 `mavenLocal()` + 좌표를 추가하면 됩니다.
-
-### Example App 모듈로 바로 실행
-
-저장소 내 예제 모듈(`kotlin-smtp-example-app`)로 바로 실행할 수 있습니다.
+## Example App 실행
 
 ```bash
 ./gradlew :kotlin-smtp-example-app:bootRun
 ```
 
-기본 포트는 `2526`이며, 설정은 `kotlin-smtp-example-app/src/main/resources/application.yml`에서 확인할 수 있습니다.
+## CI / 배포 자동화
 
-## 아키텍처
+- CI: `.github/workflows/ci.yml`
+  - PR/Push에서 Linux/Windows `./gradlew test`
+- Publish: `.github/workflows/publish.yml`
+  - 태그(`v*`) 또는 수동 실행으로 `./gradlew publish`
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Network Layer (Netty)                                   │
-│  ┌──────────────┐    ┌─────────────┐    ┌──────────┐   │
-│  │ SmtpServer   │───▶│ Channel     │───▶│ Session  │   │
-│  └──────────────┘    │ Handler     │    │          │   │
-│                      └─────────────┘    └────┬─────┘   │
-└───────────────────────────────────────────────┼─────────┘
-                                                │
-┌───────────────────────────────────────────────┼─────────┐
-│  Protocol Layer                                │        │
-│  ┌──────────────────┐    ┌────────────────────┘        │
-│  │ SmtpCommands     │◄───┘                             │
-│  │  ├── EHLO/HELO   │                                  │
-│  │  ├── MAIL/RCPT   │                                  │
-│  │  ├── DATA        │                                  │
-│  │  ├── STARTTLS    │                                  │
-│  │  └── AUTH        │                                  │
-│  └──────────────────┘                                  │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│  Handler Layer                                          │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │ SmtpProtocolHandler (Transaction Handler)       │   │
-│  │  ├── SimpleSmtpProtocolHandler (기본)           │   │
-│  │  └── [Custom Handler] ← 사용자 구현 가능        │   │
-│  └─────────────────────────────────────────────────┘   │
-│                         │                              │
-│  ┌──────────────┐  ┌────┴─────┐  ┌─────────────┐      │
-│  │ MessageStore │  │ Delivery │  │ AuthService │      │
-│  │ (Storage)    │  │ Service  │  │ (Auth)      │      │
-│  └──────────────┘  └──────────┘  └─────────────┘      │
-└─────────────────────────────────────────────────────────┘
-```
+필요 시 GitHub Secrets:
+- `OSSRH_USERNAME`, `OSSRH_PASSWORD`
+- `SIGNING_KEY`, `SIGNING_PASSWORD`
 
-## 보안 가이드
+## Maven Central 준비 상태
 
-1. **오픈 릴레이 방지**: `smtp.relay.enabled=false`(기본) + relay 활성 시 `smtp.relay.requireAuthForRelay=true` 유지
-2. **TLS 신뢰**: `trustAll=false` (운영 환경에서만)
-3. **Rate Limiting**: IP당 연결/메시지 수 제한
-4. **PROXY Protocol**: LB 뒤에서만 사용, trustedCidrs 설정 필수
+루트 빌드에서 publishable 모듈에 공통 설정을 적용합니다.
+- `maven-publish` + `signing`
+- `sourcesJar` / `javadocJar`
+- POM 메타데이터(license/scm/developers)
+- SNAPSHOT/RELEASE 저장소 분기(OSSRH)
+
+## 문서
+
+- `docs/STATUS.md`: 현재 진행 상황
+- `docs/ROADMAP.md`: 남은 작업 우선순위
+- `docs/THIN_ARCHITECTURE.md`: 런타임/경계 요약
+- `docs/PUBLIC_API_CANDIDATES.md`: Public API 경계
+- `docs/RELAY_MODULES.md`: relay 모듈 설계/정책
 
 ## 라이선스
 
 Apache License 2.0 (`LICENSE`)
-
----
-
-## 문서
-
-- [CORE_EXTRACTION_PLAN.md](docs/CORE_EXTRACTION_PLAN.md) - Core 모듈 분리 계획
-- [THIN_ARCHITECTURE.md](docs/THIN_ARCHITECTURE.md) - 현재 아키텍처 문서
-- [ROADMAP.md](docs/ROADMAP.md) - 프로젝트 로드맵 및 작업 추적
-- [STATUS.md](docs/STATUS.md) - 진행 상황 및 다음 작업(상세)
-- [MODULE_STRATEGY.md](docs/MODULE_STRATEGY.md) - 옵션 모듈 분리(모듈 전략 초안)
-- [RELAY_MODULES.md](docs/RELAY_MODULES.md) - relay 모듈 경계/활성화/기본 정책
-- [PUBLIC_API_CANDIDATES.md](docs/PUBLIC_API_CANDIDATES.md) - 공개 API 후보
-- [PUBLIC_API_POLICY.md](docs/PUBLIC_API_POLICY.md) - Public API 경계/변경 규칙

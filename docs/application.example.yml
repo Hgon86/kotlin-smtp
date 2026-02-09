@@ -5,6 +5,10 @@ spring:
     web-application-type: none
 
 management:
+  # SMTP 포트와 관측 포트를 분리하려면 별도 관리 포트를 사용하세요.
+  # management:
+  #   server:
+  #     port: 8081
   endpoints:
     web:
       exposure:

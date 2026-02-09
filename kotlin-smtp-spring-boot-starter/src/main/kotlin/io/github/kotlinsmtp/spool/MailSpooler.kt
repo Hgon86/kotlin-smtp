@@ -1,6 +1,7 @@
 package io.github.kotlinsmtp.spool
 
 import io.github.kotlinsmtp.model.RcptDsn
+import io.github.kotlinsmtp.metrics.SpoolMetrics
 import io.github.kotlinsmtp.relay.api.DsnSender
 import io.github.kotlinsmtp.relay.api.RelayException
 import io.github.kotlinsmtp.server.SmtpDomainSpooler
@@ -42,6 +43,7 @@ class MailSpooler(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val deliveryService: MailDeliveryService,
     private val dsnSenderProvider: () -> DsnSender?,
+    private val spoolMetrics: SpoolMetrics = SpoolMetrics.NOOP,
 ) : SmtpDomainSpooler {
     private val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + dispatcher)
     private var worker: Job? = null
@@ -53,7 +55,22 @@ class MailSpooler(
 
     init {
         Files.createDirectories(spoolDir)
+        spoolMetrics.initializePending(scanPendingMessageCount())
         start()
+    }
+
+    /**
+     * 스풀 디렉터리의 현재 대기 메시지 수를 계산합니다.
+     *
+     * @return `*.eml` 파일 개수
+     */
+    private fun scanPendingMessageCount(): Long = runCatching {
+        Files.list(spoolDir).use { stream ->
+            stream.filter { path -> path.fileName.toString().endsWith(".eml") }.count()
+        }
+    }.getOrElse { e ->
+        log.warn(e) { "Failed to scan pending spool messages" }
+        0L
     }
 
     /**
@@ -159,6 +176,7 @@ class MailSpooler(
             rcptDsn = rcptDsn.toMutableMap(),
         )
         writeMeta(meta)
+        spoolMetrics.onQueued()
         log.info { "Spool queued: $target (recipients=${recipients.size})" }
         return meta
     }
@@ -334,6 +352,12 @@ class MailSpooler(
                     }
                 }
 
+                spoolMetrics.onDeliveryResults(
+                    deliveredCount = delivered.size,
+                    transientFailureCount = transientFailures.size,
+                    permanentFailureCount = permanentFailures.size,
+                )
+
                 // 성공/영구실패 수신자는 제거하여 중복 전달을 방지합니다.
                 if (delivered.isNotEmpty() || permanentFailures.isNotEmpty()) {
                     meta.recipients.removeAll(delivered.toSet())
@@ -362,8 +386,8 @@ class MailSpooler(
 
                 // 남은 수신자가 없으면 메시지를 제거하고 종료합니다.
                 if (meta.recipients.isEmpty()) {
-                    runCatching { Files.deleteIfExists(file) }
-                    runCatching { Files.deleteIfExists(metaPath(file)) }
+                    removeSpoolMessage(file)
+                    spoolMetrics.onCompleted()
                     log.info { "Spool completed and removed: $file (id=${meta.id})" }
                     continue
                 }
@@ -384,8 +408,8 @@ class MailSpooler(
                     meta.attempt += 1
                     if (meta.attempt >= maxRetries) {
                         log.warn { "Spool drop after max retries: $file (id=${meta.id})" }
-                        runCatching { Files.deleteIfExists(file) }
-                        runCatching { Files.deleteIfExists(metaPath(file)) }
+                        removeSpoolMessage(file)
+                        spoolMetrics.onDropped()
                         val dsnTargets = transientFailures
                             .filterKeys { shouldSendFailureDsn(meta.rcptDsn[it]?.notify) }
                         val details = dsnTargets.entries.map { it.key to it.value }
@@ -404,6 +428,7 @@ class MailSpooler(
                         val backoff = nextBackoffSeconds(meta.attempt)
                         meta.nextAttemptAt = Instant.now().plusSeconds(backoff)
                         writeMeta(meta)
+                        spoolMetrics.onRetryScheduled()
                         log.info { "Spool retry scheduled: id=${meta.id} attempt=${meta.attempt} remainingRcpt=${meta.recipients.size} next=${meta.nextAttemptAt} (backoff=${backoff}s)" }
                     }
                 } else {
@@ -415,6 +440,16 @@ class MailSpooler(
                 unlock(file)
             }
         }
+    }
+
+    /**
+     * 스풀 메시지 원문과 메타 파일을 함께 제거합니다.
+     *
+     * @param rawPath 삭제할 원문 파일 경로
+     */
+    private fun removeSpoolMessage(rawPath: Path) {
+        runCatching { Files.deleteIfExists(rawPath) }
+        runCatching { Files.deleteIfExists(metaPath(rawPath)) }
     }
 
     /**
