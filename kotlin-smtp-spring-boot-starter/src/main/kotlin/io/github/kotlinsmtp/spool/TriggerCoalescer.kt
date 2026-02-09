@@ -17,17 +17,16 @@ internal class TriggerCoalescer {
      * @param domain null이면 전체 트리거, 값이 있으면 도메인 트리거
      */
     fun submit(domain: String?) {
-        when (domain) {
-            null -> {
-                fullPending = true
-                domains.clear()
-            }
-            else -> {
-                if (!fullPending) {
-                    domains.add(domain)
-                }
-            }
+        if (domain == null) {
+            markFullPending()
+        } else if (!fullPending) {
+            domains.add(domain)
         }
+    }
+
+    private fun markFullPending() {
+        fullPending = true
+        domains.clear()
     }
 
     /**
@@ -35,18 +34,17 @@ internal class TriggerCoalescer {
      *
      * @return 실행할 트리거가 없으면 null
      */
-    fun poll(): SpoolTrigger? {
-        if (fullPending) {
+    fun poll(): SpoolTrigger? = when {
+        fullPending -> {
             fullPending = false
             domains.clear()
-            return SpoolTrigger.Full
+            SpoolTrigger.Full
         }
-        if (domains.isNotEmpty()) {
-            val domain = domains.first()
-            domains.remove(domain)
-            return SpoolTrigger.Domain(domain)
+        domains.isNotEmpty() -> {
+            val domain = domains.first().also { domains.remove(it) }
+            SpoolTrigger.Domain(domain)
         }
-        return null
+        else -> null
     }
 }
 

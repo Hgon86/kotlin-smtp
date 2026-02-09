@@ -455,12 +455,26 @@ class MailSpooler(
      * @return FAILURE DSN을 발송해야 하면 true
      */
     private fun shouldSendFailureDsn(notify: String?): Boolean {
-        val raw = notify?.trim().orEmpty()
-        if (raw.isEmpty()) return true // 미지정 시: 일반적으로 FAILURE는 허용(보수적으로 발송)
-        val tokens = raw.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
-        if (tokens.isEmpty()) return true
+        val tokens = parseNotifyTokens(notify) ?: return true
         if ("NEVER" in tokens) return false
-        return "FAILURE" in tokens
+        return "FAILURE" in tokens || tokens.isEmpty()
+    }
+
+    /**
+     * NOTIFY 파라미터를 토큰 집합으로 파싱합니다.
+     *
+     * @param notify RCPT 단위 NOTIFY 파라미터 원문
+     * @return 파싱 결과 토큰 집합, 입력이 비어 있으면 null
+     */
+    private fun parseNotifyTokens(notify: String?): Set<String>? {
+        val raw = notify?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        return raw
+            .split(',')
+            .asSequence()
+            .map { it.trim().uppercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
     }
 
     /**

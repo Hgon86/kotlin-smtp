@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
-import java.net.ServerSocket
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -37,11 +37,8 @@ class SmtpIntegrationTest {
     @BeforeEach
     fun setup() {
         tempDir = Files.createTempDirectory("smtp-test")
-        
-        // Find an available port
-        testPort = ServerSocket(0).use { it.localPort }
 
-        server = SmtpServer.create(testPort, "test-smtp.local") {
+        server = SmtpServer.create(0, "test-smtp.local") {
             serviceName = "test-smtp"
             useProtocolHandlerFactory { TestSmtpProtocolHandler() }
 
@@ -55,6 +52,7 @@ class SmtpIntegrationTest {
         
         runBlocking {
             server.start()
+            testPort = resolveBoundPort(server)
             // 서버 시작 대기
             Thread.sleep(100)
         }
@@ -465,5 +463,28 @@ class SmtpIntegrationTest {
             if (line.startsWith("250 ")) break
             line = reader.readLine()
         }
+    }
+
+    /**
+     * 테스트에서 서버가 실제 바인드한 포트를 반사(reflection)로 조회합니다.
+     *
+     * @param smtpServer 시작된 SMTP 서버 인스턴스
+     * @return 실제 리스닝 포트
+     */
+    private fun resolveBoundPort(smtpServer: SmtpServer): Int {
+        val channelFutureField = SmtpServer::class.java.getDeclaredField("channelFuture")
+        channelFutureField.isAccessible = true
+        val channelFuture = channelFutureField.get(smtpServer)
+            ?: error("channelFuture is null after server.start()")
+
+        val channelMethod = channelFuture.javaClass.getMethod("channel")
+        val channel = channelMethod.invoke(channelFuture)
+            ?: error("channel is null after server.start()")
+
+        val localAddressMethod = channel.javaClass.getMethod("localAddress")
+        val localAddress = localAddressMethod.invoke(channel) as? InetSocketAddress
+            ?: error("localAddress is not InetSocketAddress")
+
+        return localAddress.port
     }
 }
