@@ -47,7 +47,7 @@ class MailSpooler(
     private var worker: Job? = null
     private val staleLockThreshold = Duration.ofMinutes(15)
     private val runMutex = Mutex() // triggerOnce()와 백그라운드 워커의 동시 실행 방지
-    private val triggerStateMutex = Mutex()
+    private val triggerStateLock = Any()
     private var triggerDrainerRunning = false
     private val triggerCoalescer = TriggerCoalescer()
 
@@ -88,8 +88,7 @@ class MailSpooler(
      * @param targetDomain null이면 전체 큐 트리거, 값이 있으면 해당 도메인만 트리거
      */
     private fun submitTrigger(targetDomain: String?) {
-        scope.launch {
-            val shouldStartDrainer = triggerStateMutex.withLock {
+        val shouldStartDrainer = synchronized(triggerStateLock) {
                 triggerCoalescer.submit(targetDomain)
                 if (triggerDrainerRunning) {
                     false
@@ -97,11 +96,10 @@ class MailSpooler(
                     triggerDrainerRunning = true
                     true
                 }
-            }
+        }
 
-            if (shouldStartDrainer) {
-                drainPendingTriggers()
-            }
+        if (shouldStartDrainer) {
+            scope.launch { drainPendingTriggers() }
         }
     }
 
@@ -110,7 +108,7 @@ class MailSpooler(
      */
     private suspend fun drainPendingTriggers() {
         while (true) {
-            val nextTarget = triggerStateMutex.withLock {
+            val nextTarget = synchronized(triggerStateLock) {
                 when (val next = triggerCoalescer.poll()) {
                     is SpoolTrigger.Full -> null
                     is SpoolTrigger.Domain -> next.domain

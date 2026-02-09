@@ -428,7 +428,7 @@ class SmtpIntegrationTest {
             // This test only verifies that graceful shutdown completes without hanging.
 
         // 별도 코루틴에서 graceful shutdown 실행
-        val shutdownJob = kotlinx.coroutines.GlobalScope.launch {
+        val shutdownJob = launch {
             server.stop(gracefulTimeoutMs = 5000)
         }
 
