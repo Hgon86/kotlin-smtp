@@ -5,8 +5,8 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
 }
 
-group = "io.github.kotlinsmtp"
-version = "0.0.1-SNAPSHOT"
+group = "io.github.hgon86"
+version = "0.1.0"
 
 java {
     toolchain {

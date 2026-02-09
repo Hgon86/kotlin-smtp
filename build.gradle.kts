@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm") version "1.9.25"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.18.1"
+    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
 }
 
 val publishableModules = setOf(
@@ -12,8 +13,8 @@ val publishableModules = setOf(
     "kotlin-smtp-spring-boot-starter",
 )
 
-group = "io.github.kotlinsmtp"
-version = "0.0.1-SNAPSHOT"
+group = "io.github.hgon86"
+version = "0.1.0"
 
 java {
     toolchain {
@@ -89,7 +90,7 @@ subprojects {
                         pom {
                             name.set(project.name)
                             description.set("Kotlin SMTP server libraries and Spring Boot starters")
-                            url.set("https://github.com/kotlinsmtp/kotlin-smtp")
+                            url.set("https://github.com/Hgon86/kotlin-smtp")
 
                             licenses {
                                 license {
@@ -99,16 +100,16 @@ subprojects {
                             }
 
                             scm {
-                                connection.set("scm:git:https://github.com/kotlinsmtp/kotlin-smtp.git")
-                                developerConnection.set("scm:git:ssh://git@github.com/kotlinsmtp/kotlin-smtp.git")
-                                url.set("https://github.com/kotlinsmtp/kotlin-smtp")
+                                connection.set("scm:git:https://github.com/Hgon86/kotlin-smtp.git")
+                                developerConnection.set("scm:git:ssh://git@github.com/Hgon86/kotlin-smtp.git")
+                                url.set("https://github.com/Hgon86/kotlin-smtp")
                             }
 
                             developers {
                                 developer {
-                                    id.set("kotlinsmtp")
-                                    name.set("kotlin-smtp contributors")
-                                    email.set("opensource@kotlinsmtp.github.io")
+                                    id.set("hgon86")
+                                    name.set("Hgon86")
+                                    email.set("hgon86@users.noreply.github.com")
                                 }
                             }
                         }
@@ -171,5 +172,24 @@ subprojects {
 allprojects {
     tasks.matching { it.name == "apiCheck" }.configureEach {
         mustRunAfter("apiDump")
+    }
+}
+
+nexusPublishing {
+    repositories {
+        sonatype {
+            nexusUrl.set(uri("https://s01.oss.sonatype.org/service/local/"))
+            snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
+            username.set(
+                providers.gradleProperty("ossrhUsername")
+                    .orElse(providers.environmentVariable("OSSRH_USERNAME"))
+                    .orNull
+            )
+            password.set(
+                providers.gradleProperty("ossrhPassword")
+                    .orElse(providers.environmentVariable("OSSRH_PASSWORD"))
+                    .orNull
+            )
+        }
     }
 }

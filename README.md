@@ -36,7 +36,7 @@ kotlin-smtp/
 ```kotlin
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter")
-    implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:VERSION")
+    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:VERSION")
 }
 ```
 

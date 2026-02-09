@@ -215,9 +215,9 @@ Refusing to start: smtp.relay.enabled=true without smtp.relay.requireAuthForRela
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.kotlinsmtp:kotlin-smtp-core:VERSION")
-    implementation("io.github.kotlinsmtp:kotlin-smtp-relay:VERSION")
-    implementation("io.github.kotlinsmtp:kotlin-smtp-relay-jakarta-mail:VERSION")
+    implementation("io.github.hgon86:kotlin-smtp-core:VERSION")
+    implementation("io.github.hgon86:kotlin-smtp-relay:VERSION")
+    implementation("io.github.hgon86:kotlin-smtp-relay-jakarta-mail:VERSION")
 }
 
 // 사용
@@ -235,8 +235,8 @@ val relay = JakartaMailMxMailRelay(
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:VERSION")
-    implementation("io.github.kotlinsmtp:kotlin-smtp-relay-spring-boot-starter:VERSION")
+    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:VERSION")
+    implementation("io.github.hgon86:kotlin-smtp-relay-spring-boot-starter:VERSION")
 }
 
 // application.yml
