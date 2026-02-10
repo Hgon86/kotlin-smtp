@@ -54,6 +54,8 @@ smtp:
     listsDir: ./data/lists
   spool:
     dir: ./data/spool
+    maxRetries: 5
+    retryDelaySeconds: 60
 ```
 
 전체 예시는 `docs/application.example.yml`를 참고하세요.

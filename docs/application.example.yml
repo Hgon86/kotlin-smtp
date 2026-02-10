@@ -41,6 +41,7 @@ smtp:
   #     enableStartTls: true
   #     enableAuth: true
   #     requireAuthForMail: false
+  #     idleTimeoutSeconds: 300 # 5분 (0이면 타임아웃 없음)
   #   # Submission(587): STARTTLS + AUTH 강제 권장
   #   - port: 587
   #     serviceName: SUBMISSION
@@ -49,6 +50,7 @@ smtp:
   #     enableStartTls: true
   #     enableAuth: true
   #     requireAuthForMail: true
+  #     idleTimeoutSeconds: 300
   #   # SMTPS(465): implicit TLS + AUTH 강제 권장
   #   - port: 465
   #     serviceName: SMTPS
@@ -57,6 +59,7 @@ smtp:
   #     enableStartTls: false
   #     enableAuth: true
   #     requireAuthForMail: true
+  #     idleTimeoutSeconds: 300
 
   # PROXY protocol(v1) 신뢰 프록시 CIDR 목록
   # - 보안상 필수: PROXY 헤더는 스푸핑이 가능하므로, LB/HAProxy 등 "신뢰 가능한 프록시"에서만 수용해야 합니다.
