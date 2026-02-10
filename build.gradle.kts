@@ -73,13 +73,6 @@ subprojects {
     if (name in publishableModules) {
         apply(plugin = "com.vanniktech.maven.publish")
 
-        plugins.withId("java") {
-            extensions.configure<JavaPluginExtension> {
-                withSourcesJar()
-                withJavadocJar()
-            }
-        }
-
         // Maven Central Portal 설정
         extensions.configure<com.vanniktech.maven.publish.MavenPublishBaseExtension> {
             // Central Portal 자동 게시(배포 후 자동 publish)
