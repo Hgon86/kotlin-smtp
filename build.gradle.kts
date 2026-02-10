@@ -17,6 +17,12 @@ val publishableModules = setOf(
 group = "io.github.hgon86"
 version = "0.1.0"
 
+allprojects {
+    // Central Portal namespace 검증과 배포 좌표를 일관되게 강제합니다.
+    group = "io.github.hgon86"
+    version = "0.1.0"
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
