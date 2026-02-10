@@ -82,8 +82,11 @@ subprojects {
 
         // Maven Central Portal 설정
         extensions.configure<com.vanniktech.maven.publish.MavenPublishBaseExtension> {
-            // 새 Central Portal 사용
-            publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+            // Central Portal 자동 게시(배포 후 자동 publish)
+            publishToMavenCentral(
+                com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL,
+                automaticRelease = true,
+            )
 
             signAllPublications()
 
