@@ -1,0 +1,324 @@
+public abstract interface class io/github/kotlinsmtp/auth/AuthService {
+	public abstract fun getEnabled ()Z
+	public abstract fun getRequired ()Z
+	public abstract fun verify (Ljava/lang/String;Ljava/lang/String;)Z
+}
+
+public final class io/github/kotlinsmtp/exception/SmtpSendResponse : java/lang/Exception {
+	public fun <init> (ILjava/lang/String;)V
+	public fun getMessage ()Ljava/lang/String;
+	public final fun getStatusCode ()I
+}
+
+public final class io/github/kotlinsmtp/model/RcptDsn {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lio/github/kotlinsmtp/model/RcptDsn;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/model/RcptDsn;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lio/github/kotlinsmtp/model/RcptDsn;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNotify ()Ljava/lang/String;
+	public final fun getOrcpt ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/kotlinsmtp/model/SessionData {
+	public fun <init> ()V
+	public final fun getAuthFailedAttempts ()Ljava/lang/Integer;
+	public final fun getAuthLockedUntilEpochMs ()Ljava/lang/Long;
+	public final fun getDeclaredSize ()Ljava/lang/Long;
+	public final fun getDsnEnvid ()Ljava/lang/String;
+	public final fun getDsnRet ()Ljava/lang/String;
+	public final fun getGreeted ()Z
+	public final fun getHelo ()Ljava/lang/String;
+	public final fun getMailFrom ()Ljava/lang/String;
+	public final fun getMailParameters ()Ljava/util/Map;
+	public final fun getPeerAddress ()Ljava/lang/String;
+	public final fun getRcptDsnView ()Ljava/util/Map;
+	public final fun getRecipientCount ()I
+	public final fun getServerHostname ()Ljava/lang/String;
+	public final fun getSmtpUtf8 ()Z
+	public final fun getTlsActive ()Z
+	public final fun getUsedEhlo ()Z
+	public final fun isAuthenticated ()Z
+}
+
+public final class io/github/kotlinsmtp/model/SmtpUser {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDomain ()Ljava/lang/String;
+	public final fun getEmail ()Ljava/lang/String;
+	public final fun getLocalPart ()Ljava/lang/String;
+	public final fun getStringRepresentation ()Ljava/lang/String;
+	public final fun getUsername ()Ljava/lang/String;
+}
+
+public abstract interface class io/github/kotlinsmtp/protocol/handler/SmtpMailingListHandler {
+	public abstract fun expand (Ljava/lang/String;)Ljava/util/List;
+}
+
+public abstract class io/github/kotlinsmtp/protocol/handler/SmtpProtocolHandler {
+	public fun <init> ()V
+	public fun data (Ljava/io/InputStream;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun done (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun from (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getSessionData ()Lio/github/kotlinsmtp/model/SessionData;
+	public fun to (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract class io/github/kotlinsmtp/protocol/handler/SmtpUserHandler {
+	public fun <init> ()V
+	public abstract fun verify (Ljava/lang/String;)Ljava/util/Collection;
+}
+
+public abstract interface class io/github/kotlinsmtp/server/SmtpDomainSpooler : io/github/kotlinsmtp/server/SmtpSpooler {
+	public abstract fun triggerOnce (Ljava/lang/String;)V
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer {
+	public static final field Companion Lio/github/kotlinsmtp/server/SmtpServer$Companion;
+	public static final fun builder (ILjava/lang/String;)Lio/github/kotlinsmtp/server/SmtpServer$Builder;
+	public static final fun create (ILjava/lang/String;Lkotlin/jvm/functions/Function1;)Lio/github/kotlinsmtp/server/SmtpServer;
+	public final fun getHostname ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun getServiceName ()Ljava/lang/String;
+	public final fun start (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun start$default (Lio/github/kotlinsmtp/server/SmtpServer;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun stop (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun stop$default (Lio/github/kotlinsmtp/server/SmtpServer;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$AuthRateLimitPolicy {
+	public final fun getEnabled ()Z
+	public final fun getLockoutDurationSeconds ()J
+	public final fun getMaxFailuresPerWindow ()I
+	public final fun getWindowSeconds ()J
+	public final fun setEnabled (Z)V
+	public final fun setLockoutDurationSeconds (J)V
+	public final fun setMaxFailuresPerWindow (I)V
+	public final fun setWindowSeconds (J)V
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$Builder {
+	public final fun addEventHook (Lio/github/kotlinsmtp/spi/SmtpEventHook;)V
+	public final fun build ()Lio/github/kotlinsmtp/server/SmtpServer;
+	public final fun getAuthRateLimit ()Lio/github/kotlinsmtp/server/SmtpServer$AuthRateLimitPolicy;
+	public final fun getFeatures ()Lio/github/kotlinsmtp/server/SmtpServer$FeatureFlags;
+	public final fun getListener ()Lio/github/kotlinsmtp/server/SmtpServer$ListenerPolicy;
+	public final fun getProxyProtocol ()Lio/github/kotlinsmtp/server/SmtpServer$ProxyProtocolPolicy;
+	public final fun getRateLimit ()Lio/github/kotlinsmtp/server/SmtpServer$RateLimitPolicy;
+	public final fun getServiceName ()Ljava/lang/String;
+	public final fun getTls ()Lio/github/kotlinsmtp/server/SmtpServer$TlsPolicy;
+	public final fun setServiceName (Ljava/lang/String;)V
+	public final fun useAuthService (Lio/github/kotlinsmtp/auth/AuthService;)V
+	public final fun useMailingListHandler (Lio/github/kotlinsmtp/protocol/handler/SmtpMailingListHandler;)V
+	public final fun useProtocolHandlerFactory (Lkotlin/jvm/functions/Function0;)V
+	public final fun useSpooler (Lio/github/kotlinsmtp/server/SmtpSpooler;)V
+	public final fun useUserHandler (Lio/github/kotlinsmtp/protocol/handler/SmtpUserHandler;)V
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$Companion {
+	public final fun builder (ILjava/lang/String;)Lio/github/kotlinsmtp/server/SmtpServer$Builder;
+	public final fun create (ILjava/lang/String;Lkotlin/jvm/functions/Function1;)Lio/github/kotlinsmtp/server/SmtpServer;
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$FeatureFlags {
+	public final fun getEnableEtrn ()Z
+	public final fun getEnableExpn ()Z
+	public final fun getEnableVrfy ()Z
+	public final fun setEnableEtrn (Z)V
+	public final fun setEnableExpn (Z)V
+	public final fun setEnableVrfy (Z)V
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$ListenerPolicy {
+	public final fun getEnableAuth ()Z
+	public final fun getEnableStartTls ()Z
+	public final fun getImplicitTls ()Z
+	public final fun getRequireAuthForMail ()Z
+	public final fun setEnableAuth (Z)V
+	public final fun setEnableStartTls (Z)V
+	public final fun setImplicitTls (Z)V
+	public final fun setRequireAuthForMail (Z)V
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$ProxyProtocolPolicy {
+	public final fun getEnabled ()Z
+	public final fun getTrustedProxyCidrs ()Ljava/util/List;
+	public final fun setEnabled (Z)V
+	public final fun setTrustedProxyCidrs (Ljava/util/List;)V
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$RateLimitPolicy {
+	public final fun getMaxConnectionsPerIp ()I
+	public final fun getMaxMessagesPerIpPerHour ()I
+	public final fun setMaxConnectionsPerIp (I)V
+	public final fun setMaxMessagesPerIpPerHour (I)V
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$TlsPolicy {
+	public final fun getCertChainPath ()Ljava/nio/file/Path;
+	public final fun getCipherSuites ()Ljava/util/List;
+	public final fun getHandshakeTimeoutMs ()I
+	public final fun getMinTlsVersion ()Ljava/lang/String;
+	public final fun getPrivateKeyPath ()Ljava/nio/file/Path;
+	public final fun setCertChainPath (Ljava/nio/file/Path;)V
+	public final fun setCipherSuites (Ljava/util/List;)V
+	public final fun setHandshakeTimeoutMs (I)V
+	public final fun setMinTlsVersion (Ljava/lang/String;)V
+	public final fun setPrivateKeyPath (Ljava/nio/file/Path;)V
+}
+
+public abstract interface class io/github/kotlinsmtp/server/SmtpSpooler {
+	public abstract fun triggerOnce ()V
+}
+
+public abstract interface class io/github/kotlinsmtp/spi/SmtpEventHook {
+	public abstract fun onMessageAccepted (Lio/github/kotlinsmtp/spi/SmtpMessageAcceptedEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun onMessageRejected (Lio/github/kotlinsmtp/spi/SmtpMessageRejectedEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun onSessionEnded (Lio/github/kotlinsmtp/spi/SmtpSessionEndedEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun onSessionStarted (Lio/github/kotlinsmtp/spi/SmtpSessionStartedEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpEventHook$DefaultImpls {
+	public static fun onMessageAccepted (Lio/github/kotlinsmtp/spi/SmtpEventHook;Lio/github/kotlinsmtp/spi/SmtpMessageAcceptedEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onMessageRejected (Lio/github/kotlinsmtp/spi/SmtpEventHook;Lio/github/kotlinsmtp/spi/SmtpMessageRejectedEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onSessionEnded (Lio/github/kotlinsmtp/spi/SmtpEventHook;Lio/github/kotlinsmtp/spi/SmtpSessionEndedEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onSessionStarted (Lio/github/kotlinsmtp/spi/SmtpEventHook;Lio/github/kotlinsmtp/spi/SmtpSessionStartedEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpMessageAcceptedEvent {
+	public fun <init> (Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;J)V
+	public final fun component1 ()Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public final fun component2 ()Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;
+	public final fun component3 ()Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;
+	public final fun component4 ()J
+	public final fun copy (Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;J)Lio/github/kotlinsmtp/spi/SmtpMessageAcceptedEvent;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/spi/SmtpMessageAcceptedEvent;Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;JILjava/lang/Object;)Lio/github/kotlinsmtp/spi/SmtpMessageAcceptedEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContext ()Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public final fun getEnvelope ()Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;
+	public final fun getSizeBytes ()J
+	public final fun getTransferMode ()Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpMessageEnvelope {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;)Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDsnEnvid ()Ljava/lang/String;
+	public final fun getDsnRet ()Ljava/lang/String;
+	public final fun getMailFrom ()Ljava/lang/String;
+	public final fun getRcptDsn ()Ljava/util/Map;
+	public final fun getRcptTo ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpMessageRejectedEvent {
+	public fun <init> (Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;Lio/github/kotlinsmtp/spi/SmtpMessageStage;ILjava/lang/String;)V
+	public final fun component1 ()Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public final fun component2 ()Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;
+	public final fun component3 ()Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;
+	public final fun component4 ()Lio/github/kotlinsmtp/spi/SmtpMessageStage;
+	public final fun component5 ()I
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy (Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;Lio/github/kotlinsmtp/spi/SmtpMessageStage;ILjava/lang/String;)Lio/github/kotlinsmtp/spi/SmtpMessageRejectedEvent;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/spi/SmtpMessageRejectedEvent;Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;Lio/github/kotlinsmtp/spi/SmtpMessageStage;ILjava/lang/String;ILjava/lang/Object;)Lio/github/kotlinsmtp/spi/SmtpMessageRejectedEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContext ()Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public final fun getEnvelope ()Lio/github/kotlinsmtp/spi/SmtpMessageEnvelope;
+	public final fun getResponseCode ()I
+	public final fun getResponseMessage ()Ljava/lang/String;
+	public final fun getStage ()Lio/github/kotlinsmtp/spi/SmtpMessageStage;
+	public final fun getTransferMode ()Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpMessageStage : java/lang/Enum {
+	public static final field PROCESSING Lio/github/kotlinsmtp/spi/SmtpMessageStage;
+	public static final field RECEIVING Lio/github/kotlinsmtp/spi/SmtpMessageStage;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/kotlinsmtp/spi/SmtpMessageStage;
+	public static fun values ()[Lio/github/kotlinsmtp/spi/SmtpMessageStage;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpMessageTransferMode : java/lang/Enum {
+	public static final field BDAT Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;
+	public static final field DATA Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;
+	public static fun values ()[Lio/github/kotlinsmtp/spi/SmtpMessageTransferMode;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpSessionContext {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZ)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZ)Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/spi/SmtpSessionContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZILjava/lang/Object;)Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuthenticated ()Z
+	public final fun getHelo ()Ljava/lang/String;
+	public final fun getPeerAddress ()Ljava/lang/String;
+	public final fun getServerHostname ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getTlsActive ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpSessionEndReason : java/lang/Enum {
+	public static final field CLIENT_QUIT Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;
+	public static final field IDLE_TIMEOUT Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;
+	public static final field PROTOCOL_ERROR Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;
+	public static final field UNKNOWN Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;
+	public static fun values ()[Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpSessionEndedEvent {
+	public fun <init> (Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;)V
+	public final fun component1 ()Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public final fun component2 ()Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;
+	public final fun copy (Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;)Lio/github/kotlinsmtp/spi/SmtpSessionEndedEvent;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/spi/SmtpSessionEndedEvent;Lio/github/kotlinsmtp/spi/SmtpSessionContext;Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;ILjava/lang/Object;)Lio/github/kotlinsmtp/spi/SmtpSessionEndedEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContext ()Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public final fun getReason ()Lio/github/kotlinsmtp/spi/SmtpSessionEndReason;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/kotlinsmtp/spi/SmtpSessionStartedEvent {
+	public fun <init> (Lio/github/kotlinsmtp/spi/SmtpSessionContext;)V
+	public final fun component1 ()Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public final fun copy (Lio/github/kotlinsmtp/spi/SmtpSessionContext;)Lio/github/kotlinsmtp/spi/SmtpSessionStartedEvent;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/spi/SmtpSessionStartedEvent;Lio/github/kotlinsmtp/spi/SmtpSessionContext;ILjava/lang/Object;)Lio/github/kotlinsmtp/spi/SmtpSessionStartedEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContext ()Lio/github/kotlinsmtp/spi/SmtpSessionContext;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class io/github/kotlinsmtp/storage/MessageStore {
+	public abstract fun storeRfc822 (Ljava/lang/String;Ljava/lang/String;Ljava/io/InputStream;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+

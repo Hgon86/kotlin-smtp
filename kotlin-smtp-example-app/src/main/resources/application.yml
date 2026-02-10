@@ -1,0 +1,33 @@
+smtp:
+  port: 25
+  hostname: localhost
+  serviceName: EXAMPLE-SMTP
+
+  routing:
+    localDomains:
+      - local.test
+
+  storage:
+    mailboxDir: ./example-data/mailboxes
+    tempDir: ./example-data/temp
+    listsDir: ./example-data/lists
+
+  spool:
+    dir: ./example-data/spool
+
+  auth:
+    enabled: false
+    required: false
+
+  relay:
+    enabled: true
+    requireAuthForRelay: false
+    routes:
+      - domain: govkorea.kr
+        host: localhost
+        port: 10025
+        startTlsEnabled: false
+    outboundTls:
+      ports: [25, 587]
+      startTlsEnabled: true
+      startTlsRequired: false
