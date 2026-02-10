@@ -58,6 +58,29 @@ internal class SmtpSession(
         setAutoReadOnEventLoop = { enabled -> setAutoReadOnEventLoop(enabled) },
         onFrameDiscarded = { frame -> discardQueuedFrame(frame) },
     )
+    private val logSanitizer = SmtpSessionLogSanitizer()
+    private val responseFormatter = SmtpResponseFormatter()
+    private val protocolHandlerHolder = SmtpProtocolHandlerHolder(server.transactionHandlerCreator)
+    private val frameProcessor = SmtpSessionFrameProcessor(
+        sessionId = sessionId,
+        incomingFrames = incomingFrames,
+        backpressure = backpressure,
+        channel = channel,
+        logSanitizer = logSanitizer,
+        responseFormatter = responseFormatter,
+        inDataMode = { inDataMode },
+        getDataModeFramingHint = { dataModeFramingHint },
+        setDataModeFramingHint = { value -> dataModeFramingHint = value },
+        failAndClose = {
+            shouldQuit = true
+            close()
+        },
+        sendResponse = { code, message -> sendResponse(code, message) },
+        sendResponseAwait = { code, message -> sendResponseAwait(code, message) },
+        isClosing = { closing.get() },
+        isTlsUpgrading = { tlsUpgrading.get() },
+        closeOnly = { close() },
+    )
 
     @Volatile
     var shouldQuit = false
@@ -89,14 +112,9 @@ internal class SmtpSession(
     @Volatile
     private var dataModeFramingHint: Boolean = false
 
-    var transactionHandler: SmtpProtocolHandler? = null
+    val transactionHandler: SmtpProtocolHandler?
         get() {
-            if (field == null && server.transactionHandlerCreator != null) {
-                val handler = server.transactionHandlerCreator.invoke()
-                handler.init(sessionData)
-                field = handler
-            }
-            return field
+            return protocolHandlerHolder.getOrCreate(sessionData)
         }
 
     /**
@@ -118,7 +136,9 @@ internal class SmtpSession(
         try {
             // 세션 컨텍스트 설정
             sessionData.serverHostname = server.hostname
-            sessionData.peerAddress = resolvePeer(ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress())
+            sessionData.peerAddress = SmtpPeerAddressResolver.resolve(
+                ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress(),
+            )
             sessionData.tlsActive = isTls
 
             log.info { "SMTP session started from ${sessionData.peerAddress}" }
@@ -180,82 +200,12 @@ internal class SmtpSession(
         rcptDsn = sessionData.rcptDsnView.toMap(),
     )
 
-    private fun resolvePeer(address: Any?): String? {
-        val inet = (address as? InetSocketAddress) ?: return address?.toString()
-        // 운영 안정성: 역방향 DNS(hostName) 조회는 지연/블로킹의 원인이 될 수 있어 수행하지 않습니다.
-        val ipOrHost = inet.address?.hostAddress ?: inet.hostString
-        // IPv6는 ':'를 포함하므로 표준 형식([addr]:port)으로 표현합니다.
-        return if (ipOrHost.contains(':')) "[$ipOrHost]:${inet.port}" else "$ipOrHost:${inet.port}"
-    }
-
     internal suspend fun readLine(): String? {
-        val frame = incomingFrames.receiveCatching().getOrNull() ?: return null
-        return when (frame) {
-            is SmtpInboundFrame.Line -> {
-                backpressure.onConsumed(backpressure.estimateLineBytes(frame.text))
-                val line = frame.text
-
-                // 보안: AUTH PLAIN 등 크리덴셜이 포함될 수 있는 라인은 그대로 로깅하지 않습니다.
-                log.info { "Session[$sessionId] -> ${sanitizeIncomingForLog(line)}" }
-
-                // DATA 라인 이후 본문이 파이프라인으로 들어오는 경우를 위해 힌트를 세팅합니다.
-                // (inDataMode=true 반영 이전의 라인 길이 제한/로그 마스킹 안정화 목적)
-                val commandPart = line.trimStart()
-                if (!inDataMode && !dataModeFramingHint && commandPart.equals("DATA", ignoreCase = true)) {
-                    dataModeFramingHint = true
-                } else if (dataModeFramingHint && line == ".") {
-                    dataModeFramingHint = false
-                }
-
-                // 라인 길이 검증 (DoS 방지)
-                // - 커맨드 라인은 MAX_COMMAND_LINE_LENGTH
-                // - DATA 본문 라인은 별도 상한(MAX_SMTP_LINE_LENGTH)으로 완화(본문 라인이 커맨드 상한을 넘을 수 있음)
-                val maxAllowed = if (inDataMode || dataModeFramingHint) Values.MAX_SMTP_LINE_LENGTH else Values.MAX_COMMAND_LINE_LENGTH
-                if (line.length > maxAllowed) {
-                    sendResponseAwait(
-                        SmtpStatusCode.COMMAND_SYNTAX_ERROR.code,
-                        "Line too long (max $maxAllowed bytes)"
-                    )
-                    shouldQuit = true
-                    close()
-                    return null
-                }
-
-                line
-            }
-            is SmtpInboundFrame.Bytes -> {
-                backpressure.releaseInflightBdatBytes(frame.bytes.size)
-                backpressure.onConsumed(frame.bytes.size.toLong())
-                // 프로토콜 동기화가 깨진 상태: 커맨드/데이터 라인을 기대했는데 raw bytes가 들어옴
-                sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Protocol sync error")
-                shouldQuit = true
-                close()
-                null
-            }
-        }
+        return frameProcessor.readLine()
     }
 
     internal suspend fun readBytesExact(expectedBytes: Int): ByteArray? {
-        val frame = incomingFrames.receiveCatching().getOrNull() ?: return null
-        return when (frame) {
-            is SmtpInboundFrame.Bytes -> frame.bytes.also {
-                backpressure.releaseInflightBdatBytes(it.size)
-                backpressure.onConsumed(it.size.toLong())
-                if (it.size != expectedBytes) {
-                    // 디코더와 호출부 기대치가 어긋난 경우: 보수적으로 연결 종료
-                    sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Protocol sync error")
-                    shouldQuit = true
-                    close()
-                }
-            }
-            is SmtpInboundFrame.Line -> {
-                backpressure.onConsumed(backpressure.estimateLineBytes(frame.text))
-                sendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "Protocol sync error")
-                shouldQuit = true
-                close()
-                null
-            }
-        }
+        return frameProcessor.readBytesExact(expectedBytes)
     }
 
     internal suspend fun respondLine(message: String) {
@@ -273,22 +223,16 @@ internal class SmtpSession(
     }
 
     suspend fun sendResponse(code: Int, message: String? = null) {
-        respondLine(formatResponseLine(code, message))
+        respondLine(responseFormatter.formatLine(code, message))
     }
 
     suspend fun sendResponseAwait(code: Int, message: String? = null) {
-        respondLineAwait(formatResponseLine(code, message))
+        respondLineAwait(responseFormatter.formatLine(code, message))
     }
 
     suspend fun sendMultilineResponse(code: Int, lines: List<String>) {
-        val statusCode = SmtpStatusCode.fromCode(code)
-        val enhancedPrefix = statusCode?.enhancedCode?.let { "$it " } ?: ""
-
-        lines.forEachIndexed { index, line ->
-            if (index != lines.lastIndex)
-                respondLine("$code-$enhancedPrefix$line")
-            else
-                respondLine("$code $enhancedPrefix$line")
+        responseFormatter.formatMultiline(code, lines).forEach { line ->
+            respondLine(line)
         }
     }
 
@@ -305,14 +249,15 @@ internal class SmtpSession(
         clearBdatState()
 
         envelopeRecipients.clear()
-        transactionHandler?.done()
-        transactionHandler = null
+        protocolHandlerHolder.doneAndClear()
         sessionData = SmtpSessionDataResetter.reset(
             current = sessionData,
             preserveGreeting = preserveGreeting,
             preserveAuth = preserveAuth,
             serverHostname = server.hostname,
-            peerAddress = resolvePeer(ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress()),
+            peerAddress = SmtpPeerAddressResolver.resolve(
+                ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress(),
+            ),
             tlsActive = isTls,
         )
         currentMessageSize = 0  // 메시지 크기 리셋
@@ -332,44 +277,9 @@ internal class SmtpSession(
         // close()는 suspend가 아니므로 서버 스코프에서 비동기 정리합니다.
         server.serverScope.launch {
             runCatching { clearBdatState() }
-            runCatching { transactionHandler?.done() }
+            runCatching { protocolHandlerHolder.doneAndClear() }
         }
         channel.close()
-    }
-
-    /**
-     * 민감 명령 로깅 마스킹 유틸
-     * - AUTH PLAIN <base64> 같은 경우 base64 안에 비밀번호가 포함될 수 있어 반드시 마스킹합니다.
-     */
-    private fun sanitizeIncomingForLog(line: String): String {
-        // DATA 본문은 개인정보/메일 내용이 포함되므로 라인을 그대로 남기지 않습니다.
-        if (inDataMode || dataModeFramingHint) {
-            return if (line == ".") "<DATA:END>" else "<DATA:${line.length} chars>"
-        }
-
-        val trimmed = line.trimStart()
-        if (!trimmed.regionMatches(0, "AUTH", 0, 4, ignoreCase = true)) return line
-
-        val parts = trimmed.split(Values.whitespaceRegex, limit = 3)
-        return when {
-            parts.size >= 2 && parts[1].equals("PLAIN", ignoreCase = true) -> "AUTH PLAIN ***"
-            parts.size >= 2 -> "AUTH ${parts[1]} ***"
-            else -> "AUTH ***"
-        }
-    }
-
-    private fun formatResponseLine(code: Int, message: String?): String {
-        // message가 이미 Enhanced Status Code(예: "5.7.1 ...")를 포함하면 중복/왜곡을 피하기 위해 그대로 사용합니다.
-        if (message != null && enhancedStatusRegex.containsMatchIn(message.trimStart())) {
-            return "$code $message"
-        }
-
-        val statusCode = SmtpStatusCode.fromCode(code)
-        return when {
-            statusCode != null -> statusCode.formatResponse(message)
-            message != null -> "$code $message"
-            else -> code.toString()
-        }
     }
 
     /**
@@ -413,13 +323,7 @@ internal class SmtpSession(
     }
 
     private fun discardQueuedFrame(frame: SmtpInboundFrame) {
-        when (frame) {
-            is SmtpInboundFrame.Line -> backpressure.onConsumed(backpressure.estimateLineBytes(frame.text))
-            is SmtpInboundFrame.Bytes -> {
-                backpressure.releaseInflightBdatBytes(frame.bytes.size)
-                backpressure.onConsumed(frame.bytes.size.toLong())
-            }
-        }
+        frameProcessor.discardQueuedFrame(frame)
     }
 
     /**
@@ -427,52 +331,7 @@ internal class SmtpSession(
      * - 여기서 bytes inflight cap을 포함해 "큐에 넣기 전"에 메모리 상한을 적용합니다.
      */
     internal fun tryEnqueueInboundFrame(frame: SmtpInboundFrame): Boolean {
-        if (closing.get()) return false
-        if (tlsUpgrading.get()) {
-            // STARTTLS 전환 중에 평문 입력이 추가로 들어오면 동기화가 깨질 수 있어 보수적으로 종료합니다.
-            close()
-            return false
-        }
-
-        when (frame) {
-            is SmtpInboundFrame.Line -> {
-                val lineBytes = backpressure.estimateLineBytes(frame.text)
-                backpressure.onQueued(lineBytes)
-
-                val result = incomingFrames.trySend(frame)
-                if (result.isFailure) {
-                    backpressure.onConsumed(lineBytes)
-                    return closeWithOverflow()
-                }
-                return true
-            }
-            is SmtpInboundFrame.Bytes -> {
-                val size = frame.bytes.size
-                if (!backpressure.tryReserveInflightBdatBytes(size)) {
-                    return closeWithOverflow()
-                }
-
-                backpressure.onQueued(size.toLong())
-                val result = incomingFrames.trySend(frame)
-                if (result.isFailure) {
-                    backpressure.releaseInflightBdatBytes(size)
-                    backpressure.onConsumed(size.toLong())
-                    return closeWithOverflow()
-                }
-                // 보안: 본문/바이너리 청크는 로그에 남기지 않습니다.
-                log.debug { "Session[$sessionId] -> <BYTES:${size} bytes>" }
-                return true
-            }
-        }
-    }
-
-    private fun closeWithOverflow(): Boolean {
-        writeAndClose(formatResponseLine(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Input buffer overflow. Closing connection."))
-        return false
-    }
-
-    private fun writeAndClose(responseLine: String) {
-        channel.writeAndFlush("$responseLine\r\n").addListener(ChannelFutureListener.CLOSE)
+        return frameProcessor.tryEnqueueInboundFrame(frame)
     }
 
     /** 레이트리미터에서 사용할 원본 클라이언트 IP를 반환합니다. */
@@ -499,6 +358,3 @@ private suspend fun ChannelFuture.awaitCompletion(): Unit =
         }
         cont.invokeOnCancellation { runCatching { this.cancel(false) } }
     }
-
-// "5.7.1 ..." 같은 Enhanced Status Code 형태를 감지합니다.
-private val enhancedStatusRegex = Regex("^\\d\\.\\d\\.\\d\\b")

@@ -6,7 +6,7 @@ import java.io.InputStream
 /**
  * SMTP 트랜잭션 처리 훅을 제공하는 핸들러입니다.
  *
- * - [io.github.kotlinsmtp.server.SmtpServer.Builder.useProtocolHandlerFactory]를 통해 등록합니다.
+ * - [io.github.kotlinsmtp.server.SmtpServerBuilder.useProtocolHandlerFactory]를 통해 등록합니다.
  * - [sessionData]는 엔진이 초기화하며, 생성자/초기화 블록에서 접근하면 안 됩니다.
  */
 public abstract class SmtpProtocolHandler {

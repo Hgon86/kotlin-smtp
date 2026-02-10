@@ -39,3 +39,5 @@ out/
 ### Kotlin ###
 .kotlin
 AGENTS.md
+example-data
+

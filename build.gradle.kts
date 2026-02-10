@@ -79,13 +79,15 @@ subprojects {
                 withJavadocJar()
             }
 
-            extensions.configure<org.gradle.api.publish.PublishingExtension> {
-                publications {
-                    create<org.gradle.api.publish.maven.MavenPublication>("mavenJava") {
-                        from(components["java"])
-                        groupId = project.group.toString()
-                        artifactId = project.name
-                        version = project.version.toString()
+            // afterEvaluate로 감싸서 subproject의 build.gradle.kts 평가 후 group/version을 읽습니다.
+            afterEvaluate {
+                extensions.configure<org.gradle.api.publish.PublishingExtension> {
+                    publications {
+                        create<org.gradle.api.publish.maven.MavenPublication>("mavenJava") {
+                            from(components["java"])
+                            groupId = project.group.toString()
+                            artifactId = project.name
+                            version = project.version.toString()
 
                         pom {
                             name.set(project.name)
@@ -161,6 +163,7 @@ subprojects {
                     gradle.taskGraph.allTasks.any { task -> task.name.startsWith("publish") } && !isSnapshot
                 }
             }
+            } // afterEvaluate closes
         }
     }
 }

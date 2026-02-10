@@ -42,13 +42,28 @@ class SmtpServerProperties {
     }
 
     /**
-     * 로컬 도메인 판정(로컬 전달 vs 외부 릴레이 분기)에 사용합니다.
+     * 로컬 도메인 판정(로컬 전달 vs 외부 릴�이 분기)에 사용합니다.
      *
-     * @property localDomain 로컬 전달로 판정할 기본 도메인
+     * @property localDomain 로컬 전달로 판정할 기본 도메인 (단일 도메인용, legacy)
+     * @property localDomains 로컬 전달로 판정할 도메인 목록 (다중 도메인 지원, 우선순위 높음)
      */
     data class RoutingConfig(
         var localDomain: String = "",
-    )
+        var localDomains: List<String> = emptyList(),
+    ) {
+        /**
+         * 유효한 로컬 도메인 목록을 반환합니다.
+         * localDomains가 비어있으면 localDomain을 사용합니다 (legacy 지원).
+         */
+        fun effectiveLocalDomains(): Set<String> {
+            return if (localDomains.isNotEmpty()) {
+                localDomains.map { it.trim().lowercase() }.toSet()
+            } else {
+                val single = localDomain.trim()
+                if (single.isNotEmpty()) setOf(single.lowercase()) else emptySet()
+            }
+        }
+    }
 
     data class RelayConfig(
         var enabled: Boolean = false,
@@ -145,6 +160,7 @@ class SmtpServerProperties {
      * @property enableAuth AUTH 지원 여부
      * @property requireAuthForMail MAIL FROM 이전 인증 강제 여부
      * @property proxyProtocol 리스너 단위 PROXY protocol(v1) 수용 여부
+     * @property idleTimeoutSeconds 연결 유휴 타임아웃(초). 0이면 타임아웃 없음 (기본: 300초=5분)
      */
     data class ListenerConfig(
         var port: Int = 25,
@@ -154,11 +170,15 @@ class SmtpServerProperties {
         var enableAuth: Boolean = true,
         var requireAuthForMail: Boolean = false,
         var proxyProtocol: Boolean = false, // HAProxy PROXY v1 사용 여부(해당 리스너 전용)
+        var idleTimeoutSeconds: Int = 300,
     ) {
         fun validate() {
             // port 0은 시스템이 임의의 사용 가능한 포트를 할당하도록 함 (테스트용)
             require(port in 0..65535) {
                 "Listener port must be between 0 and 65535, got: $port"
+            }
+            require(idleTimeoutSeconds >= 0) {
+                "Listener idleTimeoutSeconds must be >= 0, got: $idleTimeoutSeconds"
             }
         }
     }
@@ -186,9 +206,9 @@ class SmtpServerProperties {
         }
 
         // 로컬 도메인 검증
-        val localDomain = effectiveLocalDomain().trim()
-        require(localDomain.isNotBlank()) {
-            "smtp.routing.localDomain must be configured (e.g., mydomain.com)"
+        val localDomains = routing.effectiveLocalDomains()
+        require(localDomains.isNotEmpty()) {
+            "smtp.routing.localDomain(s) must be configured (e.g., mydomain.com)"
         }
 
         // SSL/TLS 설정 검증

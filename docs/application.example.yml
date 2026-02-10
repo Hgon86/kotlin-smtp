@@ -92,6 +92,24 @@ smtp:
     enabled: false
     # legacy fallback (권장: smtp.routing.localDomain 사용)
     # localDomain: mydomain.com
+    # Smart Host 기본 경로(설정 시 모든 외부 도메인을 지정 SMTP 서버로 릴레이)
+    # defaultRoute:
+    #   host: localhost
+    #   port: 10025
+    #   startTlsEnabled: false
+
+    # 도메인별 Smart Host 경로(우선순위: exact domain > '*' > defaultRoute > MX 직접 전송)
+    # routes:
+    #   - domain: govkorea.kr
+    #     host: localhost
+    #     port: 10025
+    #     startTlsEnabled: false
+    #   - domain: "*"
+    #     host: smtp.company.local
+    #     port: 587
+    #     username: relay-user
+    #     password: ${RELAY_PASSWORD}
+
     allowedSenderDomains: [] # 인증 없이 릴레이를 허용할 발신 도메인 allowlist(비우면 allowlist 예외 비활성)
     requireAuthForRelay: true
     outboundTls:

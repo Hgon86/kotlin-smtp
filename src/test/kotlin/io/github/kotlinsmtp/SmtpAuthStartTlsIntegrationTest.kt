@@ -449,6 +449,8 @@ class SmtpAuthStartTlsIntegrationTest {
         val tls = factory.createSocket(socket, "localhost", socket.port, true) as SSLSocket
         tls.useClientMode = true
         tls.startHandshake()
+        // TLS 핸드셰이크 완료 후 안정적인 통신을 위해 잠시 대기
+        Thread.sleep(50)
         return tls
     }
 }

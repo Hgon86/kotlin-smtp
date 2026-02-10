@@ -2,20 +2,15 @@ package io.github.kotlinsmtp.config
 
 import io.github.kotlinsmtp.auth.AuthService
 import io.github.kotlinsmtp.auth.InMemoryAuthService
+import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.mail.LocalMailboxManager
 import io.github.kotlinsmtp.metrics.MicrometerSmtpEventHook
 import io.github.kotlinsmtp.metrics.MicrometerSpoolMetrics
 import io.github.kotlinsmtp.metrics.SpoolMetrics
-import io.github.kotlinsmtp.protocol.handler.LocalDirectoryUserHandler
-import io.github.kotlinsmtp.protocol.handler.LocalFileMailingListHandler
-import io.github.kotlinsmtp.protocol.handler.SimpleSmtpProtocolHandler
-import io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler
-import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
-import io.github.kotlinsmtp.relay.api.DsnSender
-import io.github.kotlinsmtp.relay.api.DsnStore
-import io.github.kotlinsmtp.relay.api.MailRelay
-import io.github.kotlinsmtp.relay.api.RelayAccessPolicy
-import io.github.kotlinsmtp.relay.api.RelayDefaults
+import io.github.kotlinsmtp.protocol.handler.*
+import io.github.kotlinsmtp.relay.api.*
+import io.github.kotlinsmtp.routing.InboundRoutingPolicy
+import io.github.kotlinsmtp.routing.MultiDomainRoutingPolicy
 import io.github.kotlinsmtp.server.SmtpServer
 import io.github.kotlinsmtp.server.SmtpServerRunner
 import io.github.kotlinsmtp.spi.SmtpEventHook
@@ -46,6 +41,17 @@ class KotlinSmtpAutoConfiguration {
         users = props.auth.users
     )
 
+    /**
+     * 설정 파일 기반 인바운드 라우팅 정책.
+     * 사용자가 커스텀 InboundRoutingPolicy 빈을 등록하면 대첵됩니다.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    fun inboundRoutingPolicy(props: SmtpServerProperties): InboundRoutingPolicy {
+        val domains = props.routing.effectiveLocalDomains()
+        return MultiDomainRoutingPolicy(domains)
+    }
+
     @Bean
     @ConditionalOnMissingBean
     fun localMailboxManager(props: SmtpServerProperties): LocalMailboxManager =
@@ -56,7 +62,7 @@ class KotlinSmtpAutoConfiguration {
     @ConditionalOnMissingBean
     fun mailRelayDisabled(): MailRelay = object : MailRelay {
         override suspend fun relay(request: io.github.kotlinsmtp.relay.api.RelayRequest): io.github.kotlinsmtp.relay.api.RelayResult {
-            throw io.github.kotlinsmtp.exception.SmtpSendResponse(550, "5.7.1 Relay access denied")
+            throw SmtpSendResponse(550, "5.7.1 Relay access denied")
         }
     }
 
@@ -72,13 +78,14 @@ class KotlinSmtpAutoConfiguration {
         mailRelay: MailRelay,
         relayAccessPolicy: RelayAccessPolicy,
         dsnSenderProvider: ObjectProvider<DsnSender>,
+        inboundRoutingPolicy: InboundRoutingPolicy,
     ): MailDeliveryService =
         MailDeliveryService(
             localMailboxManager = localMailboxManager,
             mailRelay = mailRelay,
             relayAccessPolicy = relayAccessPolicy,
             dsnSenderProvider = { dsnSenderProvider.getIfAvailable() },
-            localDomain = props.effectiveLocalDomain().trim(),
+            localDomain = inboundRoutingPolicy.localDomains().firstOrNull() ?: props.routing.localDomain,
         )
 
     @Bean
@@ -130,34 +137,36 @@ class KotlinSmtpAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    fun dsnStore(spooler: MailSpooler): DsnStore = DsnStore { rawMessagePath, envelopeSender, recipients, messageId, authenticated, dsnRet, dsnEnvid, rcptDsn ->
-        spooler.enqueue(
-            rawMessagePath = rawMessagePath,
-            sender = envelopeSender,
-            recipients = recipients,
-            messageId = messageId,
-            authenticated = authenticated,
-            dsnRet = dsnRet,
-            dsnEnvid = dsnEnvid,
-            rcptDsn = rcptDsn,
-        )
-    }
+    fun dsnStore(spooler: MailSpooler): DsnStore =
+        DsnStore { rawMessagePath, envelopeSender, recipients, messageId, authenticated, dsnRet, dsnEnvid, rcptDsn ->
+            spooler.enqueue(
+                rawMessagePath = rawMessagePath,
+                sender = envelopeSender,
+                recipients = recipients,
+                messageId = messageId,
+                authenticated = authenticated,
+                dsnRet = dsnRet,
+                dsnEnvid = dsnEnvid,
+                rcptDsn = rcptDsn,
+            )
+        }
 
     @Bean
     @ConditionalOnMissingBean
     fun messageStore(props: SmtpServerProperties): MessageStore =
-        // 기능 우선: 파일 기반 임시 저장
+    // 기능 우선: 파일 기반 임시 저장
         // TODO(storage): DB/S3 등으로 교체 시 구현체만 바꾸도록 경계를 유지합니다.
         FileMessageStore(tempDir = props.storage.tempPath)
 
     @Bean
     @ConditionalOnMissingBean
-    fun smtpUserHandler(props: SmtpServerProperties): SmtpUserHandler =
-        // TODO(DB/MSA): 로컬 디스크 기반 검증은 단일 노드/개발 환경에 적합
-        //               운영에서는 정책/사용자 저장소를 별도 서비스/DB로 이관 권장
+    fun smtpUserHandler(
+        props: SmtpServerProperties,
+        inboundRoutingPolicy: InboundRoutingPolicy,
+    ): SmtpUserHandler =
         LocalDirectoryUserHandler(
             mailboxDir = props.storage.mailboxPath,
-            localDomain = props.effectiveLocalDomain().trim(),
+            localDomain = inboundRoutingPolicy.localDomains().firstOrNull() ?: props.routing.localDomain,
         )
 
     @Bean
@@ -240,6 +249,7 @@ class KotlinSmtpAutoConfiguration {
                 listener.enableStartTls = l.enableStartTls
                 listener.enableAuth = l.enableAuth && props.auth.enabled
                 listener.requireAuthForMail = l.requireAuthForMail
+                listener.idleTimeoutSeconds = l.idleTimeoutSeconds
 
                 proxyProtocol.enabled = l.proxyProtocol
                 proxyProtocol.trustedProxyCidrs = props.proxy.trustedCidrs

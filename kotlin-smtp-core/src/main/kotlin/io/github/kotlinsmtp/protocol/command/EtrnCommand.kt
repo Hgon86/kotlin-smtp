@@ -3,6 +3,7 @@ package io.github.kotlinsmtp.protocol.command
 import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.protocol.command.api.ParsedCommand
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
+import io.github.kotlinsmtp.server.SpoolTriggerResult
 import io.github.kotlinsmtp.server.SmtpDomainSpooler
 import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.utils.AddressUtils
@@ -35,17 +36,28 @@ internal class EtrnCommand : SmtpCommand(
         val spooler = session.server.spooler
             ?: throw SmtpSendResponse(SmtpStatusCode.SERVICE_NOT_AVAILABLE.code, "Queue service not available")
 
-        val responseMessage = runCatching {
+        val (result, responseMessage) = runCatching {
             if (spooler is SmtpDomainSpooler) {
-                spooler.triggerOnce(queueDomain)
-                "Queue run triggered for $queueDomain"
+                val result = spooler.tryTriggerOnce(queueDomain)
+                result to "Queue run triggered for $queueDomain"
             } else {
                 // 도메인 미지원 스풀러는 기존 동작(전체 큐 트리거)으로 폴백합니다.
-                spooler.triggerOnce()
-                "Queue run triggered (domain filter not supported)"
+                val result = spooler.tryTriggerOnce()
+                result to "Queue run triggered (domain filter not supported)"
             }
         }.getOrElse { t ->
             throw SmtpSendResponse(451, "4.3.0 Queue trigger failed: ${t.message ?: "unknown error"}")
+        }
+
+        when (result) {
+            SpoolTriggerResult.ACCEPTED -> Unit
+            SpoolTriggerResult.INVALID_ARGUMENT -> respondSyntax("Invalid ETRN domain argument")
+            SpoolTriggerResult.UNAVAILABLE -> {
+                throw SmtpSendResponse(
+                    SmtpStatusCode.SERVICE_NOT_AVAILABLE.code,
+                    "Queue service not available",
+                )
+            }
         }
 
         session.sendResponse(SmtpStatusCode.OKAY.code, responseMessage)

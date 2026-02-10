@@ -15,12 +15,8 @@ import io.netty.channel.ChannelOption
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
-import io.netty.handler.codec.haproxy.HAProxyMessageDecoder
-import io.netty.handler.codec.string.StringEncoder
 import io.netty.handler.ssl.SslContext
 import io.netty.handler.ssl.SslContextBuilder
-import io.netty.handler.timeout.IdleStateHandler
-import io.netty.util.CharsetUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,8 +26,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
-import java.nio.file.Files
-import java.time.Duration
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 
@@ -66,12 +60,14 @@ public class SmtpServer internal constructor(
     private val tlsCipherSuites: List<String> = emptyList(),
     maxConnectionsPerIp: Int = 10,
     maxMessagesPerIpPerHour: Int = 100,
+    internal val idleTimeoutSeconds: Int = 300, // 5분 (0이면 타임아웃 없음)
 ) {
     internal var serverScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val serverMutex = Mutex()
     private var channelFuture: ChannelFuture? = null
     private var bossGroup: NioEventLoopGroup? = null
     private var workerGroup: NioEventLoopGroup? = null
+    private var maintenanceScheduler: SmtpServerMaintenanceScheduler? = null
 
     // Rate Limiter (스팸 및 DoS 방지)
     internal val rateLimiter = RateLimiter(maxConnectionsPerIp, maxMessagesPerIpPerHour)
@@ -138,40 +134,24 @@ public class SmtpServer internal constructor(
         return null
     }
 
-    private fun scheduleCertificateReload() {
-        if (certChainFile == null || privateKeyFile == null) return
-        serverScope.launch {
-            var lastChainTime = fileTimestamp(certChainFile)
-            var lastKeyTime = fileTimestamp(privateKeyFile)
-            while (serverScope.isActive) {
-                kotlinx.coroutines.delay(Duration.ofMinutes(5).toMillis())
-                val currentChainTime = fileTimestamp(certChainFile)
-                val currentKeyTime = fileTimestamp(privateKeyFile)
-                if (currentChainTime > lastChainTime || currentKeyTime > lastKeyTime) {
-                    log.info { "Detected TLS certificate change, reloading." }
-                    buildSslContext()?.let { newContext ->
-                        currentSslContext = newContext
-                        log.info { "TLS context reloaded." }
-                    }
-                    lastChainTime = currentChainTime
-                    lastKeyTime = currentKeyTime
+    private fun startMaintenanceTasks() {
+        maintenanceScheduler?.stop()
+        maintenanceScheduler = SmtpServerMaintenanceScheduler(
+            scope = serverScope,
+            certChainFile = certChainFile,
+            privateKeyFile = privateKeyFile,
+            onCertificateChanged = {
+                buildSslContext()?.let { newContext ->
+                    currentSslContext = newContext
+                    log.info { "TLS context reloaded." }
                 }
-            }
-        }
-    }
-
-    private fun scheduleRateLimiterCleanup() {
-        serverScope.launch {
-            while (serverScope.isActive) {
-                kotlinx.coroutines.delay(Duration.ofHours(1).toMillis())
+            },
+            onRateLimiterCleanup = {
                 rateLimiter.cleanup()
                 authRateLimiter?.cleanup()
-                log.debug { "Rate limiter cleanup completed" }
-            }
-        }
+            },
+        ).also { it.start() }
     }
-
-    private fun fileTimestamp(file: File): Long = runCatching { Files.getLastModifiedTime(file.toPath()).toMillis() }.getOrDefault(0L)
 
     private fun ensureRuntime() {
         // If the scope was cancelled by a previous stop(), recreate it.
@@ -190,8 +170,7 @@ public class SmtpServer internal constructor(
         }
 
         // Start background maintenance tasks for this runtime.
-        scheduleCertificateReload()
-        scheduleRateLimiterCleanup()
+        startMaintenanceTasks()
     }
 
     /**
@@ -207,6 +186,12 @@ public class SmtpServer internal constructor(
 
             ensureRuntime()
 
+            val pipelineConfigurator = SmtpServerPipelineConfigurator(
+                server = this,
+                tlsHandshakeTimeoutMs = tlsHandshakeTimeoutMs,
+                idleTimeoutSeconds = idleTimeoutSeconds,
+            )
+
             val bootstrap = ServerBootstrap()
             bootstrap.group(
                 bossGroup ?: error("bossGroup must be initialized"),
@@ -215,41 +200,7 @@ public class SmtpServer internal constructor(
                 .channel(NioServerSocketChannel::class.java)
                 .childHandler(object : ChannelInitializer<SocketChannel>() {
                     override fun initChannel(ch: SocketChannel) {
-                        // 파이프라인 핸들러에 이름을 명시해 STARTTLS 업그레이드/디버깅을 단순화합니다.
-                        val p = ch.pipeline()
-
-                        // PROXY protocol(v1):
-                        // - 프록시가 "원본 클라이언트 IP" 정보를 접속 직후 한 줄로 먼저 전달합니다.
-                        // - implicit TLS(465)에서도 PROXY 라인이 TLS 핸드셰이크보다 먼저 오므로,
-                        //   반드시 SSL 핸들러보다 앞에서 디코딩해야 합니다.
-                        if (proxyProtocolEnabled) {
-                            p.addLast("proxyDecoder", HAProxyMessageDecoder())
-                        }
-
-                        // SMTPS(implicit TLS): 접속 즉시 TLS 핸드셰이크를 시작합니다.
-                        // - sslContext가 없으면 잘못된 설정이므로 즉시 연결을 종료합니다.
-                        if (implicitTls) {
-                            val ctx = sslContext
-                            if (ctx == null) {
-                                ch.close()
-                                return
-                            }
-                            val ssl = ctx.newHandler(ch.alloc()).also {
-                                it.engine().useClientMode = false
-                                it.setHandshakeTimeout(tlsHandshakeTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
-                            }
-                            p.addLast("ssl", ssl)
-                        }
-
-                        // SMTP 입력 프레이밍(라인/BDAT 바이트)을 자체 처리합니다.
-                        // - LineBasedFrameDecoder/StringDecoder 조합은 BDAT(CHUNKING) 구현이 불가능합니다.
-                        p.addLast("smtpInboundDecoder", SmtpInboundDecoder())
-
-                        // SMTP 응답은 8BITMIME를 고려해 ISO-8859-1로 인코딩합니다.
-                        // (SMTPUTF8는 별도 확장으로 다룸)
-                        p.addLast("stringEncoder", StringEncoder(CharsetUtil.ISO_8859_1))
-                        p.addLast("idleStateHandler", IdleStateHandler(0, 0, 5, java.util.concurrent.TimeUnit.MINUTES))
-                        p.addLast("smtpChannelHandler", SmtpChannelHandler(this@SmtpServer))
+                        pipelineConfigurator.configure(ch)
                     }
                 })
                 .option(ChannelOption.SO_BACKLOG, 128)
@@ -322,6 +273,8 @@ public class SmtpServer internal constructor(
                 }
 
                 // Cancel background tasks last.
+                maintenanceScheduler?.stop()
+                maintenanceScheduler = null
                 serverScope.cancel()
 
                 log.info { "SMTP server stopped (port=$port, sessionsClosed=$allClosed)" }
@@ -331,6 +284,8 @@ public class SmtpServer internal constructor(
                 state = LifecycleState.STOPPED
                 bossGroup = null
                 workerGroup = null
+                maintenanceScheduler?.stop()
+                maintenanceScheduler = null
             }
         } else false
     }
@@ -342,194 +297,13 @@ public class SmtpServer internal constructor(
          * This enforces the public API boundary by keeping the implementation constructor internal.
          */
         @JvmStatic
-        public fun builder(port: Int, hostname: String): Builder = Builder(port, hostname)
+        public fun builder(port: Int, hostname: String): SmtpServerBuilder = SmtpServerBuilder(port, hostname)
 
         /**
          * Kotlin-friendly factory.
          */
         @JvmStatic
-        public fun create(port: Int, hostname: String, configure: Builder.() -> Unit): SmtpServer =
+        public fun create(port: Int, hostname: String, configure: SmtpServerBuilder.() -> Unit): SmtpServer =
             builder(port, hostname).apply(configure).build()
-    }
-
-    public class Builder internal constructor(
-        private val port: Int,
-        private val hostname: String,
-    ) {
-        public var serviceName: String? = "kotlin-smtp"
-
-        /** Required: provides the per-session protocol handler. */
-        private var protocolHandlerFactory: (() -> SmtpProtocolHandler)? = null
-
-        private var authService: AuthService? = null
-        private var userHandler: SmtpUserHandler? = null
-        private var mailingListHandler: SmtpMailingListHandler? = null
-        private var spooler: SmtpSpooler? = null
-
-        private val eventHooks: MutableList<SmtpEventHook> = mutableListOf()
-
-        public fun useProtocolHandlerFactory(factory: () -> SmtpProtocolHandler): Unit {
-            this.protocolHandlerFactory = factory
-        }
-
-        public fun useAuthService(service: AuthService?): Unit {
-            this.authService = service
-        }
-
-        public fun useUserHandler(handler: SmtpUserHandler?): Unit {
-            this.userHandler = handler
-        }
-
-        public fun useMailingListHandler(handler: SmtpMailingListHandler?): Unit {
-            this.mailingListHandler = handler
-        }
-
-        public fun useSpooler(spooler: SmtpSpooler?): Unit {
-            this.spooler = spooler
-        }
-
-        /**
-         * 엔진 이벤트 훅(SPI)을 추가합니다.
-         *
-         * - 훅 예외는 기본적으로 Non-fatal이며, 서버 처리는 계속됩니다.
-         *
-         * @param hook 등록할 훅
-         */
-        public fun addEventHook(hook: SmtpEventHook): Unit {
-            eventHooks.add(hook)
-        }
-
-        public val features: FeatureFlags = FeatureFlags()
-        public val listener: ListenerPolicy = ListenerPolicy()
-        public val proxyProtocol: ProxyProtocolPolicy = ProxyProtocolPolicy()
-        public val tls: TlsPolicy = TlsPolicy()
-        public val rateLimit: RateLimitPolicy = RateLimitPolicy()
-        public val authRateLimit: AuthRateLimitPolicy = AuthRateLimitPolicy()
-
-        public fun build(): SmtpServer {
-            val handlerFactory = protocolHandlerFactory
-                ?: error("protocolHandlerFactory is required. Call useProtocolHandlerFactory { }.")
-
-            val authLimiter = if (authRateLimit.enabled) {
-                io.github.kotlinsmtp.auth.AuthRateLimiter(
-                    maxFailuresPerWindow = authRateLimit.maxFailuresPerWindow,
-                    windowSeconds = authRateLimit.windowSeconds,
-                    lockoutDurationSeconds = authRateLimit.lockoutDurationSeconds,
-                )
-            } else {
-                null
-            }
-
-            return SmtpServer(
-                port = port,
-                hostname = hostname,
-                serviceName = serviceName,
-                authService = authService,
-                transactionHandlerCreator = handlerFactory,
-                userHandler = userHandler,
-                mailingListHandler = mailingListHandler,
-                spooler = spooler,
-                eventHooks = eventHooks.toList(),
-                authRateLimiter = authLimiter,
-                enableVrfy = features.enableVrfy,
-                enableEtrn = features.enableEtrn,
-                enableExpn = features.enableExpn,
-                implicitTls = listener.implicitTls,
-                enableStartTls = listener.enableStartTls,
-                enableAuth = listener.enableAuth,
-                requireAuthForMail = listener.requireAuthForMail,
-                proxyProtocolEnabled = proxyProtocol.enabled,
-                trustedProxyCidrs = proxyProtocol.trustedProxyCidrs,
-                certChainFile = tls.certChainPath?.toFile(),
-                privateKeyFile = tls.privateKeyPath?.toFile(),
-                minTlsVersion = tls.minTlsVersion,
-                tlsHandshakeTimeoutMs = tls.handshakeTimeoutMs,
-                tlsCipherSuites = tls.cipherSuites,
-                maxConnectionsPerIp = rateLimit.maxConnectionsPerIp,
-                maxMessagesPerIpPerHour = rateLimit.maxMessagesPerIpPerHour,
-            )
-        }
-    }
-
-    /**
-     * 서버 기능 플래그 모음입니다.
-     *
-     * @property enableVrfy VRFY 커맨드 활성화
-     * @property enableEtrn ETRN 커맨드 활성화
-     * @property enableExpn EXPN 커맨드 활성화
-     */
-    public class FeatureFlags internal constructor() {
-        public var enableVrfy: Boolean = false
-        public var enableEtrn: Boolean = false
-        public var enableExpn: Boolean = false
-    }
-
-    /**
-     * 리스너(접속 포트)의 동작 정책입니다.
-     *
-     * @property implicitTls 접속 즉시 TLS(465; SMTPS) 여부
-     * @property enableStartTls STARTTLS 커맨드/광고 허용 여부
-     * @property enableAuth AUTH 커맨드/광고 허용 여부
-     * @property requireAuthForMail MAIL 트랜잭션 시작 전 AUTH 강제 여부
-     */
-    public class ListenerPolicy internal constructor() {
-        public var implicitTls: Boolean = false
-        public var enableStartTls: Boolean = true
-        public var enableAuth: Boolean = true
-        public var requireAuthForMail: Boolean = false
-    }
-
-    /**
-     * PROXY protocol(v1) 설정입니다.
-     *
-     * @property enabled PROXY protocol 수신 여부
-     * @property trustedProxyCidrs 신뢰 프록시 CIDR 목록
-     */
-    public class ProxyProtocolPolicy internal constructor() {
-        public var enabled: Boolean = false
-        public var trustedProxyCidrs: List<String> = listOf("127.0.0.1/32", "::1/128")
-    }
-
-    /**
-     * TLS 설정입니다.
-     *
-     * @property certChainPath 인증서 체인 경로
-     * @property privateKeyPath 개인키 경로
-     * @property minTlsVersion 최소 TLS 버전
-     * @property handshakeTimeoutMs TLS 핸드셰이크 타임아웃(ms)
-     * @property cipherSuites 허용 cipher suites(지정 시)
-     */
-    public class TlsPolicy internal constructor() {
-        public var certChainPath: java.nio.file.Path? = null
-        public var privateKeyPath: java.nio.file.Path? = null
-        public var minTlsVersion: String = "TLSv1.2"
-        public var handshakeTimeoutMs: Int = 30_000
-        public var cipherSuites: List<String> = emptyList()
-    }
-
-    /**
-     * 연결/메시지 Rate Limit 설정입니다.
-     *
-     * @property maxConnectionsPerIp IP당 최대 동시 연결 수
-     * @property maxMessagesPerIpPerHour IP당 시간당 최대 메시지 수
-     */
-    public class RateLimitPolicy internal constructor() {
-        public var maxConnectionsPerIp: Int = 10
-        public var maxMessagesPerIpPerHour: Int = 100
-    }
-
-    /**
-     * 인증(AUTH) Rate Limit 설정입니다.
-     *
-     * @property enabled 인증 rate limit 사용 여부
-     * @property maxFailuresPerWindow 윈도우 내 최대 실패 횟수
-     * @property windowSeconds 윈도우 크기(초)
-     * @property lockoutDurationSeconds 잠금 지속 시간(초)
-     */
-    public class AuthRateLimitPolicy internal constructor() {
-        public var enabled: Boolean = true
-        public var maxFailuresPerWindow: Int = 5
-        public var windowSeconds: Long = 300
-        public var lockoutDurationSeconds: Long = 600
     }
 }

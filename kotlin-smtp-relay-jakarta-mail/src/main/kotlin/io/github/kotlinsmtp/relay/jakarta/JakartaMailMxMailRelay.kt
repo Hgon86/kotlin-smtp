@@ -1,10 +1,6 @@
 package io.github.kotlinsmtp.relay.jakarta
 
-import io.github.kotlinsmtp.relay.api.MailRelay
-import io.github.kotlinsmtp.relay.api.RelayPermanentException
-import io.github.kotlinsmtp.relay.api.RelayRequest
-import io.github.kotlinsmtp.relay.api.RelayResult
-import io.github.kotlinsmtp.relay.api.RelayTransientException
+import io.github.kotlinsmtp.relay.api.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.mail.Session
 import jakarta.mail.internet.InternetAddress
@@ -12,22 +8,15 @@ import jakarta.mail.internet.MimeMessage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.xbill.DNS.AAAARecord
-import org.xbill.DNS.ARecord
-import org.xbill.DNS.Cache
-import org.xbill.DNS.DClass
-import org.xbill.DNS.MXRecord
-import org.xbill.DNS.Name
-import org.xbill.DNS.Record
-import org.xbill.DNS.Type
-import java.util.Properties
+import org.xbill.DNS.*
+import java.util.*
 
 private val log = KotlinLogging.logger {}
 
 /**
  * dnsjava MX 조회 + jakarta-mail(angus) 기반의 기본 outbound relay 구현.
  */
-public class JakartaMailMxMailRelay(
+class JakartaMailMxMailRelay(
     private val dispatcherIO: CoroutineDispatcher = Dispatchers.IO,
     private val tls: OutboundTlsConfig,
 ) : MailRelay {
@@ -61,6 +50,13 @@ public class JakartaMailMxMailRelay(
         }
         val message = request.rfc822.openStream().use { input ->
             MimeMessage(Session.getInstance(propsForParsing), input)
+        }.apply {
+            // Message-ID 헤더가 없으면 자동 생성 (RFC 5322 권장사항)
+            if (getHeader("Message-ID") == null) {
+                val senderDomain = senderForSend?.substringAfterLast('@')?.takeIf { it.isNotBlank() } ?: "localhost"
+                setHeader("Message-ID", "<${UUID.randomUUID()}@$senderDomain>")
+                log.debug { "Generated Message-ID for message to $recipientForSend" }
+            }
         }
 
         for (mx in mxRecords.sortedBy { it.priority }) {
@@ -89,7 +85,8 @@ public class JakartaMailMxMailRelay(
                         this["mail.smtp.ssl.checkserveridentity"] = tls.checkServerIdentity.toString()
                         when {
                             tls.trustAll -> this["mail.smtp.ssl.trust"] = "*"
-                            tls.trustHosts.isNotEmpty() -> this["mail.smtp.ssl.trust"] = tls.trustHosts.joinToString(" ")
+                            tls.trustHosts.isNotEmpty() -> this["mail.smtp.ssl.trust"] =
+                                tls.trustHosts.joinToString(" ")
                         }
                     }
 
@@ -106,7 +103,11 @@ public class JakartaMailMxMailRelay(
                     }
                 } catch (e: Exception) {
                     log.warn(e) {
-                        "Relay attempt failed (server=$targetServer port=$port mxPref=${mx.priority} auth=${request.authenticated} msgId=${request.messageId} sender=${senderForSend?.take(64) ?: "null"})"
+                        "Relay attempt failed (server=$targetServer port=$port mxPref=${mx.priority} auth=${request.authenticated} msgId=${request.messageId} sender=${
+                            senderForSend?.take(
+                                64
+                            ) ?: "null"
+                        })"
                     }
                     lastException = e
                 }
@@ -152,7 +153,7 @@ public class JakartaMailMxMailRelay(
 /**
  * 아웃바운드 릴레이(TCP 25 등)에서의 TLS/STARTTLS 정책
  */
-public data class OutboundTlsConfig(
+data class OutboundTlsConfig(
     val ports: List<Int> = listOf(25),
     val startTlsEnabled: Boolean = true,
     val startTlsRequired: Boolean = false,
