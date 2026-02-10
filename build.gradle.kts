@@ -2,7 +2,8 @@ plugins {
     kotlin("jvm") version "1.9.25"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.18.1"
-    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
+    // 새 Central Portal 지원 플러그인
+    id("com.vanniktech.maven.publish") version "0.29.0" apply false
 }
 
 val publishableModules = setOf(
@@ -70,100 +71,51 @@ apiValidation {
 
 subprojects {
     if (name in publishableModules) {
-        apply(plugin = "maven-publish")
-        apply(plugin = "signing")
+        apply(plugin = "com.vanniktech.maven.publish")
 
         plugins.withId("java") {
             extensions.configure<JavaPluginExtension> {
                 withSourcesJar()
                 withJavadocJar()
             }
+        }
 
-            // afterEvaluate로 감싸서 subproject의 build.gradle.kts 평가 후 group/version을 읽습니다.
-            afterEvaluate {
-                extensions.configure<org.gradle.api.publish.PublishingExtension> {
-                    publications {
-                        create<org.gradle.api.publish.maven.MavenPublication>("mavenJava") {
-                            from(components["java"])
-                            groupId = project.group.toString()
-                            artifactId = project.name
-                            version = project.version.toString()
+        // Maven Central Portal 설정
+        extensions.configure<com.vanniktech.maven.publish.MavenPublishBaseExtension> {
+            // 새 Central Portal 사용
+            publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
 
-                        pom {
-                            name.set(project.name)
-                            description.set("Kotlin SMTP server libraries and Spring Boot starters")
-                            url.set("https://github.com/Hgon86/kotlin-smtp")
+            signAllPublications()
 
-                            licenses {
-                                license {
-                                    name.set("Apache License 2.0")
-                                    url.set("https://www.apache.org/licenses/LICENSE-2.0")
-                                }
-                            }
+            coordinates(group.toString(), project.name, version.toString())
 
-                            scm {
-                                connection.set("scm:git:https://github.com/Hgon86/kotlin-smtp.git")
-                                developerConnection.set("scm:git:ssh://git@github.com/Hgon86/kotlin-smtp.git")
-                                url.set("https://github.com/Hgon86/kotlin-smtp")
-                            }
+            pom {
+                name.set(project.name)
+                description.set("Kotlin SMTP server libraries and Spring Boot starters")
+                inceptionYear.set("2024")
+                url.set("https://github.com/Hgon86/kotlin-smtp")
 
-                            developers {
-                                developer {
-                                    id.set("hgon86")
-                                    name.set("Hgon86")
-                                    email.set("hgon86@users.noreply.github.com")
-                                }
-                            }
-                        }
+                licenses {
+                    license {
+                        name.set("Apache License 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
                     }
                 }
-                repositories {
-                    mavenLocal()
 
-                    val ossrhUsername = providers.gradleProperty("ossrhUsername")
-                        .orElse(providers.environmentVariable("OSSRH_USERNAME"))
-                    val ossrhPassword = providers.gradleProperty("ossrhPassword")
-                        .orElse(providers.environmentVariable("OSSRH_PASSWORD"))
-
-                    if (ossrhUsername.isPresent && ossrhPassword.isPresent) {
-                        maven {
-                            name = "OSSRH"
-                            val isSnapshot = project.version.toString().endsWith("SNAPSHOT")
-                            url = uri(
-                                if (isSnapshot) {
-                                    "https://s01.oss.sonatype.org/content/repositories/snapshots/"
-                                } else {
-                                    "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
-                                }
-                            )
-                            credentials {
-                                username = ossrhUsername.get()
-                                password = ossrhPassword.get()
-                            }
-                        }
+                developers {
+                    developer {
+                        id.set("hgon86")
+                        name.set("Hgon86")
+                        email.set("hgon86@users.noreply.github.com")
                     }
                 }
-            }
 
-            extensions.configure<org.gradle.plugins.signing.SigningExtension> {
-                val signingKey = providers.gradleProperty("signingKey")
-                    .orElse(providers.environmentVariable("SIGNING_KEY"))
-                    .orNull
-                val signingPassword = providers.gradleProperty("signingPassword")
-                    .orElse(providers.environmentVariable("SIGNING_PASSWORD"))
-                    .orNull
-                val isSnapshot = project.version.toString().endsWith("SNAPSHOT")
-
-                if (!signingKey.isNullOrBlank()) {
-                    useInMemoryPgpKeys(signingKey, signingPassword)
-                    sign(extensions.getByType<org.gradle.api.publish.PublishingExtension>().publications)
-                }
-
-                setRequired {
-                    gradle.taskGraph.allTasks.any { task -> task.name.startsWith("publish") } && !isSnapshot
+                scm {
+                    connection.set("scm:git:https://github.com/Hgon86/kotlin-smtp.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/Hgon86/kotlin-smtp.git")
+                    url.set("https://github.com/Hgon86/kotlin-smtp")
                 }
             }
-            } // afterEvaluate closes
         }
     }
 }
@@ -178,21 +130,9 @@ allprojects {
     }
 }
 
-nexusPublishing {
-    repositories {
-        sonatype {
-            nexusUrl.set(uri("https://s01.oss.sonatype.org/service/local/"))
-            snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
-            username.set(
-                providers.gradleProperty("ossrhUsername")
-                    .orElse(providers.environmentVariable("OSSRH_USERNAME"))
-                    .orNull
-            )
-            password.set(
-                providers.gradleProperty("ossrhPassword")
-                    .orElse(providers.environmentVariable("OSSRH_PASSWORD"))
-                    .orNull
-            )
-        }
-    }
-}
+// 새 Central Portal 인증 설정
+// GitHub Secrets 필요:
+// - MAVEN_CENTRAL_USERNAME: central.sonatype.com User Token Username
+// - MAVEN_CENTRAL_PASSWORD: central.sonatype.com User Token Password
+// - SIGNING_KEY: GPG private key
+// - SIGNING_PASSWORD: GPG passphrase
