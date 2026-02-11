@@ -5,10 +5,9 @@ spring:
     web-application-type: none
 
 management:
-  # SMTP 포트와 관측 포트를 분리하려면 별도 관리 포트를 사용하세요.
-  # management:
-  #   server:
-  #     port: 8081
+  # Use a dedicated management port to separate SMTP and observability traffic.
+  # server:
+  #   port: 8081
   endpoints:
     web:
       exposure:
@@ -19,89 +18,87 @@ management:
         enabled: true
 
 smtp:
-  # 단일 포트 모드: listeners가 비어있을 때 사용됩니다.
-  # listeners를 설정하면 이 값은 무시됩니다.
+  # Single-port mode: used when listeners is empty.
+  # If listeners is configured, this value is ignored.
   port: 2525
   hostname: localhost
   serviceName: ESMTP
 
-  # 로컬 도메인 판정(로컬 전달 vs 외부 릴레이 분기)
-  # - 필수 설정: 로컬 도메인 메일 수신/처리를 위해 필요합니다.
+  # Local domain routing decision (local delivery vs external relay).
+  # Required for local domain mail acceptance and delivery.
   routing:
     localDomain: mydomain.com
 
-  # 리스너(포트)별 정책 분리(기능 구현 우선)
-  # listeners를 지정하면 smtp.port 대신 이 목록을 사용합니다.
+  # Listener-level policy split by port.
+  # If listeners is set, it overrides smtp.port.
   # listeners:
-  #   # MTA 수신(25/2525 등): opportunistic STARTTLS, AUTH 선택
+  #   # MTA inbound (25/2525): opportunistic STARTTLS, AUTH optional
   #   - port: 2525
   #     serviceName: ESMTP
   #     implicitTls: false
-  #     proxyProtocol: false # LB/HAProxy 뒤라면 true + smtp.proxy.trustedCidrs 설정
+  #     proxyProtocol: false # Set true behind LB/HAProxy + configure smtp.proxy.trustedCidrs
   #     enableStartTls: true
   #     enableAuth: true
   #     requireAuthForMail: false
-  #     idleTimeoutSeconds: 300 # 5분 (0이면 타임아웃 없음)
-  #   # Submission(587): STARTTLS + AUTH 강제 권장
+  #     idleTimeoutSeconds: 300 # 5 minutes (0 disables timeout)
+  #   # Submission (587): STARTTLS + AUTH typically required
   #   - port: 587
   #     serviceName: SUBMISSION
   #     implicitTls: false
-  #     proxyProtocol: false # LB/HAProxy 뒤라면 true + smtp.proxy.trustedCidrs 설정
+  #     proxyProtocol: false # Set true behind LB/HAProxy + configure smtp.proxy.trustedCidrs
   #     enableStartTls: true
   #     enableAuth: true
   #     requireAuthForMail: true
   #     idleTimeoutSeconds: 300
-  #   # SMTPS(465): implicit TLS + AUTH 강제 권장
+  #   # SMTPS (465): implicit TLS + AUTH typically required
   #   - port: 465
   #     serviceName: SMTPS
   #     implicitTls: true
-  #     proxyProtocol: false # SMTPS도 PROXY 헤더가 TLS보다 먼저 오므로 true 가능(단, 신뢰 프록시 필수)
+  #     proxyProtocol: false # PROXY header comes before TLS; only enable with trusted proxies
   #     enableStartTls: false
   #     enableAuth: true
   #     requireAuthForMail: true
   #     idleTimeoutSeconds: 300
 
-  # PROXY protocol(v1) 신뢰 프록시 CIDR 목록
-  # - 보안상 필수: PROXY 헤더는 스푸핑이 가능하므로, LB/HAProxy 등 "신뢰 가능한 프록시"에서만 수용해야 합니다.
+  # Trusted proxy CIDR list for PROXY protocol(v1).
+  # Security note: PROXY headers are spoofable and must be accepted only from trusted proxies.
   proxy:
     trustedCidrs:
       - 127.0.0.1/32
       - ::1/128
 
-  # 저장소 경로 설정 (필수)
-  # - OS 중립적으로 상대경로를 기본 예시로 둡니다.
-  # - 운영/배포 환경에서는 절대경로 또는 환경변수로 명시 권장.
+  # Storage path settings (required).
+  # Relative paths are shown for portability; use absolute paths or env vars in production.
   storage:
     mailboxDir: ${SMTP_MAILBOX_DIR:./data/mailboxes}
     tempDir: ${SMTP_TEMP_DIR:./data/temp}
     listsDir: ${SMTP_LISTS_DIR:./data/lists}
 
   ssl:
-    # STARTTLS/SMTPS(implicit TLS)을 쓰려면 enabled=true + 인증서/키 파일이 필요합니다.
-    # - 파일이 실제로 존재해야 TLS 컨텍스트가 활성화됩니다.
+    # STARTTLS/SMTPS requires enabled=true and valid certificate/key files.
     enabled: false
-    # certChainFile: /path/to/cert # 인증서 체인 파일 경로
-    # privateKeyFile: /path/to/key # 개인 키 파일 경로
+    # certChainFile: /path/to/cert # Certificate chain file path
+    # privateKeyFile: /path/to/key # Private key file path
 
-    # TLS 하드닝(선택)
+    # Optional TLS hardening
     minTlsVersion: TLSv1.2 # TLSv1.2, TLSv1.3
     handshakeTimeoutMs: 30000
-    cipherSuites: [] # 예: ["TLS_AES_128_GCM_SHA256"] (비우면 JVM 기본값)
+    cipherSuites: [] # Example: ["TLS_AES_128_GCM_SHA256"] (empty means JVM default)
 
-  # 릴레이(외부 도메인 전달) 설정
-  # - 활성화하려면 `kotlin-smtp-relay-spring-boot-starter` 의존성을 추가해야 합니다.
-  # - 인터넷 노출 시에는 오픈 릴레이 방지를 위해 requireAuthForRelay=true 권장
+  # Relay (external delivery) settings.
+  # Add `kotlin-smtp-relay-spring-boot-starter` to enable relay features.
   relay:
     enabled: false
-    # legacy fallback (권장: smtp.routing.localDomain 사용)
+    # Legacy fallback (recommended: smtp.routing.localDomain)
     # localDomain: mydomain.com
-    # Smart Host 기본 경로(설정 시 모든 외부 도메인을 지정 SMTP 서버로 릴레이)
+    # Default Smart Host route (all external domains relay through this host)
     # defaultRoute:
     #   host: localhost
     #   port: 10025
     #   startTlsEnabled: false
 
-    # 도메인별 Smart Host 경로(우선순위: exact domain > '*' > defaultRoute > MX 직접 전송)
+    # Domain-based Smart Host routes
+    # Priority: exact domain > '*' > defaultRoute > direct MX
     # routes:
     #   - domain: govkorea.kr
     #     host: localhost
@@ -113,47 +110,47 @@ smtp:
     #     username: relay-user
     #     password: ${RELAY_PASSWORD}
 
-    allowedSenderDomains: [] # 인증 없이 릴레이를 허용할 발신 도메인 allowlist(비우면 도메인 제한 비활성)
-    allowedClientCidrs: [] # 인증 없이 릴레이를 허용할 클라이언트 CIDR allowlist (예: 10.0.0.0/8)
+    allowedSenderDomains: [] # Unauthenticated relay sender-domain allowlist
+    allowedClientCidrs: [] # Unauthenticated relay client CIDR allowlist (for example, 10.0.0.0/8)
     requireAuthForRelay: true
     outboundTls:
-      ports: [25] # 운영 기본은 25. 개발환경에서만 [25, 587] 등으로 확장 권장
-      startTlsEnabled: true # 기본: opportunistic STARTTLS
-      startTlsRequired: false # true면 상대방이 STARTTLS 미지원 시 전달 실패 가능
+      ports: [25] # Production default is 25; expand in dev if needed
+      startTlsEnabled: true # Opportunistic STARTTLS by default
+      startTlsRequired: false # true may fail delivery to peers without STARTTLS
       checkServerIdentity: true
-      trustAll: false # 개발환경에서만 true 권장(운영에서는 false)
-      trustHosts: [] # 예: ["mx.example.com"]
+      trustAll: false # true is for local/dev testing only
+      trustHosts: [] # Example: ["mx.example.com"]
       connectTimeoutMs: 15000
       readTimeoutMs: 15000
 
-  # 스풀러 기본 설정 (필수: dir)
+  # Spool settings (dir is required)
   spool:
-    # 스풀 타입 선택: auto | file | redis
-    # - auto: StringRedisTemplate 빈이 있으면 redis, 없으면 file
-    # - file: .eml/.json/.lock 파일 기반
-    # - redis: 원문/큐/락/메타를 Redis에 저장하고, 배달 시점에만 임시 파일 사용
+    # Backend type: auto | file | redis
+    # - auto: redis when StringRedisTemplate exists, otherwise file
+    # - file: .eml/.json/.lock files
+    # - redis: raw/queue/lock/metadata in Redis, temp file only at delivery time
     type: auto
     dir: ${SMTP_SPOOL_DIR:./data/spool}
     maxRetries: 5
     retryDelaySeconds: 60
-    # Redis 백엔드 예시
+    # Redis backend example
     # redis:
     #   keyPrefix: ${SMTP_SPOOL_REDIS_KEY_PREFIX:kotlin-smtp:spool}
     #   maxRawBytes: ${SMTP_SPOOL_REDIS_MAX_RAW_BYTES:26214400}
     #   lockTtlSeconds: ${SMTP_SPOOL_REDIS_LOCK_TTL_SECONDS:900}
 
-  # 보낸 메일함 저장 정책
+  # Sent mailbox archiving policy
   sentArchive:
-    # TRUSTED_SUBMISSION: AUTH 또는 외부 릴레이 제출 저장(기본)
-    # AUTHENTICATED_ONLY: AUTH 인증 세션만 저장
-    # DISABLED: 저장 비활성화
+    # TRUSTED_SUBMISSION: store AUTH or external relay submissions (default)
+    # AUTHENTICATED_ONLY: store only authenticated submissions
+    # DISABLED: disable sent archiving
     mode: ${SMTP_SENT_ARCHIVE_MODE:TRUSTED_SUBMISSION}
 
   auth:
     enabled: true
     required: false
 
-    # AUTH 브루트포스 방지(기본 on)
+    # AUTH brute-force protection (enabled by default)
     rateLimitEnabled: true
     rateLimitMaxFailures: 5
     rateLimitWindowSeconds: 300
@@ -163,12 +160,12 @@ smtp:
       user: password
       secure: "$2a$10$CwTycUXWue0Thq9StjUM0uJ8ZrYcGQpFvWY9Y1KfK1aG1H0a4V/2m"
 
-  # Rate Limiting 설정 (스팸 및 DoS 방지)
+  # Rate limiting (spam/DoS protection)
   rateLimit:
-    maxConnectionsPerIp: 10 # IP당 최대 동시 연결 수
-    maxMessagesPerIpPerHour: 100 # IP당 시간당 최대 메시지 수
+    maxConnectionsPerIp: 10 # Max concurrent connections per IP
+    maxMessagesPerIpPerHour: 100 # Max accepted messages per IP per hour
 
-  # 기능 플래그(인터넷 노출 기본값은 보수적으로 off)
+  # Feature flags (conservative defaults for internet-exposed deployments)
   features:
     vrfyEnabled: false
     etrnEnabled: false

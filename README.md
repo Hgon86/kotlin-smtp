@@ -152,11 +152,14 @@ In this case, `/actuator/prometheus` is available only on the **management port*
 
 ## Documentation
 
-- `docs/STATUS.md`: Current progress
-- `docs/ROADMAP.md`: Remaining work priorities
-- `docs/THIN_ARCHITECTURE.md`: Runtime/boundary summary
-- `docs/PUBLIC_API_CANDIDATES.md`: Public API boundaries
-- `docs/RELAY_MODULES.md`: Relay module design/policy
+- `docs/README.md`: Documentation index and learning paths
+- `docs/ARCHITECTURE.md`: Runtime architecture and boundaries
+- `docs/CONFIGURATION.md`: Configuration reference
+- `docs/EXTENSION.md`: Extension strategy and bean override model
+- `docs/EXTENSION_MATRIX.md`: Goal-to-interface mapping
+- `docs/RECIPES.md`: Minimal extension recipes
+- `docs/LIFECYCLE.md`: Runtime lifecycle and hook timing
+- `docs/SECURITY_RELAY.md`: Relay security hardening guide
 
 ## License
 

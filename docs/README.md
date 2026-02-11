@@ -1,83 +1,49 @@
-# Kotlin SMTP 문서
+# Kotlin SMTP Docs
 
-## 목차
+Start here when you want to build, customize, and operate Kotlin SMTP quickly.
 
-1. [루트 README](../README.md) - 빠른 시작 가이드
-2. [아키텍처](ARCHITECTURE.md) - 시스템 아키텍처와 동작 원리
-3. [설정 가이드](CONFIGURATION.md) - 상세 설정 옵션
-4. [확장하기](EXTENSION.md) - 커스텀 구현 및 확장 방법
+## Quick Navigation
 
-## 개요
+- Getting started and modules: `../README.md`
+- Runtime architecture: `ARCHITECTURE.md`
+- Configuration reference: `CONFIGURATION.md`
+- Extension overview: `EXTENSION.md`
 
-Kotlin SMTP는 Netty 기반의 Kotlin SMTP 서버 라이브러리입니다.
+## I Want To...
 
-### 특징
+- Understand local vs relay message flow
+  - `LIFECYCLE.md`
+- Know what to implement for each customization goal
+  - `EXTENSION_MATRIX.md`
+- Copy minimal extension examples
+  - `RECIPES.md`
+- Harden relay security and avoid open relay
+  - `SECURITY_RELAY.md`
 
-- **Spring-free Core**: 순수 Kotlin으로 작성된 SMTP 엔진
-- **Spring Boot 통합**: Starter 모듈로 쉬운 설정
-- **SMTPUTF8/IDN 지원**: 국제화된 이메일 주소 처리
-- **TLS 지원**: STARTTLS 및 Implicit TLS
-- **PROXY Protocol**: 로드밸런서 뒤에서도 원본 IP 확인
-- **모듈화**: 필요한 기능만 선택적으로 사용
+## Recommended Reading Paths
 
-### 모듈 구조
+### New users
+1. `../README.md`
+2. `CONFIGURATION.md`
+3. `ARCHITECTURE.md`
 
-```
-kotlin-smtp/
-├── kotlin-smtp-core/                    # Spring-free SMTP 엔진
-├── kotlin-smtp-spring-boot-starter/     # Spring Boot 자동 설정
-├── kotlin-smtp-relay/                   # 릴레이 API (옵션)
-├── kotlin-smtp-relay-jakarta-mail/      # Jakarta Mail 릴레이 구현 (옵션)
-└── kotlin-smtp-relay-spring-boot-starter/ # 릴레이 Spring Boot 통합 (옵션)
-```
+### Customization and integration
+1. `EXTENSION.md`
+2. `EXTENSION_MATRIX.md`
+3. `RECIPES.md`
+4. `LIFECYCLE.md`
 
-## 빠른 시작
+### Production hardening
+1. `SECURITY_RELAY.md`
+2. `CONFIGURATION.md`
+3. `LIFECYCLE.md`
 
-### 1. 의존성 추가
+## Document Scope
 
-```kotlin
-dependencies {
-    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:VERSION")
-}
-```
-
-### 2. 설정 (application.yml)
-
-```yaml
-smtp:
-  port: 2525
-  hostname: localhost
-  routing:
-    localDomain: mydomain.com
-  storage:
-    mailboxDir: ./data/mailboxes
-    tempDir: ./data/temp
-    listsDir: ./data/lists
-  spool:
-    type: auto
-    dir: ./data/spool
-    maxRetries: 5
-    retryDelaySeconds: 60
-  sentArchive:
-    mode: TRUSTED_SUBMISSION
-  relay:
-    enabled: true
-    requireAuthForRelay: false
-    allowedClientCidrs:
-      - 10.0.0.0/8
-```
-
-추가 참고:
-- 스풀은 `smtp.spool.type`으로 `auto|file|redis`를 선택할 수 있습니다.
-- 보낸 메일함 저장 정책은 `smtp.sentArchive.mode`로 제어합니다.
-- 릴레이 IP 제한은 `smtp.relay.allowedClientCidrs`로 설정하며, 고급 정책은 `RelayAccessPolicy` 커스텀 빈으로 교체할 수 있습니다.
-
-### 3. 실행
-
-```bash
-./gradlew bootRun
-```
-
-## 라이선스
-
-Apache License 2.0
+- `ARCHITECTURE.md`: system boundaries and runtime model
+- `CONFIGURATION.md`: complete YAML property guidance
+- `EXTENSION.md`: extension strategy and override rules
+- `EXTENSION_MATRIX.md`: goal -> interface -> bean mapping
+- `RECIPES.md`: minimal practical customization snippets
+- `LIFECYCLE.md`: extension invocation timing
+- `SECURITY_RELAY.md`: relay policy and TLS security guidance

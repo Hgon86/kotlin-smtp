@@ -3,88 +3,170 @@ package io.github.kotlinsmtp.relay.config
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 @ConfigurationProperties(prefix = "smtp.relay")
+/**
+ * Outbound relay configuration bound from the `smtp.relay.*` namespace.
+ */
 class RelayProperties {
+    /**
+     * Enables outbound relay support.
+     */
     var enabled: Boolean = false
 
     /**
-     * 릴레이를 허용할 때, 세션 인증(AUTH)을 요구할지 여부(오픈 릴레이 방지 기본값).
+     * Whether session authentication (AUTH) is required for relay.
+     * Default is secure to reduce open-relay risk.
      */
     var requireAuthForRelay: Boolean = true
 
     /**
-     * 인증 없이 릴레이를 허용할 발신 도메인 allowlist.
+     * Sender-domain allowlist for unauthenticated relay exceptions.
      *
-     * 빈 리스트면 "allowlist 기반 예외"를 사용하지 않습니다.
+     * Empty list disables sender-domain exceptions.
      */
     var allowedSenderDomains: List<String> = emptyList()
 
     /**
-     * 인증 없이 릴레이를 허용할 클라이언트 CIDR allowlist.
+     * Client CIDR allowlist for unauthenticated relay exceptions.
      *
-     * 예: `10.0.0.0/8`, `192.168.10.0/24`, `2001:db8::/32`
+     * Example: `10.0.0.0/8`, `192.168.10.0/24`, `2001:db8::/32`
      *
-     * 빈 리스트면 클라이언트 IP 기반 제한을 사용하지 않습니다.
+     * Empty list disables client CIDR exceptions.
      */
     var allowedClientCidrs: List<String> = emptyList()
 
     /**
-     * 모든 도메인에 적용할 기본 Smart Host 경로.
+     * Default Smart Host route applied to all domains.
      *
-     * null이면 기본 동작은 MX 직접 전송입니다.
+     * When null, direct MX delivery is used.
      */
     var defaultRoute: SmartHostRouteProperties? = null
 
     /**
-     * 수신자 도메인별 Smart Host 라우팅 목록.
+     * Smart Host routes mapped by recipient domain.
      *
-     * domain에는 `example.com` 또는 와일드카드 `*`를 사용할 수 있습니다.
+     * `domain` supports exact values like `example.com` and wildcard `*`.
      */
     var routes: List<DomainRouteProperties> = emptyList()
 
+    /**
+     * Outbound TLS policy defaults used when route-specific values are not set.
+     */
     var outboundTls: OutboundTlsProperties = OutboundTlsProperties()
 
+    /**
+     * Outbound TLS policy settings.
+     */
     class OutboundTlsProperties {
+        /**
+         * Outbound ports where TLS policy is applied.
+         */
         var ports: List<Int> = listOf(25)
+
+        /**
+         * Whether STARTTLS is attempted on outbound relay connections.
+         */
         var startTlsEnabled: Boolean = true
+
+        /**
+         * Whether STARTTLS is required for outbound relay connections.
+         */
         var startTlsRequired: Boolean = false
+
+        /**
+         * Whether outbound TLS validates remote server identity.
+         */
         var checkServerIdentity: Boolean = true
+
+        /**
+         * Trust-all TLS mode for local or test environments.
+         */
         var trustAll: Boolean = false
+
+        /**
+         * Explicit trusted hostnames for outbound TLS.
+         */
         var trustHosts: List<String> = emptyList()
+
+        /**
+         * Outbound connection timeout in milliseconds.
+         */
         var connectTimeoutMs: Int = 15_000
+
+        /**
+         * Outbound read timeout in milliseconds.
+         */
         var readTimeoutMs: Int = 15_000
     }
 
     /**
-     * Smart Host 경로 설정.
+     * Smart Host route configuration.
      *
-     * @property host 대상 SMTP 서버 호스트
-     * @property port 대상 SMTP 서버 포트
-     * @property username SMTP AUTH 사용자명(선택)
-     * @property password SMTP AUTH 비밀번호(선택)
-     * @property startTlsEnabled STARTTLS 시도 여부(선택)
-     * @property startTlsRequired STARTTLS 필수 여부(선택)
-     * @property checkServerIdentity 서버 인증서 호스트명 검증 여부(선택)
-     * @property trustAll 개발/테스트용 trust-all 여부(선택)
-     * @property trustHosts 신뢰할 서버 호스트 목록(선택)
+     * @property host Target SMTP server host.
+     * @property port Target SMTP server port.
+     * @property username Optional SMTP AUTH username.
+     * @property password Optional SMTP AUTH password.
+     * @property startTlsEnabled Optional STARTTLS attempt flag.
+     * @property startTlsRequired Optional STARTTLS requirement flag.
+     * @property checkServerIdentity Optional server identity verification flag.
+     * @property trustAll Optional trust-all mode for local/dev tests.
+     * @property trustHosts Optional trusted server host list.
      */
     open class SmartHostRouteProperties {
+        /**
+         * Target SMTP host.
+         */
         var host: String = ""
+
+        /**
+         * Target SMTP port.
+         */
         var port: Int = 25
+
+        /**
+         * Optional SMTP AUTH username.
+         */
         var username: String = ""
+
+        /**
+         * Optional SMTP AUTH password.
+         */
         var password: String = ""
+
+        /**
+         * Optional route-specific STARTTLS enable flag.
+         */
         var startTlsEnabled: Boolean? = null
+
+        /**
+         * Optional route-specific STARTTLS required flag.
+         */
         var startTlsRequired: Boolean? = null
+
+        /**
+         * Optional route-specific server identity verification flag.
+         */
         var checkServerIdentity: Boolean? = null
+
+        /**
+         * Optional route-specific trust-all flag for local or test environments.
+         */
         var trustAll: Boolean? = null
+
+        /**
+         * Optional route-specific trusted hostnames.
+         */
         var trustHosts: List<String>? = null
     }
 
     /**
-     * 도메인 매칭 Smart Host 경로 설정.
+     * Domain-matched Smart Host route configuration.
      *
-     * @property domain 매칭할 수신자 도메인(예: `govkorea.kr`, `*`)
+     * @property domain Recipient domain to match (for example `govkorea.kr`, `*`).
      */
     class DomainRouteProperties : SmartHostRouteProperties() {
+        /**
+         * Recipient domain match value. Supports exact domain and `*` wildcard.
+         */
         var domain: String = ""
     }
 }

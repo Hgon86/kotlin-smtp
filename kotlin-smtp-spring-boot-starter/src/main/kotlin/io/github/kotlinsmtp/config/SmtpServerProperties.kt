@@ -5,26 +5,98 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 import java.nio.file.Path
 
 @ConfigurationProperties(prefix = "smtp")
+/**
+ * Root SMTP server configuration bound from the `smtp.*` namespace.
+ */
 class SmtpServerProperties {
+    /**
+     * SMTP listening port used when `smtp.listeners` is not configured.
+     */
     var port: Int = 25
+
+    /**
+     * Hostname advertised in SMTP banners and protocol responses.
+     */
     var hostname: String = "localhost"
+
+    /**
+     * Default service banner name used by listeners.
+     */
     var serviceName: String = "kotlin-smtp"
+
+    /**
+     * Inbound TLS settings for STARTTLS and implicit TLS listeners.
+     */
     var ssl: SslConfig = SslConfig()
+
+    /**
+     * Storage path settings for mailbox, temp files, and mailing lists.
+     */
     var storage: StorageConfig = StorageConfig()
+
+    /**
+     * Local-domain routing settings used to split local delivery and relay paths.
+     */
     var routing: RoutingConfig = RoutingConfig()
+
+    /**
+     * Legacy relay-related settings kept for compatibility.
+     */
     var relay: RelayConfig = RelayConfig()
+
+    /**
+     * Spool queue settings for retryable outbound delivery.
+     */
     var spool: SpoolConfig = SpoolConfig()
+
+    /**
+     * Sent mailbox archiving policy settings.
+     */
     var sentArchive: SentArchiveConfig = SentArchiveConfig()
+
+    /**
+     * SMTP AUTH settings.
+     */
     var auth: AuthConfig = AuthConfig()
+
+    /**
+     * Connection and message rate-limit settings.
+     */
     var rateLimit: RateLimitConfig = RateLimitConfig()
+
+    /**
+     * Protocol feature flags such as VRFY, ETRN, and EXPN.
+     */
     var features: FeaturesConfig = FeaturesConfig()
+
+    /**
+     * Trusted proxy network ranges for PROXY protocol.
+     */
     var proxy: ProxyConfig = ProxyConfig()
+
+    /**
+     * Multi-listener definitions. When non-empty, this overrides single-port mode.
+     */
     var listeners: List<ListenerConfig> = emptyList()
 
+    /**
+     * Storage path configuration.
+     */
     data class StorageConfig(
+        /**
+         * Base directory for local mailbox storage.
+         */
         var mailboxDir: String = "",
+
+        /**
+         * Directory for temporary files used during message processing.
+         */
         var tempDir: String = "",
-        var listsDir: String = "", // EXPN용 로컬 리스트(기능 우선)
+
+        /**
+         * Directory for local mailing-list files used by EXPN handling.
+         */
+        var listsDir: String = "",
     ) {
         val mailboxPath: Path get() = Path.of(mailboxDir)
         val tempPath: Path get() = Path.of(tempDir)
@@ -44,18 +116,25 @@ class SmtpServerProperties {
     }
 
     /**
-     * 로컬 도메인 판정(로컬 전달 vs 외부 릴�이 분기)에 사용합니다.
+     * Determines local-domain routing (local delivery vs external relay).
      *
-     * @property localDomain 로컬 전달로 판정할 기본 도메인 (단일 도메인용, legacy)
-     * @property localDomains 로컬 전달로 판정할 도메인 목록 (다중 도메인 지원, 우선순위 높음)
+     * @property localDomain Legacy single local domain used for local delivery checks.
+     * @property localDomains Preferred multi-domain list used for local delivery checks.
      */
     data class RoutingConfig(
+        /**
+         * Legacy single local domain used when `localDomains` is empty.
+         */
         var localDomain: String = "",
+
+        /**
+         * Preferred local domain list for local delivery checks.
+         */
         var localDomains: List<String> = emptyList(),
     ) {
         /**
-         * 유효한 로컬 도메인 목록을 반환합니다.
-         * localDomains가 비어있으면 localDomain을 사용합니다 (legacy 지원).
+         * Returns effective local domains.
+         * Falls back to [localDomain] when [localDomains] is empty for legacy compatibility.
          */
         fun effectiveLocalDomains(): Set<String> {
             return if (localDomains.isNotEmpty()) {
@@ -68,12 +147,15 @@ class SmtpServerProperties {
     }
 
     data class RelayConfig(
+        /**
+         * Enables relay flow in the core starter when relay modules are present.
+         */
         var enabled: Boolean = false,
         /**
-         * 레거시 키: `smtp.relay.localDomain`
+         * Legacy key: `smtp.relay.localDomain`.
          *
-         * - 신규 구성에서는 `smtp.routing.localDomain` 사용을 권장합니다.
-         * - 호환을 위해 유지하며, `smtp.routing.localDomain`이 비어있을 때 fallback으로만 사용합니다.
+         * Prefer `smtp.routing.localDomain` in new configurations.
+         * Kept only for compatibility and used as fallback when `smtp.routing.localDomain` is blank.
          */
         @Deprecated("Use smtp.routing.localDomain instead")
         var localDomain: String = "",
@@ -87,10 +169,29 @@ class SmtpServerProperties {
     }
 
     data class SpoolConfig(
+        /**
+         * Spool backend type.
+         */
         var type: SpoolType = SpoolType.AUTO,
+
+        /**
+         * Spool directory path.
+         */
         var dir: String = "",
+
+        /**
+         * Maximum retry attempts for transient failures.
+         */
         var maxRetries: Int = 5,
+
+        /**
+         * Initial retry delay in seconds before backoff applies.
+         */
         var retryDelaySeconds: Long = 60,
+
+        /**
+         * Redis-specific spool settings.
+         */
         var redis: RedisConfig = RedisConfig(),
     ) {
         enum class SpoolType {
@@ -100,8 +201,19 @@ class SmtpServerProperties {
         }
 
         data class RedisConfig(
+            /**
+             * Redis key prefix for spool data.
+             */
             var keyPrefix: String = "kotlin-smtp:spool",
+
+            /**
+             * Maximum RFC822 raw payload bytes allowed in Redis spool.
+             */
             var maxRawBytes: Long = 25L * 1024L * 1024L,
+
+            /**
+             * Redis lock TTL in seconds for spool processing.
+             */
             var lockTtlSeconds: Long = 900,
         )
 
@@ -132,84 +244,172 @@ class SmtpServerProperties {
     }
 
     /**
-     * 보낸 메일함 저장 정책입니다.
+     * Sent mailbox archiving policy.
      *
-     * @property mode 보낸 메일함 저장 트리거 정책
+     * @property mode Trigger policy for sent mailbox archiving.
      */
     data class SentArchiveConfig(
+        /**
+         * Trigger policy for sent mailbox archiving.
+         */
         var mode: SentArchiveMode = SentArchiveMode.TRUSTED_SUBMISSION,
     )
 
+    /**
+     * SMTP AUTH configuration.
+     */
     data class AuthConfig(
+        /**
+         * Enables SMTP AUTH.
+         */
         var enabled: Boolean = false,
+
+        /**
+         * Requires AUTH before mail transactions.
+         */
         var required: Boolean = false,
+
+        /**
+         * Static username/password map for the default in-memory auth service.
+         */
         var users: Map<String, String> = emptyMap(),
-        // 공유 AUTH Rate Limiter 설정
+
+        /**
+         * Enables AUTH failure rate limiting.
+         */
         var rateLimitEnabled: Boolean = true,
-        var rateLimitMaxFailures: Int = 5, // 5분 내 최대 실패 횟수
-        var rateLimitWindowSeconds: Long = 300, // 5분
-        var rateLimitLockoutSeconds: Long = 600, // 10분
+
+        /**
+         * Maximum failed AUTH attempts allowed within the tracking window.
+         */
+        var rateLimitMaxFailures: Int = 5,
+
+        /**
+         * AUTH failure tracking window in seconds.
+         */
+        var rateLimitWindowSeconds: Long = 300,
+
+        /**
+         * AUTH lockout duration in seconds after threshold is exceeded.
+         */
+        var rateLimitLockoutSeconds: Long = 600,
     )
 
+    /**
+     * Generic connection and message throughput limits.
+     */
     data class RateLimitConfig(
+        /**
+         * Maximum concurrent connections allowed per client IP.
+         */
         var maxConnectionsPerIp: Int = 10,
+
+        /**
+         * Maximum accepted messages per client IP per hour.
+         */
         var maxMessagesPerIpPerHour: Int = 100,
     )
 
     /**
-     * PROXY protocol(v1) 지원 시 신뢰 프록시 대역 설정
+     * Trusted proxy ranges when PROXY protocol(v1) is enabled.
      *
-     * - 보안상 필수: PROXY 헤더는 스푸핑이 가능하므로, LB/HAProxy 등 "신뢰 가능한 프록시"에서만 수용해야 합니다.
-     * - 기본값은 로컬(loopback)만 신뢰합니다. 운영에서는 프록시의 소스 IP/CIDR을 반드시 추가하세요.
+     * PROXY headers are spoofable, so only trusted proxy sources (LB/HAProxy) must be allowed.
+     * The default trusts loopback only; add production proxy source IP/CIDRs explicitly.
      *
-     * @property trustedCidrs 신뢰할 프록시 IP/CIDR 목록
+     * @property trustedCidrs Trusted proxy IP/CIDR list.
      */
     data class ProxyConfig(
+        /**
+         * Trusted proxy source IP/CIDR list allowed to send PROXY protocol headers.
+         */
         var trustedCidrs: List<String> = listOf("127.0.0.1/32", "::1/128"),
     )
 
     /**
-     * 인터넷 노출 기본값은 보수적으로 off.
-     * 필요한 경우에만 기능을 켜고(특히 VRFY/ETRN), 접근제어(관리망/인증)와 함께 운영하세요.
+     * Feature flags default to conservative off for internet-exposed deployments.
+     * Enable only when required (especially VRFY/ETRN) with proper access control.
      *
-     * @property vrfyEnabled VRFY 명령 활성화 여부
-     * @property etrnEnabled ETRN 명령 활성화 여부
-     * @property expnEnabled EXPN 명령 활성화 여부
+     * @property vrfyEnabled Enables the VRFY command.
+     * @property etrnEnabled Enables the ETRN command.
+     * @property expnEnabled Enables the EXPN command.
      */
     data class FeaturesConfig(
+        /**
+         * Enables VRFY command support.
+         */
         var vrfyEnabled: Boolean = false,
+
+        /**
+         * Enables ETRN command support.
+         */
         var etrnEnabled: Boolean = false,
+
+        /**
+         * Enables EXPN command support.
+         */
         var expnEnabled: Boolean = false,
     )
 
     /**
-     * 리스너(포트)별 정책 분리
+     * Listener-level policy separation by port.
      *
-     * - MTA(25): 보통 AUTH 미사용(또는 선택), STARTTLS는 opportunistic
-     * - Submission(587): 보통 STARTTLS + AUTH 강제
-     * - SMTPS(465): implicit TLS + AUTH 강제
+     * Typical patterns:
+     * - MTA (25): optional AUTH, opportunistic STARTTLS
+     * - Submission (587): STARTTLS + AUTH required
+     * - SMTPS (465): implicit TLS + AUTH required
      *
-     * @property port 리스너 포트(0이면 OS가 가용 포트 자동 할당)
-     * @property serviceName 리스너별 서비스명(미지정 시 smtp.serviceName 사용)
-     * @property implicitTls 접속 즉시 TLS를 시작할지 여부
-     * @property enableStartTls STARTTLS 지원 여부
-     * @property enableAuth AUTH 지원 여부
-     * @property requireAuthForMail MAIL FROM 이전 인증 강제 여부
-     * @property proxyProtocol 리스너 단위 PROXY protocol(v1) 수용 여부
-     * @property idleTimeoutSeconds 연결 유휴 타임아웃(초). 0이면 타임아웃 없음 (기본: 300초=5분)
+     * @property port Listener port. `0` lets the OS allocate an available port.
+     * @property serviceName Listener-specific service name. Uses `smtp.serviceName` when null.
+     * @property implicitTls Whether TLS starts immediately on connect.
+     * @property enableStartTls Whether STARTTLS is supported.
+     * @property enableAuth Whether AUTH is supported.
+     * @property requireAuthForMail Whether AUTH is required before MAIL FROM.
+     * @property proxyProtocol Whether PROXY protocol(v1) is accepted on this listener.
+     * @property idleTimeoutSeconds Connection idle timeout in seconds. `0` disables timeout.
      */
     data class ListenerConfig(
+        /**
+         * Listener port. `0` lets the OS allocate an available port.
+         */
         var port: Int = 25,
+
+        /**
+         * Listener-specific service name. When null, `smtp.serviceName` is used.
+         */
         var serviceName: String? = null,
+
+        /**
+         * Whether TLS starts immediately after connection (implicit TLS / SMTPS).
+         */
         var implicitTls: Boolean = false,
+
+        /**
+         * Whether STARTTLS is supported on this listener.
+         */
         var enableStartTls: Boolean = true,
+
+        /**
+         * Whether AUTH is supported on this listener.
+         */
         var enableAuth: Boolean = true,
+
+        /**
+         * Whether AUTH is required before MAIL FROM on this listener.
+         */
         var requireAuthForMail: Boolean = false,
-        var proxyProtocol: Boolean = false, // HAProxy PROXY v1 사용 여부(해당 리스너 전용)
+
+        /**
+         * Whether PROXY protocol(v1) is accepted on this listener.
+         */
+        var proxyProtocol: Boolean = false,
+
+        /**
+         * Connection idle timeout in seconds. `0` disables timeout.
+         */
         var idleTimeoutSeconds: Int = 300,
     ) {
         fun validate() {
-            // port 0은 시스템이 임의의 사용 가능한 포트를 할당하도록 함 (테스트용)
+            // Port 0 lets the system allocate an available port (commonly for tests)
             require(port in 0..65535) {
                 "Listener port must be between 0 and 65535, got: $port"
             }
@@ -220,37 +420,37 @@ class SmtpServerProperties {
     }
 
     /**
-     * 전체 설정을 검증합니다.
-     * - KotlinSmtpAutoConfiguration.smtpServers()에서 호출됩니다.
+     * Validates the full property set.
+     * Called from `KotlinSmtpAutoConfiguration.smtpServers()`.
      */
     fun validate() {
-        // 저장소/스풀 필수 경로 검증
+        // Validate required storage/spool paths
         storage.validate()
         spool.validate()
 
-        // 리스너 설정 검증
+        // Validate listener settings
         listeners.forEach { listener ->
             listener.validate()
         }
 
-        // 단일 포트 모드일 경우에도 포트 범위 검증
-        // port 0은 시스템이 임의의 사용 가능한 포트를 할당하도록 함 (테스트용)
+        // Validate single-port mode range as well
+        // Port 0 lets the system allocate an available port (commonly for tests)
         if (listeners.isEmpty()) {
             require(port in 0..65535) {
                 "smtp.port must be between 0 and 65535, got: $port"
             }
         }
 
-        // 로컬 도메인 검증
+        // Validate local domains
         val localDomains = routing.effectiveLocalDomains()
         require(localDomains.isNotEmpty()) {
             "smtp.routing.localDomain(s) must be configured (e.g., mydomain.com)"
         }
 
-        // SSL/TLS 설정 검증
+        // Validate SSL/TLS settings
         ssl.validate()
 
-        // Rate limit 설정 검증
+        // Validate rate limit settings
         require(rateLimit.maxConnectionsPerIp > 0) {
             "smtp.rateLimit.maxConnectionsPerIp must be > 0"
         }
@@ -258,7 +458,7 @@ class SmtpServerProperties {
             "smtp.rateLimit.maxMessagesPerIpPerHour must be > 0"
         }
 
-        // AUTH rate limit 설정 검증
+        // Validate AUTH rate limit settings
         if (auth.rateLimitEnabled) {
             require(auth.rateLimitMaxFailures > 0) {
                 "smtp.auth.rateLimitMaxFailures must be > 0"
