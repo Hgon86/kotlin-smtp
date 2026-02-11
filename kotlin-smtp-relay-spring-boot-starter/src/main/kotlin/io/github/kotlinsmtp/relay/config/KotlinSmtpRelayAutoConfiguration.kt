@@ -45,6 +45,7 @@ class KotlinSmtpRelayAutoConfiguration {
             require(it.domain.isNotBlank()) { "smtp.relay.routes[].domain must not be blank" }
             it.toSmartHost()
         }
+        RelayClientCidrMatcher(props.allowedClientCidrs)
         return RelayGuardrails(props)
     }
 
@@ -99,18 +100,30 @@ class KotlinSmtpRelayAutoConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "smtp.relay", name = ["enabled"], havingValue = "true")
     @ConditionalOnMissingBean
-    fun relayAccessPolicy(props: RelayProperties): RelayAccessPolicy = RelayAccessPolicy { ctx: RelayAccessContext ->
-        if (props.requireAuthForRelay && !ctx.authenticated) {
-            return@RelayAccessPolicy RelayAccessDecision.Denied(RelayDeniedReason.AUTH_REQUIRED)
+    fun relayAccessPolicy(props: RelayProperties): RelayAccessPolicy {
+        val cidrMatcher = RelayClientCidrMatcher(props.allowedClientCidrs)
+        return RelayAccessPolicy { ctx: RelayAccessContext ->
+            if (props.requireAuthForRelay && !ctx.authenticated) {
+                return@RelayAccessPolicy RelayAccessDecision.Denied(RelayDeniedReason.AUTH_REQUIRED)
+            }
+
+            if (!ctx.authenticated && !cidrMatcher.isAllowed(ctx.peerAddress)) {
+                return@RelayAccessPolicy RelayAccessDecision.Denied(
+                    RelayDeniedReason.OTHER_POLICY,
+                    "Client IP is not in allowedClientCidrs",
+                )
+            }
+
+            if (props.allowedSenderDomains.isEmpty()) {
+                return@RelayAccessPolicy RelayAccessDecision.Allowed
+            }
+
+            val domain = ctx.envelopeSender?.substringAfterLast('@')?.lowercase()
+            if (!ctx.authenticated && (domain == null || props.allowedSenderDomains.none { it.equals(domain, ignoreCase = true) })) {
+                return@RelayAccessPolicy RelayAccessDecision.Denied(RelayDeniedReason.SENDER_DOMAIN_NOT_ALLOWED)
+            }
+            RelayAccessDecision.Allowed
         }
-        if (props.allowedSenderDomains.isEmpty()) {
-            return@RelayAccessPolicy RelayAccessDecision.Allowed
-        }
-        val domain = ctx.envelopeSender?.substringAfterLast('@')?.lowercase()
-        if (!ctx.authenticated && (domain == null || props.allowedSenderDomains.none { it.equals(domain, ignoreCase = true) })) {
-            return@RelayAccessPolicy RelayAccessDecision.Denied(RelayDeniedReason.SENDER_DOMAIN_NOT_ALLOWED)
-        }
-        RelayAccessDecision.Allowed
     }
 
     @Bean
@@ -124,15 +137,18 @@ class KotlinSmtpRelayAutoConfiguration {
 
     class RelayGuardrails(props: RelayProperties) {
         init {
-            if (!props.requireAuthForRelay && props.allowedSenderDomains.isEmpty()) {
+            if (!props.requireAuthForRelay && props.allowedSenderDomains.isEmpty() && props.allowedClientCidrs.isEmpty()) {
                 log.warn {
-                    "Outbound relay is configured as OPEN RELAY (requireAuthForRelay=false, no allowedSenderDomains). " +
+                    "Outbound relay is configured as OPEN RELAY (requireAuthForRelay=false, no allowedSenderDomains, no allowedClientCidrs). " +
                     "This is insecure for internet-facing servers. " +
-                    "Consider enabling requireAuthForRelay or specifying allowedSenderDomains, " +
+                    "Consider enabling requireAuthForRelay or specifying allowedSenderDomains/allowedClientCidrs, " +
                     "or provide a custom RelayAccessPolicy bean for fine-grained control."
                 }
             }
-            log.info { "Outbound relay enabled (requireAuthForRelay=${props.requireAuthForRelay}, allowedSenderDomains=${props.allowedSenderDomains.size})" }
+            log.info {
+                "Outbound relay enabled (requireAuthForRelay=${props.requireAuthForRelay}, " +
+                    "allowedSenderDomains=${props.allowedSenderDomains.size}, allowedClientCidrs=${props.allowedClientCidrs.size})"
+            }
         }
     }
 

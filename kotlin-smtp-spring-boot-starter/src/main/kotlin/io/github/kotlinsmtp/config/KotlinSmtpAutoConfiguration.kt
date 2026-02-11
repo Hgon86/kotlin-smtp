@@ -14,10 +14,18 @@ import io.github.kotlinsmtp.routing.MultiDomainRoutingPolicy
 import io.github.kotlinsmtp.server.SmtpServer
 import io.github.kotlinsmtp.server.SmtpServerRunner
 import io.github.kotlinsmtp.spi.SmtpEventHook
+import io.github.kotlinsmtp.spool.FileSpoolLockManager
+import io.github.kotlinsmtp.spool.FileSpoolMetadataStore
 import io.github.kotlinsmtp.spool.MailDeliveryService
 import io.github.kotlinsmtp.spool.MailSpooler
+import io.github.kotlinsmtp.spool.RedisSpoolLockManager
+import io.github.kotlinsmtp.spool.RedisSpoolMetadataStore
+import io.github.kotlinsmtp.spool.SpoolLockManager
+import io.github.kotlinsmtp.spool.SpoolMetadataStore
 import io.github.kotlinsmtp.storage.FileMessageStore
+import io.github.kotlinsmtp.storage.FileSentMessageStore
 import io.github.kotlinsmtp.storage.MessageStore
+import io.github.kotlinsmtp.storage.SentMessageStore
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -27,6 +35,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
+import org.springframework.data.redis.core.StringRedisTemplate
 import java.util.stream.Collectors
 
 @AutoConfiguration
@@ -90,11 +99,93 @@ class KotlinSmtpAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    fun spoolMetadataStore(
+        props: SmtpServerProperties,
+        redisTemplateProvider: ObjectProvider<StringRedisTemplate>,
+    ): SpoolMetadataStore =
+        when (props.spool.type) {
+            SmtpServerProperties.SpoolConfig.SpoolType.FILE -> FileSpoolMetadataStore(props.spool.path)
+            SmtpServerProperties.SpoolConfig.SpoolType.REDIS -> {
+                val redisTemplate = redisTemplateProvider.getIfAvailable()
+                    ?: error("smtp.spool.type=redis requires StringRedisTemplate bean")
+                RedisSpoolMetadataStore(
+                    spoolDir = props.spool.path,
+                    redisTemplate = redisTemplate,
+                    keyPrefix = props.spool.redis.keyPrefix,
+                    maxRawBytes = props.spool.redis.maxRawBytes,
+                )
+            }
+
+            SmtpServerProperties.SpoolConfig.SpoolType.AUTO -> {
+                val redisTemplate = redisTemplateProvider.getIfAvailable()
+                if (redisTemplate != null) {
+                    RedisSpoolMetadataStore(
+                        spoolDir = props.spool.path,
+                        redisTemplate = redisTemplate,
+                        keyPrefix = props.spool.redis.keyPrefix,
+                        maxRawBytes = props.spool.redis.maxRawBytes,
+                    )
+                } else {
+                    FileSpoolMetadataStore(props.spool.path)
+                }
+            }
+        }
+
+    /**
+     * 설정에 따라 스풀 락 관리자를 생성합니다.
+     *
+     * @param props SMTP 서버 설정
+     * @param redisTemplateProvider Redis 템플릿 제공자
+     * @return 파일/Redis 기반 스풀 락 관리자
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    fun spoolLockManager(
+        props: SmtpServerProperties,
+        redisTemplateProvider: ObjectProvider<StringRedisTemplate>,
+    ): SpoolLockManager =
+        when (props.spool.type) {
+            SmtpServerProperties.SpoolConfig.SpoolType.FILE -> FileSpoolLockManager(
+                spoolDir = props.spool.path,
+                staleLockThreshold = java.time.Duration.ofMinutes(15),
+            )
+
+            SmtpServerProperties.SpoolConfig.SpoolType.REDIS -> {
+                val redisTemplate = redisTemplateProvider.getIfAvailable()
+                    ?: error("smtp.spool.type=redis requires StringRedisTemplate bean")
+                RedisSpoolLockManager(
+                    redisTemplate = redisTemplate,
+                    keyPrefix = props.spool.redis.keyPrefix,
+                    lockTtl = java.time.Duration.ofSeconds(props.spool.redis.lockTtlSeconds),
+                )
+            }
+
+            SmtpServerProperties.SpoolConfig.SpoolType.AUTO -> {
+                val redisTemplate = redisTemplateProvider.getIfAvailable()
+                if (redisTemplate != null) {
+                    RedisSpoolLockManager(
+                        redisTemplate = redisTemplate,
+                        keyPrefix = props.spool.redis.keyPrefix,
+                        lockTtl = java.time.Duration.ofSeconds(props.spool.redis.lockTtlSeconds),
+                    )
+                } else {
+                    FileSpoolLockManager(
+                        spoolDir = props.spool.path,
+                        staleLockThreshold = java.time.Duration.ofMinutes(15),
+                    )
+                }
+            }
+        }
+
+    @Bean
+    @ConditionalOnMissingBean
     fun mailSpooler(
         props: SmtpServerProperties,
         deliveryService: MailDeliveryService,
         dsnSenderProvider: ObjectProvider<DsnSender>,
         spoolMetrics: SpoolMetrics,
+        metadataStore: SpoolMetadataStore,
+        lockManager: SpoolLockManager,
     ): MailSpooler =
         MailSpooler(
             spoolDir = props.spool.path,
@@ -103,6 +194,8 @@ class KotlinSmtpAutoConfiguration {
             deliveryService = deliveryService,
             dsnSenderProvider = { dsnSenderProvider.getIfAvailable() },
             spoolMetrics = spoolMetrics,
+            injectedMetadataStore = metadataStore,
+            injectedLockManager = lockManager,
         )
 
     @Bean
@@ -158,6 +251,17 @@ class KotlinSmtpAutoConfiguration {
         // TODO(storage): DB/S3 등으로 교체 시 구현체만 바꾸도록 경계를 유지합니다.
         FileMessageStore(tempDir = props.storage.tempPath)
 
+    /**
+     * 기본 보낸 메일함 저장소를 파일 기반으로 제공합니다.
+     *
+     * @param props SMTP 서버 설정
+     * @return 파일 기반 보낸 메일함 저장소
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    fun sentMessageStore(props: SmtpServerProperties): SentMessageStore =
+        FileSentMessageStore(mailboxDir = props.storage.mailboxPath)
+
     @Bean
     @ConditionalOnMissingBean
     fun smtpUserHandler(
@@ -185,6 +289,7 @@ class KotlinSmtpAutoConfiguration {
         userHandler: SmtpUserHandler,
         mailingListHandler: SmtpMailingListHandler,
         messageStore: MessageStore,
+        sentMessageStore: SentMessageStore,
         authService: AuthService,
         eventHooksProvider: ObjectProvider<SmtpEventHook>,
     ): List<SmtpServer> {
@@ -197,6 +302,8 @@ class KotlinSmtpAutoConfiguration {
         val handlerCreator = {
             SimpleSmtpProtocolHandler(
                 messageStore = messageStore,
+                sentMessageStore = sentMessageStore,
+                sentArchiveMode = props.sentArchive.mode,
                 relayEnabled = props.relay.enabled,
                 deliveryService = deliveryService,
                 spooler = spooler,

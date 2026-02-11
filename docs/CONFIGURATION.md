@@ -26,7 +26,22 @@ smtp:
     listsDir: ./data/lists
   spool:
     dir: ./data/spool
+  sentArchive:
+    mode: TRUSTED_SUBMISSION
 ```
+
+기본 구현에서는 발신 메일 사본을
+`smtp.storage.mailboxDir/<owner>/sent/` 경로에 저장합니다.
+필요 시 `SentMessageStore` 빈을 교체해 S3/DB 기반으로 확장할 수 있습니다.
+
+저장 소유자 결정:
+- 인증 세션: AUTH 사용자 기준 (`authenticatedUsername`)
+- 무인증 세션: envelope sender local-part 기준
+
+`smtp.sentArchive.mode`:
+- `TRUSTED_SUBMISSION`(기본): AUTH 인증 세션 또는 외부 릴레이 제출 메시지 저장
+- `AUTHENTICATED_ONLY`: AUTH 인증 세션만 저장
+- `DISABLED`: 보낸 메일함 저장 비활성화
 
 ### 전체 설정 예시
 
@@ -131,16 +146,37 @@ smtp:
 ```yaml
 smtp:
   spool:
+    type: auto
     dir: ./data/spool
     maxRetries: 5
     retryDelaySeconds: 60
 ```
+
+### Redis 백엔드 설정
+
+```yaml
+smtp:
+  spool:
+    type: redis
+    dir: ./data/spool
+    redis:
+      keyPrefix: kotlin-smtp:spool
+      maxRawBytes: 26214400
+      lockTtlSeconds: 900
+```
+
+- `type=auto`는 `StringRedisTemplate` 빈이 있으면 Redis, 없으면 file을 자동 선택합니다.
+- `type=redis`일 때 원문/큐/락/메타 상태를 Redis에 저장합니다.
+- 배달 시점에만 임시 파일을 생성해 사용 후 정리합니다.
+- `StringRedisTemplate` 빈이 없으면 부팅 시 스풀 빈 구성이 실패합니다.
+- Redis 단일/클러스터/Sentinel 구성은 사용자 애플리케이션의 Redis 설정을 그대로 사용합니다.
 
 ### 고급 설정
 
 ```yaml
 smtp:
   spool:
+    type: auto
     dir: ${SMTP_SPOOL_DIR:./data/spool}
     maxRetries: 5
     retryDelaySeconds: 60
@@ -150,9 +186,13 @@ smtp:
 
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
+| `type` | auto | 스풀 저장소 타입 (`auto`, `file`, `redis`) |
 | `dir` | - | 스풀 디렉터리 경로 (필수) |
 | `maxRetries` | 5 | 최대 재시도 횟수 |
 | `retryDelaySeconds` | 60 | 초기 재시도 지연 시간(초) |
+| `redis.keyPrefix` | `kotlin-smtp:spool` | Redis 키 접두사 (`type=redis/auto`에서 Redis 선택 시 사용) |
+| `redis.maxRawBytes` | `26214400` | Redis에 허용할 원문 최대 바이트 (`type=redis/auto`에서 Redis 선택 시 사용) |
+| `redis.lockTtlSeconds` | `900` | Redis 락 TTL(초) (`type=redis/auto`에서 Redis 선택 시 사용) |
 
 ### 재시도 정책
 
@@ -205,6 +245,9 @@ smtp:
   relay:
     enabled: true
     requireAuthForRelay: true
+    allowedClientCidrs:
+      - 10.0.0.0/8
+      - 192.168.0.0/16
 ```
 
 ### Smart Host 설정
@@ -261,6 +304,11 @@ smtp:
 | `enabled` | false | 릴�이 활성화 |
 | `requireAuthForRelay` | true | 릴�이에 인증 필수 |
 | `allowedSenderDomains` | [] | 인증 없이 허용할 발신 도메인 |
+| `allowedClientCidrs` | [] | 인증 없이 허용할 클라이언트 CIDR |
+
+`allowedSenderDomains`/`allowedClientCidrs`는 둘 다 설정할 수 있으며,
+무인증 릴레이 요청은 두 조건을 모두 만족해야 허용됩니다.
+더 복잡한 정책(DB 조회/IP 평판 등)이 필요하면 `RelayAccessPolicy` 빈을 직접 구현해 교체할 수 있습니다.
 
 ## Rate Limit 설정
 

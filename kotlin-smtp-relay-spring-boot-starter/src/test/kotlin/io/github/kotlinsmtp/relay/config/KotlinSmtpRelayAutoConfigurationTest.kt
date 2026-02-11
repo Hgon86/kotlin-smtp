@@ -3,6 +3,8 @@ package io.github.kotlinsmtp.relay.config
 import io.github.kotlinsmtp.relay.api.DsnSender
 import io.github.kotlinsmtp.relay.api.DsnStore
 import io.github.kotlinsmtp.relay.api.MailRelay
+import io.github.kotlinsmtp.relay.api.RelayAccessContext
+import io.github.kotlinsmtp.relay.api.RelayAccessDecision
 import io.github.kotlinsmtp.relay.api.RelayAccessPolicy
 import io.github.kotlinsmtp.relay.api.RelayRoute
 import io.github.kotlinsmtp.relay.api.RelayRouteResolver
@@ -41,6 +43,28 @@ class KotlinSmtpRelayAutoConfigurationTest {
                 assertThat(context).hasSingleBean(MailRelay::class.java)
                 assertThat(context).hasSingleBean(RelayAccessPolicy::class.java)
                 assertThat(context).hasSingleBean(RelayRouteResolver::class.java)
+            }
+    }
+
+    @Test
+    fun `unauthenticated relay should be denied when client ip is outside allowed cidr`() {
+        contextRunner
+            .withPropertyValues(
+                "smtp.relay.enabled=true",
+                "smtp.relay.requireAuthForRelay=false",
+                "smtp.relay.allowedClientCidrs[0]=10.0.0.0/8",
+            )
+            .run { context ->
+                val policy = context.getBean(RelayAccessPolicy::class.java)
+                val decision = policy.evaluate(
+                    RelayAccessContext(
+                        envelopeSender = "user@example.com",
+                        recipient = "target@external.test",
+                        authenticated = false,
+                        peerAddress = "203.0.113.10:2525",
+                    ),
+                )
+                assertThat(decision).isInstanceOf(RelayAccessDecision.Denied::class.java)
             }
     }
 

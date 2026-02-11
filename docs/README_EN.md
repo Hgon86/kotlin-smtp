@@ -2,10 +2,10 @@
 
 ## Table of Contents
 
-1. [Getting Started](README_EN.md) - Quick start guide
-2. [Architecture](ARCHITECTURE_EN.md) - System architecture and how it works
-3. [Configuration Guide](CONFIGURATION_EN.md) - Detailed configuration options
-4. [Extending](EXTENSION_EN.md) - Custom implementations and extension methods
+1. [Root README](../README.md) - Quick start and module overview
+2. [Architecture](ARCHITECTURE.md) - Runtime architecture and boundaries
+3. [Configuration Guide](CONFIGURATION.md) - Detailed configuration options
+4. [Extending](EXTENSION.md) - Custom implementations and extension methods
 
 ## Overview
 
@@ -37,7 +37,7 @@ kotlin-smtp/
 
 ```kotlin
 dependencies {
-    implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:0.1.0")
+    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:VERSION")
 }
 ```
 
@@ -54,10 +54,23 @@ smtp:
     tempDir: ./data/temp
     listsDir: ./data/lists
   spool:
+    type: auto
     dir: ./data/spool
     maxRetries: 5
     retryDelaySeconds: 60
+  sentArchive:
+    mode: TRUSTED_SUBMISSION
+  relay:
+    enabled: true
+    requireAuthForRelay: false
+    allowedClientCidrs:
+      - 10.0.0.0/8
 ```
+
+Notes:
+- Spool backend can be selected with `smtp.spool.type` (`auto|file|redis`).
+- Sent mailbox archiving policy is controlled by `smtp.sentArchive.mode`.
+- Relay IP restrictions use `smtp.relay.allowedClientCidrs`; advanced rules can be implemented with a custom `RelayAccessPolicy` bean.
 
 ### 3. Run
 

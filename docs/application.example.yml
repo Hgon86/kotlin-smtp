@@ -113,7 +113,8 @@ smtp:
     #     username: relay-user
     #     password: ${RELAY_PASSWORD}
 
-    allowedSenderDomains: [] # 인증 없이 릴레이를 허용할 발신 도메인 allowlist(비우면 allowlist 예외 비활성)
+    allowedSenderDomains: [] # 인증 없이 릴레이를 허용할 발신 도메인 allowlist(비우면 도메인 제한 비활성)
+    allowedClientCidrs: [] # 인증 없이 릴레이를 허용할 클라이언트 CIDR allowlist (예: 10.0.0.0/8)
     requireAuthForRelay: true
     outboundTls:
       ports: [25] # 운영 기본은 25. 개발환경에서만 [25, 587] 등으로 확장 권장
@@ -127,9 +128,26 @@ smtp:
 
   # 스풀러 기본 설정 (필수: dir)
   spool:
+    # 스풀 타입 선택: auto | file | redis
+    # - auto: StringRedisTemplate 빈이 있으면 redis, 없으면 file
+    # - file: .eml/.json/.lock 파일 기반
+    # - redis: 원문/큐/락/메타를 Redis에 저장하고, 배달 시점에만 임시 파일 사용
+    type: auto
     dir: ${SMTP_SPOOL_DIR:./data/spool}
     maxRetries: 5
     retryDelaySeconds: 60
+    # Redis 백엔드 예시
+    # redis:
+    #   keyPrefix: ${SMTP_SPOOL_REDIS_KEY_PREFIX:kotlin-smtp:spool}
+    #   maxRawBytes: ${SMTP_SPOOL_REDIS_MAX_RAW_BYTES:26214400}
+    #   lockTtlSeconds: ${SMTP_SPOOL_REDIS_LOCK_TTL_SECONDS:900}
+
+  # 보낸 메일함 저장 정책
+  sentArchive:
+    # TRUSTED_SUBMISSION: AUTH 또는 외부 릴레이 제출 저장(기본)
+    # AUTHENTICATED_ONLY: AUTH 인증 세션만 저장
+    # DISABLED: 저장 비활성화
+    mode: ${SMTP_SENT_ARCHIVE_MODE:TRUSTED_SUBMISSION}
 
   auth:
     enabled: true

@@ -11,12 +11,32 @@ public fun interface RelayAccessPolicy {
  * @property envelopeSender MAIL FROM(reverse-path)
  * @property recipient RCPT TO
  * @property authenticated 세션 인증 여부
+ * @property peerAddress 클라이언트 주소(예: `203.0.113.10:587`, `[2001:db8::1]:587`)
  */
 public data class RelayAccessContext(
     public val envelopeSender: String?,
     public val recipient: String,
     public val authenticated: Boolean,
-)
+    public val peerAddress: String? = null,
+) {
+    /**
+     * 기존 3-파라미터 생성자 바이너리 호환을 유지합니다.
+     *
+     * @param envelopeSender MAIL FROM(reverse-path)
+     * @param recipient RCPT TO
+     * @param authenticated 세션 인증 여부
+     */
+    public constructor(
+        envelopeSender: String?,
+        recipient: String,
+        authenticated: Boolean,
+    ) : this(
+        envelopeSender = envelopeSender,
+        recipient = recipient,
+        authenticated = authenticated,
+        peerAddress = null,
+    )
+}
 
 public sealed interface RelayAccessDecision {
     public data object Allowed : RelayAccessDecision

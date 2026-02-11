@@ -1,6 +1,8 @@
 package io.github.kotlinsmtp.protocol.handler
 
 import io.github.kotlinsmtp.storage.MessageStore
+import io.github.kotlinsmtp.storage.SentArchiveMode
+import io.github.kotlinsmtp.storage.SentMessageStore
 import io.github.kotlinsmtp.spool.MailDeliveryService
 import io.github.kotlinsmtp.spool.MailSpooler
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -17,6 +19,8 @@ private val log = KotlinLogging.logger {}
 class SimpleSmtpProtocolHandler(
     private val dispatcherIO: CoroutineDispatcher = Dispatchers.IO,
     private val messageStore: MessageStore,
+    private val sentMessageStore: SentMessageStore,
+    private val sentArchiveMode: SentArchiveMode,
     private val relayEnabled: Boolean,
     private val deliveryService: MailDeliveryService,
     private val spooler: MailSpooler?,
@@ -39,7 +43,12 @@ class SimpleSmtpProtocolHandler(
                 throw io.github.kotlinsmtp.exception.SmtpSendResponse(550, "5.7.1 Relay access denied")
             }
             // 오픈 릴레이 방지: RCPT 단계에서 정책을 조기 검증합니다.
-            deliveryService.enforceRelayPolicySmtp(sender?.ifBlank { null }, recipient, sessionData.isAuthenticated)
+            deliveryService.enforceRelayPolicySmtp(
+                sender = sender?.ifBlank { null },
+                recipient = recipient,
+                authenticated = sessionData.isAuthenticated,
+                peerAddress = sessionData.peerAddress,
+            )
         }
         recipients.add(recipient)
         log.info { "Recipient added: $recipient" }
@@ -77,6 +86,10 @@ class SimpleSmtpProtocolHandler(
                 receivedHeaderValue = receivedValue,
                 rawInput = inputStream,
             )
+            archiveSentMailboxCopy(
+                tempFile = tempFile,
+                messageId = messageId,
+            )
 
             if (spooler != null) {
                 spooler.enqueue(
@@ -85,6 +98,7 @@ class SimpleSmtpProtocolHandler(
                     recipients = recipients.toList(),
                     messageId = messageId,
                     authenticated = sessionData.isAuthenticated,
+                    peerAddress = sessionData.peerAddress,
                     dsnEnvid = sessionData.dsnEnvid,
                     dsnRet = sessionData.dsnRet,
                     rcptDsn = sessionData.rcptDsnView,
@@ -113,6 +127,7 @@ class SimpleSmtpProtocolHandler(
                     rawPath = tempFile,
                     messageId = messageId,
                     authenticated = sessionData.isAuthenticated,
+                    peerAddress = sessionData.peerAddress,
                     generateDsnOnFailure = true,
                     rcptNotify = sessionData.rcptDsnView[recipient]?.notify,
                     rcptOrcpt = sessionData.rcptDsnView[recipient]?.orcpt,
@@ -124,6 +139,49 @@ class SimpleSmtpProtocolHandler(
             }.onFailure {
                 log.error(it) { "Failed to deliver synchronously: $recipient" }
             }
+        }
+    }
+
+    /**
+     * 인증 세션에서 제출된 메시지를 보낸 메일함에 기록합니다.
+     *
+     * 저장 실패는 SMTP 트랜잭션 실패로 간주하지 않고 경고 로그만 남깁니다.
+     *
+     * @param tempFile 임시 원문 파일 경로
+     * @param messageId 메시지 식별자
+     */
+    private fun archiveSentMailboxCopy(tempFile: Path, messageId: String) {
+        if (!shouldArchiveSentMessage()) return
+
+        runCatching {
+            sentMessageStore.archiveSubmittedMessage(
+                rawPath = tempFile,
+                envelopeSender = sender,
+                submittingUser = sessionData.authenticatedUsername,
+                recipients = recipients.toList(),
+                messageId = messageId,
+                authenticated = sessionData.isAuthenticated,
+            )
+        }.onFailure { e ->
+            log.warn(e) { "Failed to archive submitted message for sender=${sender ?: "?"} messageId=$messageId" }
+        }
+    }
+
+    /**
+     * 현재 트랜잭션이 보낸 메일함 저장 대상인지 판별합니다.
+     *
+     * @return 저장 대상 여부
+     */
+    private fun shouldArchiveSentMessage(): Boolean {
+        val hasExternalRecipient = recipients.any { recipient ->
+            val domain = recipient.substringAfterLast('@', "")
+            !deliveryService.isLocalDomain(domain)
+        }
+
+        return when (sentArchiveMode) {
+            SentArchiveMode.DISABLED -> false
+            SentArchiveMode.AUTHENTICATED_ONLY -> sessionData.isAuthenticated
+            SentArchiveMode.TRUSTED_SUBMISSION -> sessionData.isAuthenticated || hasExternalRecipient
         }
     }
 

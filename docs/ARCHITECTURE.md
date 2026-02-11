@@ -179,6 +179,7 @@ DB 저장소를 사용하려면:
 릴레이 모듈 사용 시:
 - 기본적으로 `requireAuthForRelay: true`
 - `allowedSenderDomains`로 특정 발신 도메인만 허용 가능
+- `allowedClientCidrs`로 특정 클라이언트 IP/CIDR만 허용 가능
 - 인증 없이는 외부 도메인으로 릴레이 불가
 
 ## 성능

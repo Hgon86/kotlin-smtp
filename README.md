@@ -53,10 +53,46 @@ smtp:
     tempDir: ./data/temp
     listsDir: ./data/lists
   spool:
+    type: auto # auto | file | redis
     dir: ./data/spool
     maxRetries: 5
     retryDelaySeconds: 60
+  sentArchive:
+    mode: TRUSTED_SUBMISSION # TRUSTED_SUBMISSION | AUTHENTICATED_ONLY | DISABLED
 ```
+
+Redis 스풀 백엔드를 사용하려면:
+
+```yaml
+smtp:
+  spool:
+    type: redis
+    dir: ./data/spool
+    redis:
+      keyPrefix: kotlin-smtp:spool
+      maxRawBytes: 26214400
+      lockTtlSeconds: 900
+```
+
+- `type=auto`는 `StringRedisTemplate` 빈이 있으면 Redis, 없으면 file을 자동 선택합니다.
+- `type=redis`일 때 큐/락/메타데이터는 Redis에 저장됩니다.
+- 원문 `.eml`도 Redis에 저장됩니다(지속 파일 저장 없음).
+- 배달 시점에만 임시 파일을 생성해 사용 후 즉시 정리합니다.
+- 애플리케이션에 `StringRedisTemplate` 빈이 있어야 합니다.
+- Redis 단일/클러스터/Sentinel 구성은 애플리케이션 측 설정을 그대로 따릅니다.
+
+기본 구현에서는 `mailboxDir/<owner>/sent/` 경로에 보낸 메일함 사본을 저장합니다.
+- 인증 세션은 AUTH 사용자(`authenticatedUsername`)를 소유자로 사용합니다.
+- 무인증 제출은 envelope sender local-part를 소유자로 사용합니다.
+사용자가 `SentMessageStore` 빈을 직접 등록하면 S3/DB+ObjectStorage 등 원하는 방식으로 교체할 수 있습니다.
+
+보낸 메일함 저장 기준은 `smtp.sentArchive.mode`로 제어합니다.
+- `TRUSTED_SUBMISSION`(기본): AUTH 인증 세션 또는 외부 릴레이 제출 메시지 저장
+- `AUTHENTICATED_ONLY`: AUTH 인증 세션만 저장
+- `DISABLED`: 저장 안 함
+
+릴레이 무인증 제출을 IP 기준으로 제한하려면 `smtp.relay.allowedClientCidrs`를 사용하세요.
+더 복잡한 기준(DB 조회/사내 정책 엔진)이 필요하면 `RelayAccessPolicy` 빈을 커스텀 구현해 교체할 수 있습니다.
 
 전체 예시는 `docs/application.example.yml`를 참고하세요.
 
@@ -109,36 +145,11 @@ management:
 
 이 경우 `/actuator/prometheus`가 **관리 포트**에서만 열립니다.
 
-## 로컬 배포 검증
-
-```bash
-./gradlew publishToMavenLocal
-```
-
 ## Example App 실행
 
 ```bash
 ./gradlew :kotlin-smtp-example-app:bootRun
 ```
-
-## CI / 배포 자동화
-
-- CI: `.github/workflows/ci.yml`
-  - PR/Push에서 Linux/Windows `./gradlew test`
-- Publish: `.github/workflows/publish.yml`
-  - 태그(`v*`) 또는 수동 실행으로 `./gradlew publish`
-
-필요 시 GitHub Secrets:
-- `OSSRH_USERNAME`, `OSSRH_PASSWORD`
-- `SIGNING_KEY`, `SIGNING_PASSWORD`
-
-## Maven Central 준비 상태
-
-루트 빌드에서 publishable 모듈에 공통 설정을 적용합니다.
-- `maven-publish` + `signing`
-- `sourcesJar` / `javadocJar`
-- POM 메타데이터(license/scm/developers)
-- SNAPSHOT/RELEASE 저장소 분기(OSSRH)
 
 ## 문서
 

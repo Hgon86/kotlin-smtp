@@ -19,6 +19,15 @@ class RelayProperties {
     var allowedSenderDomains: List<String> = emptyList()
 
     /**
+     * 인증 없이 릴레이를 허용할 클라이언트 CIDR allowlist.
+     *
+     * 예: `10.0.0.0/8`, `192.168.10.0/24`, `2001:db8::/32`
+     *
+     * 빈 리스트면 클라이언트 IP 기반 제한을 사용하지 않습니다.
+     */
+    var allowedClientCidrs: List<String> = emptyList()
+
+    /**
      * 모든 도메인에 적용할 기본 Smart Host 경로.
      *
      * null이면 기본 동작은 MX 직접 전송입니다.

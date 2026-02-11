@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.github.hgon86"
-version = "0.1.0"
+version = "0.1.2"
 
 java {
     toolchain {
@@ -19,8 +19,9 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":kotlin-smtp-spring-boot-starter"))
-    implementation(project(":kotlin-smtp-relay-spring-boot-starter"))
+    // Maven Central에 배포된 라이브러리 사용
+    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:0.1.1")
+    implementation("io.github.hgon86:kotlin-smtp-relay-spring-boot-starter:0.1.1")
     implementation("org.springframework.boot:spring-boot-starter")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 

@@ -23,6 +23,7 @@ internal object SmtpSessionDataResetter {
         val usedEhlo = if (preserveGreeting) current.usedEhlo else false
 
         val authenticated = if (preserveAuth) current.isAuthenticated else false
+        val authenticatedUsername = if (preserveAuth) current.authenticatedUsername else null
         val authFailedAttempts = if (preserveAuth) current.authFailedAttempts else null
         val authLockedUntilEpochMs = if (preserveAuth) current.authLockedUntilEpochMs else null
 
@@ -35,6 +36,7 @@ internal object SmtpSessionDataResetter {
             it.tlsActive = tlsActive
 
             it.isAuthenticated = authenticated
+            it.authenticatedUsername = authenticatedUsername
             it.authFailedAttempts = authFailedAttempts
             it.authLockedUntilEpochMs = authLockedUntilEpochMs
 

@@ -148,6 +148,7 @@ internal class AuthCommand : SmtpCommand(
         session.sessionData.authLockedUntilEpochMs = null
         session.server.authRateLimiter?.recordSuccess(clientIp, username)
         session.sessionData.isAuthenticated = true
+        session.sessionData.authenticatedUsername = username
         session.sendResponse(OKAY.code, "Authentication successful")
     }
 

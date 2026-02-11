@@ -1,5 +1,6 @@
 package io.github.kotlinsmtp.config
 
+import io.github.kotlinsmtp.storage.SentArchiveMode
 import org.springframework.boot.context.properties.ConfigurationProperties
 import java.nio.file.Path
 
@@ -13,6 +14,7 @@ class SmtpServerProperties {
     var routing: RoutingConfig = RoutingConfig()
     var relay: RelayConfig = RelayConfig()
     var spool: SpoolConfig = SpoolConfig()
+    var sentArchive: SentArchiveConfig = SentArchiveConfig()
     var auth: AuthConfig = AuthConfig()
     var rateLimit: RateLimitConfig = RateLimitConfig()
     var features: FeaturesConfig = FeaturesConfig()
@@ -85,10 +87,24 @@ class SmtpServerProperties {
     }
 
     data class SpoolConfig(
+        var type: SpoolType = SpoolType.AUTO,
         var dir: String = "",
         var maxRetries: Int = 5,
         var retryDelaySeconds: Long = 60,
+        var redis: RedisConfig = RedisConfig(),
     ) {
+        enum class SpoolType {
+            AUTO,
+            FILE,
+            REDIS,
+        }
+
+        data class RedisConfig(
+            var keyPrefix: String = "kotlin-smtp:spool",
+            var maxRawBytes: Long = 25L * 1024L * 1024L,
+            var lockTtlSeconds: Long = 900,
+        )
+
         val path: Path get() = Path.of(dir)
 
         fun validate() {
@@ -101,8 +117,28 @@ class SmtpServerProperties {
             require(retryDelaySeconds > 0) {
                 "smtp.spool.retryDelaySeconds must be > 0"
             }
+            if (type == SpoolType.REDIS) {
+                require(redis.keyPrefix.isNotBlank()) {
+                    "smtp.spool.redis.keyPrefix must not be blank when smtp.spool.type=redis"
+                }
+                require(redis.maxRawBytes > 0) {
+                    "smtp.spool.redis.maxRawBytes must be > 0 when smtp.spool.type=redis"
+                }
+                require(redis.lockTtlSeconds > 0) {
+                    "smtp.spool.redis.lockTtlSeconds must be > 0 when smtp.spool.type=redis"
+                }
+            }
         }
     }
+
+    /**
+     * 보낸 메일함 저장 정책입니다.
+     *
+     * @property mode 보낸 메일함 저장 트리거 정책
+     */
+    data class SentArchiveConfig(
+        var mode: SentArchiveMode = SentArchiveMode.TRUSTED_SUBMISSION,
+    )
 
     data class AuthConfig(
         var enabled: Boolean = false,

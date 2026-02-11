@@ -50,4 +50,5 @@ public class SessionData {
     public var authFailedAttempts: Int? = null; internal set
     public var authLockedUntilEpochMs: Long? = null; internal set
     public var isAuthenticated: Boolean = false; internal set
+    public var authenticatedUsername: String? = null; internal set
 }

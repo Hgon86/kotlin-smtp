@@ -14,6 +14,7 @@ data class SpoolMetadata(
     var recipients: MutableList<String>,
     val messageId: String,
     val authenticated: Boolean,
+    val peerAddress: String? = null,
     val dsnRet: String? = null,
     val dsnEnvid: String? = null,
     var rcptDsn: MutableMap<String, RcptDsn> = mutableMapOf(),

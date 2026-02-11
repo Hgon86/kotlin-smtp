@@ -13,7 +13,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,9 +43,9 @@ private data class DeliveryAttemptResult(
 )
 
 /**
- * 파일 기반 스풀러로 메일 전달과 재시도를 관리합니다.
+ * 스풀러로 메일 전달과 재시도를 관리합니다.
  *
- * 메시지는 스풀 디렉터리에 파일(.eml/.json) 형태로 저장되며,
+ * 저장소 구현체에 따라 파일 또는 Redis에 메시지를 저장하며,
  * 백그라운드 워커가 재시도 간격을 두고 반복 전달을 시도합니다.
  *
  * @param spoolDir 스풀 디렉터리 경로
@@ -52,6 +55,8 @@ private data class DeliveryAttemptResult(
  * @param deliveryService 메일 전달 서비스
  * @param dsnSenderProvider DSN 발송기 제공자
  * @param spoolMetrics 스풀 메트릭 수집기
+ * @param metadataStore 스풀 메타데이터 저장소 구현체
+ * @param lockManager 스풀 락 관리자 구현체
  */
 class MailSpooler(
     private val spoolDir: Path,
@@ -61,15 +66,18 @@ class MailSpooler(
     private val deliveryService: MailDeliveryService,
     private val dsnSenderProvider: () -> DsnSender?,
     private val spoolMetrics: SpoolMetrics = SpoolMetrics.NOOP,
+    injectedMetadataStore: SpoolMetadataStore? = null,
+    injectedLockManager: SpoolLockManager? = null,
 ) : SmtpDomainSpooler {
     private val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + dispatcher)
     private var worker: Job? = null
     private val staleLockThreshold = Duration.ofMinutes(15)
     private val runMutex = Mutex() // triggerOnce()와 백그라운드 워커의 동시 실행 방지
-    private val lockManager = SpoolLockManager(spoolDir, staleLockThreshold)
+    private val lockManager = injectedLockManager ?: FileSpoolLockManager(spoolDir, staleLockThreshold)
     private val failurePolicy = SpoolFailurePolicy()
-    private val metadataStore = SpoolMetadataStore(spoolDir)
+    private val metadataStore = injectedMetadataStore ?: FileSpoolMetadataStore(spoolDir)
     private val triggerDispatcher = SpoolTriggerDispatcher(scope) { domain -> runOnce(domain) }
+    private val lockRefreshIntervalMillis = 30_000L
 
     init {
         metadataStore.initializeDirectory()
@@ -124,6 +132,7 @@ class MailSpooler(
      * @param recipients 수신자 목록
      * @param messageId 메시지 식별자
      * @param authenticated 인증된 메시지 여부
+     * @param peerAddress 클라이언트 주소
      * @param dsnRet DSN RET 옵션
      * @param dsnEnvid DSN ENVID 옵션
      * @param rcptDsn 수신자별 DSN 옵션
@@ -135,6 +144,7 @@ class MailSpooler(
         recipients: List<String>,
         messageId: String,
         authenticated: Boolean,
+        peerAddress: String? = null,
         dsnRet: String? = null,
         dsnEnvid: String? = null,
         rcptDsn: Map<String, RcptDsn> = emptyMap(),
@@ -145,6 +155,7 @@ class MailSpooler(
             recipients = recipients,
             messageId = messageId,
             authenticated = authenticated,
+            peerAddress = peerAddress,
             dsnRet = dsnRet,
             dsnEnvid = dsnEnvid,
             rcptDsn = rcptDsn,
@@ -248,37 +259,101 @@ class MailSpooler(
         val meta = metadataStore.readMeta(file) ?: return
         if (meta.nextAttemptAt.isAfter(Instant.now())) return
 
-        val recipientsToProcess = recipientsToProcess(meta.recipients, targetDomain)
-        if (recipientsToProcess.isEmpty()) return
-        val attemptedAllRecipients = recipientsToProcess.size == meta.recipients.size
+        val deliveryRawPath = runCatching { metadataStore.prepareRawMessageForDelivery(file) }
+            .getOrElse { throwable ->
+                handlePreparationFailure(file, meta, throwable)
+                return
+            }
+        try {
+            withLockHeartbeat(file) {
+                val recipientsToProcess = recipientsToProcess(meta.recipients, targetDomain)
+                if (recipientsToProcess.isEmpty()) return@withLockHeartbeat
+                val attemptedAllRecipients = recipientsToProcess.size == meta.recipients.size
 
-        val deliveryResult = deliverRecipients(meta, recipientsToProcess, file)
-        spoolMetrics.onDeliveryResults(
-            deliveredCount = deliveryResult.delivered.size,
-            transientFailureCount = deliveryResult.transientFailures.size,
-            permanentFailureCount = deliveryResult.permanentFailures.size,
-        )
+                val deliveryResult = deliverRecipients(meta, recipientsToProcess, deliveryRawPath)
+                spoolMetrics.onDeliveryResults(
+                    deliveredCount = deliveryResult.delivered.size,
+                    transientFailureCount = deliveryResult.transientFailures.size,
+                    permanentFailureCount = deliveryResult.permanentFailures.size,
+                )
 
-        val rcptDsnSnapshot = meta.rcptDsn.toMap()
-        val permanentDsnTargets = failurePolicy.selectFailureDsnTargets(deliveryResult.permanentFailures, rcptDsnSnapshot)
+                val rcptDsnSnapshot = meta.rcptDsn.toMap()
+                val permanentDsnTargets = failurePolicy.selectFailureDsnTargets(deliveryResult.permanentFailures, rcptDsnSnapshot)
 
-        updateRecipientsAfterDelivery(meta, deliveryResult.delivered, deliveryResult.permanentFailures.keys)
-        sendPermanentFailureDsn(meta, file, permanentDsnTargets, rcptDsnSnapshot)
+                updateRecipientsAfterDelivery(meta, deliveryResult.delivered, deliveryResult.permanentFailures.keys)
+                sendPermanentFailureDsn(meta, deliveryRawPath, permanentDsnTargets, rcptDsnSnapshot)
 
-        if (meta.recipients.isEmpty()) {
-            metadataStore.removeMessage(file)
-            spoolMetrics.onCompleted()
-            log.info { "Spool completed and removed: $file (id=${meta.id})" }
+                if (meta.recipients.isEmpty()) {
+                    completeMessage(file, meta)
+                    return@withLockHeartbeat
+                }
+
+                handleTransientFailures(
+                    meta = meta,
+                    spoolReferencePath = file,
+                    deliveryRawPath = deliveryRawPath,
+                    transientFailures = deliveryResult.transientFailures,
+                    attemptedAllRecipients = attemptedAllRecipients,
+                    targetDomain = targetDomain,
+                )
+            }
+        } finally {
+            metadataStore.cleanupPreparedRawMessage(deliveryRawPath)
+        }
+    }
+
+    /**
+     * 락을 유지하면서 메시지 처리 블록을 수행합니다.
+     *
+     * @param spoolReferencePath 스풀 메시지 식별 경로
+     * @param block 실제 처리 블록
+     */
+    private suspend fun withLockHeartbeat(spoolReferencePath: Path, block: suspend () -> Unit) {
+        coroutineScope {
+            val heartbeat = launch {
+                while (isActive) {
+                    delay(lockRefreshIntervalMillis)
+                    val refreshed = runCatching { lockManager.refreshLock(spoolReferencePath) }.getOrDefault(false)
+                    if (!refreshed) {
+                        throw IllegalStateException("Failed to refresh spool lock: $spoolReferencePath")
+                    }
+                }
+            }
+            try {
+                block()
+            } finally {
+                heartbeat.cancelAndJoin()
+            }
+        }
+    }
+
+    /**
+     * 배달 준비 단계 실패를 분류해 후속 처리를 수행합니다.
+     *
+     * @param spoolReferencePath 스풀 메시지 식별 경로
+     * @param meta 스풀 메타데이터
+     * @param throwable 발생 예외
+     */
+    private fun handlePreparationFailure(spoolReferencePath: Path, meta: SpoolMetadata, throwable: Throwable) {
+        if (throwable is SpoolCorruptedMessageException) {
+            log.warn(throwable) { "Dropping corrupted spool message: $spoolReferencePath (id=${meta.id})" }
+            metadataStore.removeMessage(spoolReferencePath)
+            spoolMetrics.onDropped()
             return
         }
+        throw throwable
+    }
 
-        handleTransientFailures(
-            meta = meta,
-            file = file,
-            transientFailures = deliveryResult.transientFailures,
-            attemptedAllRecipients = attemptedAllRecipients,
-            targetDomain = targetDomain,
-        )
+    /**
+     * 전달이 끝난 메시지를 스풀에서 제거합니다.
+     *
+     * @param spoolReferencePath 스풀 메시지 식별 경로
+     * @param meta 스풀 메타데이터
+     */
+    private fun completeMessage(spoolReferencePath: Path, meta: SpoolMetadata) {
+        metadataStore.removeMessage(spoolReferencePath)
+        spoolMetrics.onCompleted()
+        log.info { "Spool completed and removed: $spoolReferencePath (id=${meta.id})" }
     }
 
     /**
@@ -308,6 +383,7 @@ class MailSpooler(
                     rawPath = file,
                     messageId = meta.messageId,
                     authenticated = meta.authenticated,
+                    peerAddress = meta.peerAddress,
                     // 스풀러가 재시도/최종 DSN을 책임지므로 여기서는 DSN을 생성하지 않습니다.
                     generateDsnOnFailure = false,
                 )
@@ -387,14 +463,16 @@ class MailSpooler(
      * 재시도 스케줄링 또는 최대 재시도 초과 시 폐기를 결정합니다.
      *
      * @param meta 스풀 메타데이터
-     * @param file 메시지 파일 경로
+     * @param spoolReferencePath 스풀 메시지 식별 경로
+     * @param deliveryRawPath 배달에 사용한 원문 파일 경로
      * @param transientFailures 일시 실패한 수신자와 사유
      * @param attemptedAllRecipients 전체 수신자 처리 여부
      * @param targetDomain 처리 대상 도메인(ETRN용)
      */
     private fun handleTransientFailures(
         meta: SpoolMetadata,
-        file: Path,
+        spoolReferencePath: Path,
+        deliveryRawPath: Path,
         transientFailures: Map<String, String>,
         attemptedAllRecipients: Boolean,
         targetDomain: String?,
@@ -419,8 +497,8 @@ class MailSpooler(
 
         meta.attempt += 1
         if (meta.attempt >= maxRetries) {
-            log.warn { "Spool drop after max retries: $file (id=${meta.id})" }
-            metadataStore.removeMessage(file)
+            log.warn { "Spool drop after max retries: $spoolReferencePath (id=${meta.id})" }
+            metadataStore.removeMessage(spoolReferencePath)
             spoolMetrics.onDropped()
             val dsnTargets = failurePolicy.selectFailureDsnTargets(transientFailures, meta.rcptDsn)
             val details = dsnTargets.entries.map { it.key to it.value }
@@ -429,7 +507,7 @@ class MailSpooler(
                     sender = meta.sender,
                     failedRecipients = details,
                     originalMessageId = meta.messageId,
-                    originalMessagePath = file,
+                    originalMessagePath = deliveryRawPath,
                     dsnEnvid = meta.dsnEnvid,
                     dsnRet = meta.dsnRet,
                     rcptDsn = meta.rcptDsn.filterKeys { it in dsnTargets.keys },

@@ -44,13 +44,14 @@ class MailDeliveryService(
         rawPath: Path,
         messageId: String,
         authenticated: Boolean,
+        peerAddress: String? = null,
         generateDsnOnFailure: Boolean = true,
         rcptNotify: String? = null,
         rcptOrcpt: String? = null,
         dsnEnvid: String? = null,
         dsnRet: String? = null,
     ) = withContext(dispatcher) {
-        enforceRelayPolicySmtp(envelopeSender, recipient, authenticated)
+        enforceRelayPolicySmtp(envelopeSender, recipient, authenticated, peerAddress)
         val request = RelayRequest(
             messageId = messageId,
             envelopeSender = envelopeSender,
@@ -85,13 +86,24 @@ class MailDeliveryService(
      *
      * NOTE: 여기서 던진 예외는 세션 레벨에서는 즉시 거부 응답으로,
      *       스풀/동기 전달에서는 DSN 처리 경로로 흘러갈 수 있습니다.
+     *
+     * @param sender envelope sender
+     * @param recipient 수신자
+     * @param authenticated 인증 여부
+     * @param peerAddress 클라이언트 주소
      */
-    fun enforceRelayPolicySmtp(sender: String?, recipient: String, authenticated: Boolean) {
+    fun enforceRelayPolicySmtp(
+        sender: String?,
+        recipient: String,
+        authenticated: Boolean,
+        peerAddress: String? = null,
+    ) {
         val decision = relayAccessPolicy.evaluate(
             io.github.kotlinsmtp.relay.api.RelayAccessContext(
                 envelopeSender = sender?.ifBlank { null },
                 recipient = recipient,
                 authenticated = authenticated,
+                peerAddress = peerAddress,
             )
         )
         when (decision) {

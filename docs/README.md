@@ -2,7 +2,7 @@
 
 ## 목차
 
-1. [시작하기](README.md) - 빠른 시작 가이드
+1. [루트 README](../README.md) - 빠른 시작 가이드
 2. [아키텍처](ARCHITECTURE.md) - 시스템 아키텍처와 동작 원리
 3. [설정 가이드](CONFIGURATION.md) - 상세 설정 옵션
 4. [확장하기](EXTENSION.md) - 커스텀 구현 및 확장 방법
@@ -37,7 +37,7 @@ kotlin-smtp/
 
 ```kotlin
 dependencies {
-    implementation("io.github.kotlinsmtp:kotlin-smtp-spring-boot-starter:0.1.0")
+    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:VERSION")
 }
 ```
 
@@ -54,10 +54,23 @@ smtp:
     tempDir: ./data/temp
     listsDir: ./data/lists
   spool:
+    type: auto
     dir: ./data/spool
     maxRetries: 5
     retryDelaySeconds: 60
+  sentArchive:
+    mode: TRUSTED_SUBMISSION
+  relay:
+    enabled: true
+    requireAuthForRelay: false
+    allowedClientCidrs:
+      - 10.0.0.0/8
 ```
+
+추가 참고:
+- 스풀은 `smtp.spool.type`으로 `auto|file|redis`를 선택할 수 있습니다.
+- 보낸 메일함 저장 정책은 `smtp.sentArchive.mode`로 제어합니다.
+- 릴레이 IP 제한은 `smtp.relay.allowedClientCidrs`로 설정하며, 고급 정책은 `RelayAccessPolicy` 커스텀 빈으로 교체할 수 있습니다.
 
 ### 3. 실행
 
