@@ -1,37 +1,36 @@
 # Kotlin SMTP
 
-Netty 기반 Kotlin SMTP 서버 라이브러리입니다. `core`는 Spring 없이 동작하는 SMTP 엔진을 제공하고,
-`starter` 계열 모듈은 Spring Boot에서 바로 실행 가능한 구성을 제공합니다.
+A Netty-based Kotlin SMTP server library. The `core` module provides a Spring-free SMTP engine, while the `starter` modules offer Spring Boot auto-configuration for immediate use.
 
-## 모듈 구성
+## Module Structure
 
 ```text
 kotlin-smtp/
-├── kotlin-smtp-core                         # Spring-free SMTP 엔진
-├── kotlin-smtp-spring-boot-starter          # inbound 중심 starter(auto-config + 기본 구현)
-├── kotlin-smtp-relay                        # outbound relay API 경계
-├── kotlin-smtp-relay-jakarta-mail           # relay 구현체(dnsjava + jakarta-mail)
-├── kotlin-smtp-relay-spring-boot-starter    # relay auto-config
-└── kotlin-smtp-example-app                  # 소비 예제 앱
+├── kotlin-smtp-core                         # Spring-free SMTP engine
+├── kotlin-smtp-spring-boot-starter          # Inbound-focused starter (auto-config + default impl)
+├── kotlin-smtp-relay                        # Outbound relay API boundary
+├── kotlin-smtp-relay-jakarta-mail           # Relay implementation (dnsjava + jakarta-mail)
+├── kotlin-smtp-relay-spring-boot-starter    # Relay auto-configuration
+└── kotlin-smtp-example-app                  # Example consumer application
 ```
 
-현재 구조는 의도된 분리입니다.
-- `core`: 프로토콜/세션/TLS/AUTH/프레이밍 정확성
-- `starter`: 빠른 기동 경험 + 기본 파일 기반 구현
-- `relay*`: 외부 전달(outbound) 경계를 옵션 모듈로 분리
+This modular structure is intentional:
+- `core`: Protocol/session/TLS/Auth/framing correctness
+- `starter`: Quick startup experience + file-based default implementation
+- `relay*`: Outbound delivery boundary separated as optional modules
 
-## 핵심 기능
+## Key Features
 
-- RFC 5321 기본 명령: `EHLO/HELO`, `MAIL`, `RCPT`, `DATA`, `RSET`, `QUIT`
-- `BDAT`(Chunking), `STARTTLS`, `AUTH PLAIN`
-- SMTPUTF8/IDN 경계 처리
-- PROXY protocol(v1), rate limit
-- ETRN/VRFY/EXPN(기능 플래그)
-- 스풀/재시도/DSN(RFC 3464) 처리
+- RFC 5321 core commands: `EHLO/HELO`, `MAIL`, `RCPT`, `DATA`, `RSET`, `QUIT`
+- `BDAT` (Chunking), `STARTTLS`, `AUTH PLAIN`
+- SMTPUTF8/IDN boundary handling
+- PROXY protocol (v1), rate limiting
+- ETRN/VRFY/EXPN (feature flags)
+- Spool/retry/DSN (RFC 3464) handling
 
-## 빠른 시작 (Starter)
+## Quick Start (Starter)
 
-### 1) 의존성
+### 1) Dependencies
 
 ```kotlin
 dependencies {
@@ -40,7 +39,7 @@ dependencies {
 }
 ```
 
-### 2) 최소 설정
+### 2) Minimal Configuration
 
 ```yaml
 smtp:
@@ -61,7 +60,7 @@ smtp:
     mode: TRUSTED_SUBMISSION # TRUSTED_SUBMISSION | AUTHENTICATED_ONLY | DISABLED
 ```
 
-Redis 스풀 백엔드를 사용하려면:
+To use Redis as the spool backend:
 
 ```yaml
 smtp:
@@ -74,29 +73,29 @@ smtp:
       lockTtlSeconds: 900
 ```
 
-- `type=auto`는 `StringRedisTemplate` 빈이 있으면 Redis, 없으면 file을 자동 선택합니다.
-- `type=redis`일 때 큐/락/메타데이터는 Redis에 저장됩니다.
-- 원문 `.eml`도 Redis에 저장됩니다(지속 파일 저장 없음).
-- 배달 시점에만 임시 파일을 생성해 사용 후 즉시 정리합니다.
-- 애플리케이션에 `StringRedisTemplate` 빈이 있어야 합니다.
-- Redis 단일/클러스터/Sentinel 구성은 애플리케이션 측 설정을 그대로 따릅니다.
+- `type=auto` automatically selects Redis if a `StringRedisTemplate` bean exists, otherwise uses file storage.
+- With `type=redis`, queue/lock/metadata are stored in Redis.
+- Raw `.eml` content is also stored in Redis (no persistent file storage).
+- Temporary files are created only at delivery time and cleaned up immediately after use.
+- Your application must provide a `StringRedisTemplate` bean.
+- Redis single/cluster/Sentinel configurations follow your application's settings.
 
-기본 구현에서는 `mailboxDir/<owner>/sent/` 경로에 보낸 메일함 사본을 저장합니다.
-- 인증 세션은 AUTH 사용자(`authenticatedUsername`)를 소유자로 사용합니다.
-- 무인증 제출은 envelope sender local-part를 소유자로 사용합니다.
-사용자가 `SentMessageStore` 빈을 직접 등록하면 S3/DB+ObjectStorage 등 원하는 방식으로 교체할 수 있습니다.
+The default implementation stores sent mail copies in `mailboxDir/<owner>/sent/`:
+- Authenticated sessions use the AUTH user (`authenticatedUsername`) as the owner.
+- Unauthenticated submissions use the envelope sender's local-part as the owner.
+- You can replace this with S3/DB+ObjectStorage by registering a custom `SentMessageStore` bean.
 
-보낸 메일함 저장 기준은 `smtp.sentArchive.mode`로 제어합니다.
-- `TRUSTED_SUBMISSION`(기본): AUTH 인증 세션 또는 외부 릴레이 제출 메시지 저장
-- `AUTHENTICATED_ONLY`: AUTH 인증 세션만 저장
-- `DISABLED`: 저장 안 함
+Sent mailbox archiving is controlled via `smtp.sentArchive.mode`:
+- `TRUSTED_SUBMISSION` (default): Store messages from AUTH sessions or external relay submissions
+- `AUTHENTICATED_ONLY`: Store only AUTH session messages
+- `DISABLED`: Do not store sent mail
 
-릴레이 무인증 제출을 IP 기준으로 제한하려면 `smtp.relay.allowedClientCidrs`를 사용하세요.
-더 복잡한 기준(DB 조회/사내 정책 엔진)이 필요하면 `RelayAccessPolicy` 빈을 커스텀 구현해 교체할 수 있습니다.
+To restrict unauthenticated relay submissions by IP, use `smtp.relay.allowedClientCidrs`.
+For more complex rules (DB lookups, internal policy engines), implement a custom `RelayAccessPolicy` bean.
 
-전체 예시는 `docs/application.example.yml`를 참고하세요.
+See `docs/application.example.yml` for a complete configuration example.
 
-## Core 단독 사용
+## Using Core Standalone
 
 ```kotlin
 import io.github.kotlinsmtp.server.SmtpServer
@@ -110,13 +109,13 @@ val server = SmtpServer.create(2525, "smtp.example.com") {
 server.start()
 ```
 
-## 관측성(Observability)
+## Observability
 
-Micrometer 연동은 **SMTP 포트에 엔드포인트를 추가하지 않습니다**.
-- SMTP는 기존 포트(예: 2525) 그대로 동작
-- 메트릭 노출은 Spring Actuator 관리 채널(옵트인)에서만 수행
+Micrometer integration **does not add endpoints to the SMTP port**:
+- SMTP continues to operate on its existing port (e.g., 2525)
+- Metrics are exposed only through the Spring Actuator management channel (opt-in)
 
-기본 계측 항목:
+Default metrics include:
 - `smtp.connections.active`
 - `smtp.sessions.started.total`, `smtp.sessions.ended.total`
 - `smtp.messages.accepted.total`, `smtp.messages.rejected.total`
@@ -124,7 +123,7 @@ Micrometer 연동은 **SMTP 포트에 엔드포인트를 추가하지 않습니�
 - `smtp.spool.dropped.total`, `smtp.spool.retry.scheduled.total`
 - `smtp.spool.delivery.recipients.total{result=delivered|transient_failure|permanent_failure}`
 
-Prometheus 노출 예시(옵션):
+Prometheus exposure example (optional):
 
 ```kotlin
 dependencies {
@@ -143,22 +142,22 @@ management:
         include: health,info,prometheus
 ```
 
-이 경우 `/actuator/prometheus`가 **관리 포트**에서만 열립니다.
+In this case, `/actuator/prometheus` is available only on the **management port**.
 
-## Example App 실행
+## Running the Example App
 
 ```bash
 ./gradlew :kotlin-smtp-example-app:bootRun
 ```
 
-## 문서
+## Documentation
 
-- `docs/STATUS.md`: 현재 진행 상황
-- `docs/ROADMAP.md`: 남은 작업 우선순위
-- `docs/THIN_ARCHITECTURE.md`: 런타임/경계 요약
-- `docs/PUBLIC_API_CANDIDATES.md`: Public API 경계
-- `docs/RELAY_MODULES.md`: relay 모듈 설계/정책
+- `docs/STATUS.md`: Current progress
+- `docs/ROADMAP.md`: Remaining work priorities
+- `docs/THIN_ARCHITECTURE.md`: Runtime/boundary summary
+- `docs/PUBLIC_API_CANDIDATES.md`: Public API boundaries
+- `docs/RELAY_MODULES.md`: Relay module design/policy
 
-## 라이선스
+## License
 
 Apache License 2.0 (`LICENSE`)
