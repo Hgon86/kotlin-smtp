@@ -8,7 +8,7 @@ import jakarta.mail.internet.MimeMessage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.*
+import java.util.Properties
 
 private val log = KotlinLogging.logger {}
 
@@ -55,12 +55,11 @@ class JakartaMailRoutingMailRelay(
             }
             val message = request.rfc822.openStream().use { input ->
                 MimeMessage(Session.getInstance(propsForParsing), input)
-            }.apply {
-                // Auto-generate Message-ID header when missing (RFC 5322 recommendation)
-                if (getHeader("Message-ID") == null) {
-                    val senderDomain = senderForSend?.substringAfterLast('@')?.takeIf { it.isNotBlank() } ?: "localhost"
-                    setHeader("Message-ID", "<${UUID.randomUUID()}@$senderDomain>")
-                    log.debug { "Generated Message-ID for message to $recipientForSend" }
+            }
+            val supplemented = OutboundMessageHeaderSupplement.ensureRequiredHeaders(message, senderForSend)
+            if (supplemented.dateAdded || supplemented.messageIdAdded) {
+                log.debug {
+                    "Supplemented outbound headers for $recipientForSend (dateAdded=${supplemented.dateAdded}, messageIdAdded=${supplemented.messageIdAdded})"
                 }
             }
 
@@ -109,9 +108,9 @@ class JakartaMailRoutingMailRelay(
                 log.warn(e) {
                     "Smart-host relay failed (server=$host port=${route.port} auth=${request.authenticated} msgId=${request.messageId})"
                 }
-                throw RelayTransientException(
-                    "Smart-host relay failed (server=$host port=${route.port} msgId=${request.messageId})",
+                throw RelayFailureClassifier.classify(
                     e,
+                    "Smart-host relay failed (server=$host port=${route.port} msgId=${request.messageId})",
                 )
             }
         }

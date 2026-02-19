@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.xbill.DNS.*
-import java.util.*
+import java.util.Properties
 
 private val log = KotlinLogging.logger {}
 
@@ -42,7 +42,7 @@ class JakartaMailMxMailRelay(
         }
 
         val ports = tls.ports.ifEmpty { listOf(25) }
-        var lastException: Exception? = null
+        var lastException: RelayException? = null
 
         val propsForParsing = Properties().apply {
             // Allow SMTPUTF8/UTF-8 header parsing (minimal implementation)
@@ -50,12 +50,11 @@ class JakartaMailMxMailRelay(
         }
         val message = request.rfc822.openStream().use { input ->
             MimeMessage(Session.getInstance(propsForParsing), input)
-        }.apply {
-            // Auto-generate Message-ID header when missing (RFC 5322 recommendation)
-            if (getHeader("Message-ID") == null) {
-                val senderDomain = senderForSend?.substringAfterLast('@')?.takeIf { it.isNotBlank() } ?: "localhost"
-                setHeader("Message-ID", "<${UUID.randomUUID()}@$senderDomain>")
-                log.debug { "Generated Message-ID for message to $recipientForSend" }
+        }
+        val supplemented = OutboundMessageHeaderSupplement.ensureRequiredHeaders(message, senderForSend)
+        if (supplemented.dateAdded || supplemented.messageIdAdded) {
+            log.debug {
+                "Supplemented outbound headers for $recipientForSend (dateAdded=${supplemented.dateAdded}, messageIdAdded=${supplemented.messageIdAdded})"
             }
         }
 
@@ -102,6 +101,10 @@ class JakartaMailMxMailRelay(
                         return@withContext RelayResult(remoteHost = targetServer, remotePort = port)
                     }
                 } catch (e: Exception) {
+                    val classified = RelayFailureClassifier.classify(
+                        e,
+                        "Relay attempt failed (server=$targetServer port=$port mxPref=${mx.priority} msgId=${request.messageId})",
+                    )
                     log.warn(e) {
                         "Relay attempt failed (server=$targetServer port=$port mxPref=${mx.priority} auth=${request.authenticated} msgId=${request.messageId} sender=${
                             senderForSend?.take(
@@ -109,33 +112,58 @@ class JakartaMailMxMailRelay(
                             ) ?: "null"
                         })"
                     }
-                    lastException = e
+                    if (!classified.isTransient) {
+                        throw classified
+                    }
+                    lastException = classified
                 }
             }
         }
 
         val last = lastException
-        if (last != null) {
-            throw RelayTransientException("Relay failed (domain=$normalizedDomain msgId=${request.messageId})", last)
-        }
+        if (last != null) throw last
         throw RelayTransientException("Relay failed (domain=$normalizedDomain msgId=${request.messageId})")
     }
 
     private fun lookupMxRecords(domain: String): List<MxRecord> {
-        return runCatching {
-            val name = toDnsName(domain)
-            val mx = lookupRecords(name, Type.MX)
-                .mapNotNull { it as? MXRecord }
-                .map { MxRecord(priority = it.priority, host = it.target.toString().removeSuffix(".")) }
-                .sortedBy { it.priority }
-            if (mx.isNotEmpty()) return mx
+        val name = toDnsName(domain)
 
-            val hasA = lookupRecords(name, Type.A).any { it is ARecord }
-            val hasAAAA = lookupRecords(name, Type.AAAA).any { it is AAAARecord }
-            if (hasA || hasAAAA) listOf(MxRecord(priority = 0, host = domain)) else emptyList()
-        }.onFailure { e ->
-            log.error(e) { "Error looking up MX/A/AAAA records for $domain" }
-        }.getOrDefault(emptyList())
+        val mxLookup = lookupRecords(name, Type.MX)
+        if (mxLookup.records.isNotEmpty()) {
+            val mxRecords = mxLookup.records.mapNotNull { it as? MXRecord }
+            if (MxLookupPolicy.hasExplicitNullMx(mxRecords)) {
+                throw RelayPermanentException("550 5.1.10 Null MX: domain does not accept email ($domain)")
+            }
+
+            return mxRecords
+                .map { MxRecord(priority = it.priority, host = it.target.toString().removeSuffix(".")) }
+                .filter { it.host.isNotBlank() }
+                .sortedBy { it.priority }
+        }
+
+        when (mxLookup.resultCode) {
+            Lookup.HOST_NOT_FOUND -> throw RelayPermanentException("550 5.1.2 Domain not found: $domain")
+            Lookup.TRY_AGAIN -> throw RelayTransientException("451 4.4.3 DNS temporary failure while resolving MX: $domain")
+            Lookup.UNRECOVERABLE -> throw RelayTransientException("451 4.4.3 DNS unrecoverable failure while resolving MX: $domain")
+            Lookup.TYPE_NOT_FOUND, Lookup.SUCCESSFUL -> Unit
+        }
+
+        val aLookup = lookupRecords(name, Type.A)
+        val aaaaLookup = lookupRecords(name, Type.AAAA)
+        val hasA = aLookup.records.any { it is ARecord }
+        val hasAAAA = aaaaLookup.records.any { it is AAAARecord }
+        if (hasA || hasAAAA) return listOf(MxRecord(priority = 0, host = domain))
+
+        val addressResultCodes = listOf(aLookup.resultCode, aaaaLookup.resultCode)
+        return when {
+            addressResultCodes.any { it == Lookup.HOST_NOT_FOUND } ->
+                throw RelayPermanentException("550 5.1.2 Domain not found: $domain")
+
+            addressResultCodes.any { it == Lookup.TRY_AGAIN || it == Lookup.UNRECOVERABLE } ->
+                throw RelayTransientException("451 4.4.3 DNS temporary failure while resolving address records: $domain")
+
+            else -> emptyList()
+        }
     }
 
     private fun toDnsName(domain: String): Name {
@@ -143,10 +171,16 @@ class JakartaMailMxMailRelay(
         return Name.fromString("$d.")
     }
 
-    private fun lookupRecords(name: Name, type: Int): List<Record> {
+    private data class LookupResult(
+        val records: List<Record>,
+        val resultCode: Int,
+    )
+
+    private fun lookupRecords(name: Name, type: Int): LookupResult {
         val lookup = org.xbill.DNS.Lookup(name, type)
         lookup.setCache(dnsCache)
-        return (lookup.run() ?: emptyArray()).toList()
+        val records = (lookup.run() ?: emptyArray()).toList()
+        return LookupResult(records = records, resultCode = lookup.result)
     }
 }
 
