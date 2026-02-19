@@ -11,6 +11,7 @@ kotlin-smtp/
 ├── kotlin-smtp-relay                        # Outbound relay API boundary
 ├── kotlin-smtp-relay-jakarta-mail           # Relay implementation (dnsjava + jakarta-mail)
 ├── kotlin-smtp-relay-spring-boot-starter    # Relay auto-configuration
+├── kotlin-smtp-benchmarks                   # JMH + end-to-end performance profile
 └── kotlin-smtp-example-app                  # Example consumer application
 ```
 
@@ -170,6 +171,34 @@ In this case, `/actuator/prometheus` is available only on the **management port*
 ./gradlew :kotlin-smtp-example-app:bootRun
 ```
 
+## Performance Measurement
+
+Run JMH benchmark (automatically starts local SMTP server inside benchmark process):
+
+```bash
+./gradlew :kotlin-smtp-benchmarks:jmh
+```
+
+Run end-to-end profile test (throughput + latency summary):
+
+```bash
+./gradlew :kotlin-smtp-benchmarks:performanceTest
+```
+
+Current local baseline example (details in `docs/PERFORMANCE.md`):
+- `~195 emails/s` at `4KB`, `8` concurrent clients
+- `~5.1s` per `1,000` messages
+- `p95 latency ~87.5ms`
+
+Override workload for profile test (optional):
+
+```bash
+./gradlew :kotlin-smtp-benchmarks:performanceTest \
+  -Dkotlinsmtp.performance.clients=16 \
+  -Dkotlinsmtp.performance.messagesPerClient=300 \
+  -Dkotlinsmtp.performance.bodyBytes=16384
+```
+
 ## Documentation
 
 - `docs/README.md`: Documentation index and learning paths
@@ -180,6 +209,7 @@ In this case, `/actuator/prometheus` is available only on the **management port*
 - `docs/RECIPES.md`: Minimal extension recipes
 - `docs/LIFECYCLE.md`: Runtime lifecycle and hook timing
 - `docs/SECURITY_RELAY.md`: Relay security hardening guide
+- `docs/PERFORMANCE.md`: Performance methodology and reporting template
 
 ## License
 

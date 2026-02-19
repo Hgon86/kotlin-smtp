@@ -8,6 +8,7 @@ Start here when you want to build, customize, and operate Kotlin SMTP quickly.
 - Runtime architecture: `ARCHITECTURE.md`
 - Configuration reference: `CONFIGURATION.md`
 - Extension overview: `EXTENSION.md`
+- Performance guide: `PERFORMANCE.md`
 
 ## I Want To...
 
@@ -47,3 +48,4 @@ Start here when you want to build, customize, and operate Kotlin SMTP quickly.
 - `RECIPES.md`: minimal practical customization snippets
 - `LIFECYCLE.md`: extension invocation timing
 - `SECURITY_RELAY.md`: relay policy and TLS security guidance
+- `PERFORMANCE.md`: benchmark workflow and reporting checklist

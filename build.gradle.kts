@@ -68,6 +68,7 @@ apiValidation {
             // root project is not a library module but for test harness/docs, so excluded from API validation.
             "kotlin-smtp",
             "kotlin-smtp-example-app",
+            "kotlin-smtp-benchmarks",
             "kotlin-smtp-spring-boot-starter",
             "kotlin-smtp-relay-spring-boot-starter",
             "kotlin-smtp-relay-jakarta-mail",
