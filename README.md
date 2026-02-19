@@ -27,6 +27,9 @@ This modular structure is intentional:
 - PROXY protocol (v1), rate limiting
 - ETRN/VRFY/EXPN (feature flags)
 - Spool/retry/DSN (RFC 3464) handling
+- Outbound relay hardening (Null MX detection, permanent/transient classification)
+- Automatic `Date` / `Message-ID` supplementation when missing
+- Optional outbound policy layer (MTA-STS / DANE basic resolver)
 
 ## Quick Start (Starter)
 
@@ -92,6 +95,23 @@ Sent mailbox archiving is controlled via `smtp.sentArchive.mode`:
 
 To restrict unauthenticated relay submissions by IP, use `smtp.relay.allowedClientCidrs`.
 For more complex rules (DB lookups, internal policy engines), implement a custom `RelayAccessPolicy` bean.
+
+To enable outbound domain policy integration (optional):
+
+```yaml
+smtp:
+  relay:
+    outboundPolicy:
+      mtaSts:
+        enabled: true
+        connectTimeoutMs: 3000
+        readTimeoutMs: 5000
+      dane:
+        enabled: false
+```
+
+- MTA-STS `mode=enforce` upgrades relay policy to require TLS + certificate validation.
+- DANE basic mode uses `_25._tcp.<domain>` TLSA presence as a strict TLS signal.
 
 See `docs/application.example.yml` for a complete configuration example.
 

@@ -290,6 +290,26 @@ smtp:
       readTimeoutMs: 15000
 ```
 
+### Outbound Policy (MTA-STS / DANE)
+
+```yaml
+smtp:
+  relay:
+    outboundPolicy:
+      mtaSts:
+        enabled: false
+        connectTimeoutMs: 3000
+        readTimeoutMs: 5000
+      dane:
+        enabled: false
+```
+
+Notes:
+- `mtaSts.enabled=true`: resolve `_mta-sts.<domain>` and fetch `https://mta-sts.<domain>/.well-known/mta-sts.txt`.
+- `mode=enforce` is applied as strict policy (TLS required + certificate validation).
+- `dane.enabled=true`: basic TLSA signal check via `_25._tcp.<domain>`.
+- If both policies exist, stricter requirements are merged.
+
 ### Relay Options
 
 | Option | Default | Description |
@@ -298,6 +318,10 @@ smtp:
 | `requireAuthForRelay` | true | Require AUTH before external relay |
 | `allowedSenderDomains` | [] | Sender-domain allowlist for unauthenticated relay |
 | `allowedClientCidrs` | [] | Client CIDR allowlist for unauthenticated relay |
+| `outboundPolicy.mtaSts.enabled` | false | Enable MTA-STS policy resolution |
+| `outboundPolicy.mtaSts.connectTimeoutMs` | 3000 | MTA-STS HTTPS connect timeout (ms) |
+| `outboundPolicy.mtaSts.readTimeoutMs` | 5000 | MTA-STS HTTPS read timeout (ms) |
+| `outboundPolicy.dane.enabled` | false | Enable basic DANE TLSA policy signal |
 
 `allowedSenderDomains` and `allowedClientCidrs` can be used together.
 An unauthenticated relay request must satisfy both conditions when both are configured.

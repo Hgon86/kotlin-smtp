@@ -29,7 +29,7 @@ public class JakartaMailDsnSender(
     private val maxAttachBytes = 256 * 1024
 
     private companion object {
-        val ENHANCED_STATUS_RE: Regex = Regex("\\b([245]\\.\\d\\.\\d)\\b")
+        val ENHANCED_STATUS_RE: Regex = Regex("\\b([245]\\.\\d{1,3}\\.\\d{1,3})\\b")
         val SMTP_REPLY_CODE_RE: Regex = Regex("\\b([245]\\d{2})\\b")
     }
 
@@ -44,6 +44,7 @@ public class JakartaMailDsnSender(
     ) {
         val envelopeRecipient = sender?.takeIf { it.isNotBlank() && it != "<>" } ?: return
         if (failedRecipients.isEmpty()) return
+        if (shouldSuppressDsn(originalMessagePath)) return
 
         val fromHeader = "MAILER-DAEMON@$serverHostname"
         val subject = "Delivery Status Notification (Failure)"
@@ -95,6 +96,7 @@ public class JakartaMailDsnSender(
                 setHeader("Message-ID", "<dsn-${UUID.randomUUID()}@$serverHostname>")
                 setHeader("Date", DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now()))
                 setHeader("Auto-Submitted", "auto-replied")
+                setHeader("X-Loop", serverHostname)
                 setContent(multipart)
                 setHeader("Content-Type", ct.toString())
             }
@@ -191,6 +193,7 @@ public class JakartaMailDsnSender(
             enhancedFromText?.startsWith("5.") == true -> enhancedFromText
             enhancedFromText != null -> "5.0.0"
             smtpCode != null -> mapSmtpCodeToEnhancedStatus(smtpCode)
+            reasonContainsAny(reason, "null mx", "does not accept email") -> "5.1.10"
             reasonContainsAny(reason, "user unknown", "no such user", "unknown user") -> "5.1.1"
             reasonContainsAny(reason, "unknown host", "domain not found", "no mx records") -> "5.1.2"
             reasonContainsAny(reason, "mailbox full", "quota exceeded", "over quota") -> "5.2.2"
@@ -235,9 +238,18 @@ public class JakartaMailDsnSender(
      * @return Mapped RFC 3464 enhanced status code
      */
     private fun mapSmtpCodeToEnhancedStatus(code: Int): String = when (code) {
-        550, 551, 553 -> "5.1.1"
+        421 -> "4.4.2"
+        450 -> "4.2.0"
+        451 -> "4.3.0"
+        452 -> "4.2.2"
+        521 -> "5.3.2"
+        550 -> "5.1.1"
+        551 -> "5.1.6"
         552 -> "5.2.2"
+        553 -> "5.1.3"
         554 -> "5.0.0"
+        555 -> "5.5.4"
+        in 400..499 -> "4.0.0"
         in 500..599 -> "5.0.0"
         else -> "5.0.0"
     }
@@ -256,6 +268,40 @@ public class JakartaMailDsnSender(
 
     private fun sanitizeHeaderValue(value: String): String =
         value.replace("\r", " ").replace("\n", " ").trim().take(500)
+
+    /**
+     * Suppresses DSN generation for loop-prone auto-generated messages.
+     *
+     * @param originalMessagePath original message path
+     * @return true when DSN must be suppressed
+     */
+    private fun shouldSuppressDsn(originalMessagePath: Path?): Boolean {
+        val path = originalMessagePath ?: return false
+        val message = runCatching {
+            val props = Properties().apply {
+                this["mail.mime.allowutf8"] = "true"
+            }
+            Files.newInputStream(path).use { input -> MimeMessage(Session.getInstance(props), input) }
+        }.getOrNull() ?: return false
+
+        val autoSubmittedValues = message.getHeader("Auto-Submitted")?.toList().orEmpty()
+        if (autoSubmittedValues.any { it.trim().lowercase() != "no" }) return true
+
+        val xLoopValues = message.getHeader("X-Loop")?.toList().orEmpty()
+        if (xLoopValues.any { it.trim().equals(serverHostname, ignoreCase = true) }) return true
+
+        val precedenceValues = message.getHeader("Precedence")?.toList().orEmpty()
+        if (precedenceValues.any { it.trim().lowercase() in setOf("bulk", "junk", "list") }) return true
+
+        val contentType = message.contentType?.lowercase().orEmpty()
+        if (contentType.contains("message/delivery-status") ||
+            (contentType.contains("multipart/report") && contentType.contains("report-type=delivery-status"))
+        ) {
+            return true
+        }
+
+        return false
+    }
 
     /**
      * Internal model holding RFC 3464 per-recipient status representation.

@@ -54,6 +54,11 @@ class RelayProperties {
     var outboundTls: OutboundTlsProperties = OutboundTlsProperties()
 
     /**
+     * Optional outbound domain-policy integration (MTA-STS/DANE).
+     */
+    var outboundPolicy: OutboundPolicyProperties = OutboundPolicyProperties()
+
+    /**
      * Outbound TLS policy settings.
      */
     class OutboundTlsProperties {
@@ -96,6 +101,51 @@ class RelayProperties {
          * Outbound read timeout in milliseconds.
          */
         var readTimeoutMs: Int = 15_000
+    }
+
+    /**
+     * Outbound policy integration options.
+     */
+    class OutboundPolicyProperties {
+        /**
+         * MTA-STS policy options.
+         */
+        var mtaSts: MtaStsProperties = MtaStsProperties()
+
+        /**
+         * DANE policy options.
+         */
+        var dane: DaneProperties = DaneProperties()
+
+        /**
+         * MTA-STS resolver options.
+         */
+        class MtaStsProperties {
+            /**
+             * Enables MTA-STS discovery and policy fetch.
+             */
+            var enabled: Boolean = false
+
+            /**
+             * HTTPS connect timeout for MTA-STS policy fetch in milliseconds.
+             */
+            var connectTimeoutMs: Int = 3_000
+
+            /**
+             * HTTPS read timeout for MTA-STS policy fetch in milliseconds.
+             */
+            var readTimeoutMs: Int = 5_000
+        }
+
+        /**
+         * DANE resolver options.
+         */
+        class DaneProperties {
+            /**
+             * Enables basic DANE TLSA signal checks.
+             */
+            var enabled: Boolean = false
+        }
     }
 
     /**

@@ -15,12 +15,12 @@ val publishableModules = setOf(
 )
 
 group = "io.github.hgon86"
-version = "0.1.2"
+version = "0.1.3"
 
 allprojects {
     // Enforce Central Portal namespace validation and consistent publishing coordinates.
     group = "io.github.hgon86"
-    version = "0.1.2"
+    version = "0.1.3"
 }
 
 java {

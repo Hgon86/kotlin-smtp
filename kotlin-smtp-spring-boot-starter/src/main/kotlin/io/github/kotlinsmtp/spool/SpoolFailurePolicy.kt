@@ -45,7 +45,8 @@ internal class SpoolFailurePolicy {
             is IllegalStateException -> {
                 val message = throwable.message.orEmpty()
                 return message.contains("No MX records", ignoreCase = true) ||
-                    message.contains("No valid MX", ignoreCase = true)
+                    message.contains("No valid MX", ignoreCase = true) ||
+                    message.contains("Null MX", ignoreCase = true)
             }
             is UnknownHostException -> return false
         }
@@ -90,4 +91,4 @@ internal class SpoolFailurePolicy {
     }
 }
 
-private val ENHANCED_CODE_REGEX = Regex("\\b(\\d\\.\\d\\.\\d)\\b")
+private val ENHANCED_CODE_REGEX = Regex("\\b([245]\\.\\d{1,3}\\.\\d{1,3})\\b")

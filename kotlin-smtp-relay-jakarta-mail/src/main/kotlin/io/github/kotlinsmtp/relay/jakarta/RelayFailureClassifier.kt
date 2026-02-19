@@ -28,8 +28,9 @@ internal object RelayFailureClassifier {
         if (error is RelayException) return error
 
         val returnCode = smtpReturnCode(error)
-        val enhancedStatus = extractEnhancedStatus(error.message)
-        val remoteReply = error.message?.takeIf { it.isNotBlank() }
+        val sanitizedMessage = sanitizeRemoteReply(error.message)
+        val enhancedStatus = extractEnhancedStatus(sanitizedMessage)
+        val remoteReply = sanitizedMessage?.takeIf { it.isNotBlank() }
         val message = remoteReply ?: fallbackMessage
 
         if (error is AuthenticationFailedException) {
@@ -74,5 +75,23 @@ internal object RelayFailureClassifier {
     private fun extractEnhancedStatus(message: String?): String? {
         if (message.isNullOrBlank()) return null
         return enhancedStatusRegex.find(message)?.groupValues?.getOrNull(1)
+    }
+
+    private fun sanitizeRemoteReply(message: String?): String? {
+        if (message.isNullOrBlank()) return message
+        return message
+            .replace(Regex("(?i)(password\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(pass\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(auth\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(username\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(user\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(token\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(apikey\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(api_key\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(secret\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(credential\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(pwd\\s*[=:]\\s*)\\S+"), "$1***")
+            .replace(Regex("(?i)(Bearer\\s+)\\S+"), "$1***")
+            .replace(Regex("\\b[A-Za-z0-9+/]{50,}={0,2}\\b"), "***BASE64***")
     }
 }

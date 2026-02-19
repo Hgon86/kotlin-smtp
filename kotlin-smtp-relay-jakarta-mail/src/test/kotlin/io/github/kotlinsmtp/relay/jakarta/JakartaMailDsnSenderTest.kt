@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
+import kotlin.io.path.writeText
 import java.util.Properties
 
 class JakartaMailDsnSenderTest {
@@ -64,6 +65,99 @@ class JakartaMailDsnSenderTest {
         assertTrue(dsnText.contains("Status: 5.2.2"), "Expected mailbox full mapping to 5.2.2, got:\n$dsnText")
         assertTrue(dsnText.contains("Diagnostic-Code: x-kotlin-smtp; mailbox full"), "Expected custom diagnostic type, got:\n$dsnText")
         assertTrue(dsnText.contains("Original-Recipient: rfc822;orig@example.net"), "Expected ORCPT reflection, got:\n$dsnText")
+    }
+
+    @Test
+    fun `preserves multi digit enhanced status such as null MX`() {
+        var captured: ByteArray? = null
+        val store = DsnStore { rawMessagePath, _, _, _, _, _, _, _ ->
+            captured = Files.readAllBytes(rawMessagePath)
+        }
+        val sender = JakartaMailDsnSender(serverHostname = "smtp.test", store = store)
+
+        sender.sendPermanentFailure(
+            sender = "bounce@example.com",
+            failedRecipients = listOf("user@example.com" to "550 5.1.10 Recipient domain has null MX"),
+            originalMessageId = "msg-3",
+            originalMessagePath = null,
+            dsnEnvid = null,
+            dsnRet = "HDRS",
+            rcptDsn = emptyMap(),
+        )
+
+        val dsnText = extractDeliveryStatusText(captured)
+        assertTrue(dsnText.contains("Status: 5.1.10"), "Expected 5.1.10 status mapping, got:\n$dsnText")
+    }
+
+    @Test
+    fun `suppresses DSN for auto submitted source message`() {
+        var captured: ByteArray? = null
+        val store = DsnStore { rawMessagePath, _, _, _, _, _, _, _ ->
+            captured = Files.readAllBytes(rawMessagePath)
+        }
+        val sender = JakartaMailDsnSender(serverHostname = "smtp.test", store = store)
+        val original = Files.createTempFile("auto-submitted", ".eml")
+        original.writeText(
+            """
+            Auto-Submitted: auto-generated
+            From: no-reply@example.com
+            To: user@example.com
+            Subject: generated
+
+            body
+            """.trimIndent(),
+        )
+
+        try {
+            sender.sendPermanentFailure(
+                sender = "bounce@example.com",
+                failedRecipients = listOf("user@example.com" to "550 5.1.1 User unknown"),
+                originalMessageId = "msg-4",
+                originalMessagePath = original,
+                dsnEnvid = null,
+                dsnRet = "HDRS",
+                rcptDsn = emptyMap(),
+            )
+            assertTrue(captured == null, "DSN should be suppressed for auto-submitted message")
+        } finally {
+            runCatching { Files.deleteIfExists(original) }
+        }
+    }
+
+    @Test
+    fun `suppresses DSN when one of multiple X-Loop headers matches host`() {
+        var captured: ByteArray? = null
+        val store = DsnStore { rawMessagePath, _, _, _, _, _, _, _ ->
+            captured = Files.readAllBytes(rawMessagePath)
+        }
+        val sender = JakartaMailDsnSender(serverHostname = "smtp.test", store = store)
+        val original = Files.createTempFile("x-loop", ".eml")
+        original.writeText(
+            """
+            X-Loop: another-host
+            X-Loop: smtp.test
+            From: no-reply@example.com
+            To: user@example.com
+            Subject: generated
+
+            body
+            """.trimIndent(),
+        )
+
+        try {
+            sender.sendPermanentFailure(
+                sender = "bounce@example.com",
+                failedRecipients = listOf("user@example.com" to "550 5.1.1 User unknown"),
+                originalMessageId = "msg-5",
+                originalMessagePath = original,
+                dsnEnvid = null,
+                dsnRet = "HDRS",
+                rcptDsn = emptyMap(),
+            )
+            assertTrue(captured == null, "DSN should be suppressed when X-Loop matches server host")
+        } finally {
+            runCatching { Files.deleteIfExists(original) }
+        }
     }
 
     /**

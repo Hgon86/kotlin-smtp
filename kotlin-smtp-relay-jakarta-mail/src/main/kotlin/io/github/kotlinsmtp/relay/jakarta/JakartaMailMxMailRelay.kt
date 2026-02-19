@@ -19,6 +19,7 @@ private val log = KotlinLogging.logger {}
 class JakartaMailMxMailRelay(
     private val dispatcherIO: CoroutineDispatcher = Dispatchers.IO,
     private val tls: OutboundTlsConfig,
+    private val outboundPolicyResolver: OutboundRelayPolicyResolver? = null,
 ) : MailRelay {
 
     private data class MxRecord(val priority: Int, val host: String)
@@ -35,12 +36,14 @@ class JakartaMailMxMailRelay(
 
         val rawDomain = recipientForSend.substringAfterLast('@')
         val normalizedDomain = AddressUtils.normalizeDomain(rawDomain) ?: rawDomain
+        val policy = outboundPolicyResolver?.resolve(normalizedDomain)
         val mxRecords = lookupMxRecords(normalizedDomain)
 
         if (mxRecords.isEmpty()) {
             throw RelayPermanentException("No MX records for domain: $normalizedDomain (msgId=${request.messageId})")
         }
 
+        val effectiveTls = OutboundTlsPolicyApplier.forMx(tls, policy)
         val ports = tls.ports.ifEmpty { listOf(25) }
         var lastException: RelayException? = null
 
@@ -58,36 +61,23 @@ class JakartaMailMxMailRelay(
             }
         }
 
-        for (mx in mxRecords.sortedBy { it.priority }) {
+        val orderedMxRecords = MxLookupPolicy.orderByPriorityWithRandomizedTies(
+            records = mxRecords,
+            prioritySelector = { it.priority },
+        )
+
+        for (mx in orderedMxRecords) {
             val targetServer = mx.host
             for (port in ports) {
                 try {
-                    val props = Properties().apply {
-                        this["mail.smtp.host"] = targetServer
-                        this["mail.smtp.port"] = port.toString()
-                        this["mail.smtp.connectiontimeout"] = tls.connectTimeoutMs.toString()
-                        this["mail.smtp.timeout"] = tls.readTimeoutMs.toString()
-                        this["mail.smtp.quitwait"] = "false"
-
-                        // Set SMTP envelope (return-path)
-                        this["mail.smtp.from"] = (senderForSend ?: "").trim()
-
-                        // SMTPUTF8/UTF-8
-                        this["mail.mime.allowutf8"] = "true"
-                        this["mail.smtp.allowutf8"] = "true"
-
-                        // STARTTLS
-                        this["mail.smtp.starttls.enable"] = tls.startTlsEnabled.toString()
-                        this["mail.smtp.starttls.required"] = tls.startTlsRequired.toString()
-
-                        // TLS verification
-                        this["mail.smtp.ssl.checkserveridentity"] = tls.checkServerIdentity.toString()
-                        when {
-                            tls.trustAll -> this["mail.smtp.ssl.trust"] = "*"
-                            tls.trustHosts.isNotEmpty() -> this["mail.smtp.ssl.trust"] =
-                                tls.trustHosts.joinToString(" ")
-                        }
-                    }
+                    val props = OutboundMailPropertiesFactory.create(
+                        host = targetServer,
+                        port = port,
+                        sender = senderForSend,
+                        connectTimeoutMs = tls.connectTimeoutMs,
+                        readTimeoutMs = tls.readTimeoutMs,
+                        tls = effectiveTls,
+                    )
 
                     val session = Session.getInstance(props)
                     session.getTransport("smtp").use { transport ->

@@ -25,6 +25,7 @@ class JakartaMailRoutingMailRelay(
     private val routeResolver: RelayRouteResolver,
     private val mxRelay: MailRelay,
     private val tls: OutboundTlsConfig,
+    private val outboundPolicyResolver: OutboundRelayPolicyResolver? = null,
     private val dispatcherIO: CoroutineDispatcher = Dispatchers.IO,
 ) : MailRelay {
 
@@ -46,6 +47,9 @@ class JakartaMailRoutingMailRelay(
             }
 
             val recipientForSend = AddressUtils.normalizeDomainInAddress(request.recipient)
+            val recipientDomain = recipientForSend.substringAfterLast('@')
+            val normalizedRecipientDomain = AddressUtils.normalizeDomain(recipientDomain) ?: recipientDomain
+            val policy = outboundPolicyResolver?.resolve(normalizedRecipientDomain)
             val senderForSend = request.envelopeSender
                 ?.takeIf { it.isNotBlank() }
                 ?.let { AddressUtils.normalizeDomainInAddress(it) }
@@ -64,35 +68,21 @@ class JakartaMailRoutingMailRelay(
             }
 
             try {
-                val effectiveStartTlsEnabled = route.startTlsEnabled ?: tls.startTlsEnabled
-                val effectiveStartTlsRequired = route.startTlsRequired ?: tls.startTlsRequired
-                val effectiveCheckServerIdentity = route.checkServerIdentity ?: tls.checkServerIdentity
-                val effectiveTrustAll = route.trustAll ?: tls.trustAll
-                val effectiveTrustHosts = route.trustHosts ?: tls.trustHosts
+                val effectiveTls = OutboundTlsPolicyApplier.forSmartHost(
+                    base = tls,
+                    route = route,
+                    policy = policy,
+                )
 
-                val props = Properties().apply {
-                    this["mail.smtp.host"] = host
-                    this["mail.smtp.port"] = route.port.toString()
-                    this["mail.smtp.connectiontimeout"] = tls.connectTimeoutMs.toString()
-                    this["mail.smtp.timeout"] = tls.readTimeoutMs.toString()
-                    this["mail.smtp.quitwait"] = "false"
-                    this["mail.smtp.from"] = (senderForSend ?: "").trim()
-
-                    this["mail.mime.allowutf8"] = "true"
-                    this["mail.smtp.allowutf8"] = "true"
-
-                    this["mail.smtp.starttls.enable"] = effectiveStartTlsEnabled.toString()
-                    this["mail.smtp.starttls.required"] = effectiveStartTlsRequired.toString()
-
-                    this["mail.smtp.ssl.checkserveridentity"] = effectiveCheckServerIdentity.toString()
-                    when {
-                        effectiveTrustAll -> this["mail.smtp.ssl.trust"] = "*"
-                        effectiveTrustHosts.isNotEmpty() -> this["mail.smtp.ssl.trust"] =
-                            effectiveTrustHosts.joinToString(" ")
-                    }
-
-                    this["mail.smtp.auth"] = (!route.username.isNullOrBlank()).toString()
-                }
+                val props = OutboundMailPropertiesFactory.create(
+                    host = host,
+                    port = route.port,
+                    sender = senderForSend,
+                    connectTimeoutMs = tls.connectTimeoutMs,
+                    readTimeoutMs = tls.readTimeoutMs,
+                    tls = effectiveTls,
+                    enableAuth = !route.username.isNullOrBlank(),
+                )
 
                 Session.getInstance(props).getTransport("smtp").use { transport ->
                     log.info {

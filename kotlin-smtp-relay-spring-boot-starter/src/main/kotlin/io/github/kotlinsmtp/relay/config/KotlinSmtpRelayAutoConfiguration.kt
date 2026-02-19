@@ -10,10 +10,12 @@ import io.github.kotlinsmtp.relay.api.DsnStore
 import io.github.kotlinsmtp.relay.api.RelayRequest
 import io.github.kotlinsmtp.relay.api.RelayRoute
 import io.github.kotlinsmtp.relay.api.RelayRouteResolver
+import io.github.kotlinsmtp.relay.api.OutboundRelayPolicyResolver
 import io.github.kotlinsmtp.relay.jakarta.JakartaMailDsnSender
 import io.github.kotlinsmtp.relay.jakarta.JakartaMailMxMailRelay
 import io.github.kotlinsmtp.relay.jakarta.JakartaMailRoutingMailRelay
 import io.github.kotlinsmtp.relay.jakarta.OutboundTlsConfig
+import io.github.kotlinsmtp.relay.jakarta.StandardOutboundRelayPolicyResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
@@ -22,6 +24,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.core.env.Environment
 
 private val log = KotlinLogging.logger {}
@@ -79,7 +82,35 @@ class KotlinSmtpRelayAutoConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "smtp.relay", name = ["enabled"], havingValue = "true")
     @ConditionalOnMissingBean
-    fun mailRelay(props: RelayProperties, routeResolver: RelayRouteResolver): MailRelay {
+    fun outboundRelayPolicyResolver(props: RelayProperties): OutboundRelayPolicyResolver {
+        require(props.outboundPolicy.mtaSts.connectTimeoutMs > 0) {
+            "smtp.relay.outboundPolicy.mtaSts.connectTimeoutMs must be > 0"
+        }
+        require(props.outboundPolicy.mtaSts.readTimeoutMs > 0) {
+            "smtp.relay.outboundPolicy.mtaSts.readTimeoutMs must be > 0"
+        }
+        return StandardOutboundRelayPolicyResolver(
+            mtaStsEnabled = props.outboundPolicy.mtaSts.enabled,
+            daneEnabled = props.outboundPolicy.dane.enabled,
+            mtaStsConnectTimeoutMs = props.outboundPolicy.mtaSts.connectTimeoutMs,
+            mtaStsReadTimeoutMs = props.outboundPolicy.mtaSts.readTimeoutMs,
+        )
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "smtp.relay", name = ["enabled"], havingValue = "true")
+    @ConditionalOnMissingBean
+    fun mailRelay(
+        props: RelayProperties,
+        routeResolver: RelayRouteResolver,
+        outboundRelayPolicyResolverProvider: ObjectProvider<OutboundRelayPolicyResolver>,
+    ): MailRelay {
+        require(props.outboundTls.connectTimeoutMs > 0) {
+            "smtp.relay.outboundTls.connectTimeoutMs must be > 0"
+        }
+        require(props.outboundTls.readTimeoutMs > 0) {
+            "smtp.relay.outboundTls.readTimeoutMs must be > 0"
+        }
         val tls = OutboundTlsConfig(
             ports = props.outboundTls.ports,
             startTlsEnabled = props.outboundTls.startTlsEnabled,
@@ -90,10 +121,15 @@ class KotlinSmtpRelayAutoConfiguration {
             connectTimeoutMs = props.outboundTls.connectTimeoutMs,
             readTimeoutMs = props.outboundTls.readTimeoutMs,
         )
+        val policyResolver = outboundRelayPolicyResolverProvider.getIfAvailable()
         return JakartaMailRoutingMailRelay(
             routeResolver = routeResolver,
-            mxRelay = JakartaMailMxMailRelay(tls = tls),
+            mxRelay = JakartaMailMxMailRelay(
+                tls = tls,
+                outboundPolicyResolver = policyResolver,
+            ),
             tls = tls,
+            outboundPolicyResolver = policyResolver,
         )
     }
 
@@ -143,6 +179,17 @@ class KotlinSmtpRelayAutoConfiguration {
                     "This is insecure for internet-facing servers. " +
                     "Consider enabling requireAuthForRelay or specifying allowedSenderDomains/allowedClientCidrs, " +
                     "or provide a custom RelayAccessPolicy bean for fine-grained control."
+                }
+            }
+            if (props.outboundTls.trustAll) {
+                log.warn {
+                    "Outbound relay TLS trustAll=true is enabled. This disables certificate validation and is unsafe for production."
+                }
+            }
+            val routesWithTrustAll = props.routes.filter { it.trustAll == true }
+            if (routesWithTrustAll.isNotEmpty()) {
+                log.warn {
+                    "Some relay routes enable trustAll=true: ${routesWithTrustAll.joinToString { it.domain.ifBlank { "<blank-domain>" } }}"
                 }
             }
             log.info {

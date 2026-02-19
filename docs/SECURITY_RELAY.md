@@ -77,9 +77,32 @@ Run these checks before production:
 4. Sender-domain exceptions behave as expected
 5. Relay audit logs include enough decision context
 
-## 6) Common anti-patterns
+## 6) Domain policy hardening (MTA-STS / DANE)
+
+For internet-facing relay, you can enable outbound domain policy integration:
+
+```yaml
+smtp:
+  relay:
+    outboundPolicy:
+      mtaSts:
+        enabled: true
+      dane:
+        enabled: false
+```
+
+Behavior:
+- MTA-STS `mode=enforce` upgrades relay delivery to strict TLS + certificate validation.
+- DANE basic mode uses `_25._tcp.<domain>` TLSA presence as strict TLS signal.
+- When both are present, stricter requirements are merged.
+
+Operational note:
+- Start with MTA-STS only, observe failures, then enable DANE where DNSSEC operations are mature.
+
+## 7) Common anti-patterns
 
 - `requireAuthForRelay=false` with no allowlists
 - wildcard sender exceptions for internet-facing systems
 - `trustAll=true` in production
 - no monitoring for relay denial/acceptance rates
+- enabling strict domain policies without monitoring transient failure rates

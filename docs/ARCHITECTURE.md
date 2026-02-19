@@ -98,6 +98,13 @@ Spool Directory
    └─ Permanent Failure -> DSN + Remove
 ```
 
+### Outbound Relay Interoperability Notes
+
+- Null MX (`MX 0 .`) is treated as permanent failure (`5.1.10` semantics).
+- Relay transport errors are classified into transient/permanent failures.
+- Missing `Date` / `Message-ID` headers are supplemented automatically for outbound interoperability.
+- DSN immediate generation is limited to permanent failures in synchronous relay path.
+
 ## Extension Points
 
 ### SPI (Service Provider Interface)
