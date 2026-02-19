@@ -19,7 +19,7 @@ repositories {
 }
 
 dependencies {
-    // Maven Central에 배포된 라이브러리 사용
+    // Use library published to Maven Central
     implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:0.1.2")
     implementation("io.github.hgon86:kotlin-smtp-relay-spring-boot-starter:0.1.2")
     implementation("org.springframework.boot:spring-boot-starter")

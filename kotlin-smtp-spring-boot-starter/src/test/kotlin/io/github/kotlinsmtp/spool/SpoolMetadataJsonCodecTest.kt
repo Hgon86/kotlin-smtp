@@ -7,7 +7,7 @@ import java.nio.file.Path
 class SpoolMetadataJsonCodecTest {
 
     /**
-     * peerAddress를 포함한 메타데이터가 JSON 라운드트립 후에도 유지되어야 합니다.
+     * Metadata including peerAddress should be preserved after JSON roundtrip.
      */
     @Test
     fun `round trip preserves peer address`() {

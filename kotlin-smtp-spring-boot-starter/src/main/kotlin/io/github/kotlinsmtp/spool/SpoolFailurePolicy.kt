@@ -5,14 +5,14 @@ import io.github.kotlinsmtp.relay.api.RelayException
 import java.net.UnknownHostException
 
 /**
- * 스풀 배달 실패 분류 및 DSN 발송 정책을 캡슐화합니다.
+ * Encapsulates spool-delivery failure classification and DSN sending policy.
  */
 internal class SpoolFailurePolicy {
     /**
-     * NOTIFY 파라미터를 반영해 FAILURE DSN 발송 여부를 계산합니다.
+     * Compute whether FAILURE DSN should be sent based on NOTIFY parameter.
      *
-     * @param notify RCPT 단위 NOTIFY 파라미터 원문
-     * @return FAILURE DSN을 발송해야 하면 true
+     * @param notify Raw RCPT-level NOTIFY parameter
+     * @return true when FAILURE DSN should be sent
      */
     fun shouldSendFailureDsn(notify: String?): Boolean {
         val tokens = parseNotifyTokens(notify) ?: return true
@@ -21,11 +21,11 @@ internal class SpoolFailurePolicy {
     }
 
     /**
-     * 실패한 수신자 중 DSN 발송 대상을 필터링합니다.
+     * Filter DSN send targets from failed recipients.
      *
-     * @param failures 수신자별 실패 사유
-     * @param rcptDsn 수신자별 DSN 옵션
-     * @return DSN 발송 대상 맵
+     * @param failures Per-recipient failure reasons
+     * @param rcptDsn Per-recipient DSN options
+     * @return DSN-target map
      */
     fun selectFailureDsnTargets(
         failures: Map<String, String>,
@@ -33,10 +33,10 @@ internal class SpoolFailurePolicy {
     ): Map<String, String> = failures.filterKeys { shouldSendFailureDsn(rcptDsn[it]?.notify) }
 
     /**
-     * 예외를 영구 실패(재시도 불필요)인지 분류합니다.
+     * Classify whether exception is permanent failure (no retry needed).
      *
-     * @param throwable 전달 실패 원인
-     * @return 영구 실패면 true, 아니면 false
+     * @param throwable Cause of delivery failure
+     * @return true for permanent failure, otherwise false
      */
     fun isPermanentFailure(throwable: Throwable): Boolean {
         when (throwable) {
@@ -60,10 +60,10 @@ internal class SpoolFailurePolicy {
     }
 
     /**
-     * NOTIFY 파라미터를 토큰 집합으로 파싱합니다.
+     * Parse NOTIFY parameter into token set.
      *
-     * @param notify RCPT 단위 NOTIFY 파라미터 원문
-     * @return 파싱 결과 토큰 집합, 입력이 비어 있으면 null
+     * @param notify Raw RCPT-level NOTIFY parameter
+     * @return Parsed token set, or null when input is empty
      */
     private fun parseNotifyTokens(notify: String?): Set<String>? {
         val raw = notify?.trim().orEmpty()

@@ -9,11 +9,11 @@ import io.netty.util.CharsetUtil
 import java.util.concurrent.TimeUnit
 
 /**
- * SMTP 서버 채널 파이프라인 구성을 담당합니다.
+ * Responsible for configuring SMTP server channel pipeline.
  *
- * @property server 파이프라인 정책을 참조할 서버 인스턴스
- * @property tlsHandshakeTimeoutMs TLS 핸드셰이크 타임아웃(ms)
- * @property idleTimeoutSeconds 연결 유휴 타임아웃(초)
+ * @property server Server instance referenced for pipeline policy
+ * @property tlsHandshakeTimeoutMs TLS handshake timeout (ms)
+ * @property idleTimeoutSeconds Connection idle timeout (seconds)
  */
 internal class SmtpServerPipelineConfigurator(
     private val server: SmtpServer,
@@ -21,9 +21,9 @@ internal class SmtpServerPipelineConfigurator(
     private val idleTimeoutSeconds: Int,
 ) {
     /**
-     * 소켓 채널 파이프라인을 구성합니다.
+     * Configure socket channel pipeline.
      *
-     * @param channel 초기화 대상 채널
+     * @param channel Channel to initialize
      */
     fun configure(channel: SocketChannel) {
         val pipeline = channel.pipeline()

@@ -9,16 +9,16 @@ import java.io.ByteArrayOutputStream
 import java.util.*
 
 /**
- * Message-ID 자동 생성 기능 테스트
+ * Message-ID auto-generation behavior tests.
  */
 class MessageIdAutoGenerationTest {
 
     /**
-     * Message-ID 헤더가 없는 메시지에 자동으로 Message-ID가 추가되어야 합니다.
+     * Message-ID should be auto-added when the header is missing.
      */
     @Test
     fun `should generate Message-ID when header is missing`() {
-        // Message-ID가 없는 메시지 원문
+        // Raw message without Message-ID
         val messageWithoutId = """
             From: sender@example.com
             To: recipient@test.com
@@ -31,19 +31,19 @@ class MessageIdAutoGenerationTest {
             this["mail.mime.allowutf8"] = "true"
         }
         
-        // MimeMessage 파싱
+        // Parse MimeMessage
         val message = MimeMessage(Session.getInstance(props), 
             ByteArrayInputStream(messageWithoutId.toByteArray()))
         
-        // Message-ID 없음 확인
+        // Verify Message-ID is absent
         assertNull(message.getHeader("Message-ID"), "Initial message should not have Message-ID")
         
-        // Message-ID 자동 생성 (릴�이 로직과 동일)
+        // Auto-generate Message-ID (same as relay logic)
         val sender = "sender@example.com"
         val senderDomain = sender.substringAfterLast('@')
         message.setHeader("Message-ID", "<${UUID.randomUUID()}@$senderDomain>")
         
-        // Message-ID 생성됨 확인
+        // Verify Message-ID was generated
         val messageId = message.getHeader("Message-ID")
         assertNotNull(messageId, "Message-ID should be generated")
         assertTrue(messageId[0].startsWith("<"), "Message-ID should start with <")
@@ -51,7 +51,7 @@ class MessageIdAutoGenerationTest {
     }
 
     /**
-     * Message-ID 헤더가 이미 있는 메시지는 기존 값을 유지해야 합니다.
+     * Existing Message-ID header should be preserved.
      */
     @Test
     fun `should preserve existing Message-ID`() {
@@ -72,24 +72,24 @@ class MessageIdAutoGenerationTest {
         val message = MimeMessage(Session.getInstance(props), 
             ByteArrayInputStream(messageWithId.toByteArray()))
         
-        // 기존 Message-ID 확인
+        // Verify existing Message-ID
         val messageId = message.getHeader("Message-ID")
         assertNotNull(messageId, "Message should have Message-ID")
         assertEquals(existingMessageId, messageId[0], "Should preserve existing Message-ID")
         
-        // 릴�이 로직: Message-ID가 있으면 생성하지 않음
+        // Relay logic: do not generate when Message-ID already exists
         if (message.getHeader("Message-ID") == null) {
             val senderDomain = "example.com"
             message.setHeader("Message-ID", "<${UUID.randomUUID()}@$senderDomain>")
         }
         
-        // 여전히 기존 값 유지 확인
+        // Verify original value is still preserved
         assertEquals(existingMessageId, message.getHeader("Message-ID")[0], 
             "Should still have original Message-ID")
     }
 
     /**
-     * 발신자가 없는 경우 localhost 도메인을 사용해야 합니다.
+     * localhost domain should be used when sender is absent.
      */
     @Test
     fun `should use localhost domain when sender is null`() {
@@ -108,7 +108,7 @@ class MessageIdAutoGenerationTest {
         val message = MimeMessage(Session.getInstance(props), 
             ByteArrayInputStream(messageWithoutId.toByteArray()))
         
-        // 발신자 없음 시뮬레이션
+        // Simulate missing sender
         val senderForSend: String? = null
         val senderDomain = senderForSend?.substringAfterLast('@')?.takeIf { it.isNotBlank() } ?: "localhost"
         
@@ -120,7 +120,7 @@ class MessageIdAutoGenerationTest {
     }
 
     /**
-     * Message-ID 형식이 RFC 5322에 맞는지 확인합니다.
+     * Verifies Message-ID format matches RFC 5322.
      */
     @Test
     fun `should generate valid RFC5322 Message-ID format`() {
@@ -144,7 +144,7 @@ class MessageIdAutoGenerationTest {
         
         val messageId = message.getHeader("Message-ID")[0]
         
-        // RFC 5322 Message-ID 형식: <local-part@domain>
+        // RFC 5322 Message-ID format: <local-part@domain>
         assertTrue(messageId.matches(Regex("^<[^>]+@[^>]+>\$")), 
             "Message-ID should match RFC 5322 format: $messageId")
         assertTrue(messageId.contains("@"), 

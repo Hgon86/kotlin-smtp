@@ -4,10 +4,10 @@ import io.github.kotlinsmtp.model.SessionData
 import java.io.InputStream
 
 /**
- * SMTP 트랜잭션 처리 훅을 제공하는 핸들러입니다.
+ * Handler that provides hooks for SMTP transaction processing.
  *
- * - [io.github.kotlinsmtp.server.SmtpServerBuilder.useProtocolHandlerFactory]를 통해 등록합니다.
- * - [sessionData]는 엔진이 초기화하며, 생성자/초기화 블록에서 접근하면 안 됩니다.
+ * - Register via [io.github.kotlinsmtp.server.SmtpServerBuilder.useProtocolHandlerFactory].
+ * - [sessionData] is initialized by engine and must not be accessed in constructor/init block.
  */
 public abstract class SmtpProtocolHandler {
     public lateinit var sessionData: SessionData
@@ -18,31 +18,31 @@ public abstract class SmtpProtocolHandler {
     }
 
     /**
-     * MAIL FROM 수신 시 호출됩니다.
+     * Called when MAIL FROM is received.
      *
-     * @param sender 발신자 주소(정규화/검증 후 값)
+     * @param sender Sender address (normalized/validated value)
      */
     public open suspend fun from(sender: String): Unit {}
 
     /**
-     * RCPT TO 수신 시 호출됩니다.
+     * Called when RCPT TO is received.
      *
-     * @param recipient 수신자 주소(정규화/검증 후 값)
+     * @param recipient Recipient address (normalized/validated value)
      */
     public open suspend fun to(recipient: String): Unit {}
 
     /**
-     * DATA/BDAT 본문 수신 시 호출됩니다.
+     * Called when DATA/BDAT body is received.
      *
-     * @param inputStream 메시지 원문 스트림(소비는 구현체 책임)
-     * @param size 메시지 크기(bytes)
+     * @param inputStream Raw message stream (consumption is implementation responsibility)
+     * @param size Message size (bytes)
      */
     public open suspend fun data(inputStream: InputStream, size: Long): Unit {}
 
     /**
-     * 한 트랜잭션이 완료될 때 호출됩니다.
+     * Called when one transaction is completed.
      *
-     * - 정상 완료(예: "." 수신) 또는 RSET 등으로 종료되는 경우를 포함할 수 있습니다.
+     * - May include normal completion (e.g., receiving ".") or termination by RSET, etc.
      */
     public open suspend fun done(): Unit {}
 }

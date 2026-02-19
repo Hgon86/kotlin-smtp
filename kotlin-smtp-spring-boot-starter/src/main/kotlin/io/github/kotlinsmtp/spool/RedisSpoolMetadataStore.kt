@@ -14,15 +14,15 @@ import java.util.UUID
 private val redisMetadataLog = KotlinLogging.logger {}
 
 /**
- * Redis 기반 스풀 메타데이터 저장소입니다.
+ * Redis-based spool metadata store.
  *
- * 원문/큐/메타 상태를 Redis에 저장합니다.
- * 배달 시점에만 임시 파일로 원문을 물리화하여 하위 API(Path 기반)와 연결합니다.
+ * Stores raw/queue/metadata state in Redis.
+ * Materializes raw payload to a temporary file only at delivery time for Path-based APIs.
  *
- * @property spoolDir 스풀 원문 디렉터리
- * @property redisTemplate Redis 문자열 템플릿
- * @property keyPrefix Redis 키 접두사
- * @property maxRawBytes Redis에 허용할 원문 최대 바이트
+ * @property spoolDir spool raw directory
+ * @property redisTemplate Redis string template
+ * @property keyPrefix Redis key prefix
+ * @property maxRawBytes max allowed raw bytes in Redis
  */
 internal class RedisSpoolMetadataStore(
     private val spoolDir: Path,
@@ -31,16 +31,16 @@ internal class RedisSpoolMetadataStore(
     private val maxRawBytes: Long,
 ) : SpoolMetadataStore {
     /**
-     * 스풀 저장소가 사용할 디렉터리를 준비합니다.
+     * Prepares directory used by spool storage.
      */
     override fun initializeDirectory() {
         Files.createDirectories(spoolDir)
     }
 
     /**
-     * 현재 대기 중인 스풀 메시지 수를 계산합니다.
+     * Counts currently pending spool messages.
      *
-     * @return 대기 메시지 수
+     * @return pending message count
      */
     override fun scanPendingMessageCount(): Long = runCatching {
         redisTemplate.opsForZSet().size(queueKey()) ?: 0L
@@ -50,9 +50,9 @@ internal class RedisSpoolMetadataStore(
     }
 
     /**
-     * 스풀 메시지 원문 파일 목록을 조회합니다.
+     * Lists raw file references of spool messages.
      *
-     * @return 메시지 파일 경로 목록
+     * @return message file path list
      */
     override fun listMessages(): List<Path> = runCatching {
         val members = redisTemplate.opsForZSet().range(queueKey(), 0, -1) ?: emptySet()
@@ -63,18 +63,18 @@ internal class RedisSpoolMetadataStore(
     }
 
     /**
-     * 신규 스풀 메시지를 생성합니다.
+     * Creates a new spool message.
      *
-     * @param rawMessagePath 원본 RFC822 파일 경로
+     * @param rawMessagePath source RFC822 file path
      * @param sender envelope sender
-     * @param recipients 수신자 목록
-     * @param messageId 메시지 식별자
-     * @param authenticated 인증 여부
-     * @param peerAddress 클라이언트 주소
-     * @param dsnRet DSN RET 옵션
-     * @param dsnEnvid DSN ENVID 옵션
-     * @param rcptDsn 수신자별 DSN 옵션
-     * @return 생성된 스풀 메타데이터
+     * @param recipients recipient list
+     * @param messageId message identifier
+     * @param authenticated authentication state
+     * @param peerAddress client address
+     * @param dsnRet DSN RET option
+     * @param dsnEnvid DSN ENVID option
+     * @param rcptDsn per-recipient DSN options
+     * @return created spool metadata
      */
     override fun createMessage(
         rawMessagePath: Path,
@@ -118,9 +118,9 @@ internal class RedisSpoolMetadataStore(
     }
 
     /**
-     * 메타데이터를 저장합니다.
+     * Persists metadata.
      *
-     * @param meta 저장 대상 메타데이터
+     * @param meta metadata to persist
      */
     override fun writeMeta(meta: SpoolMetadata) {
         executeAtomically { ops ->
@@ -130,10 +130,10 @@ internal class RedisSpoolMetadataStore(
     }
 
     /**
-     * 메타데이터를 읽습니다.
+     * Reads metadata.
      *
-     * @param rawPath 스풀 메시지 원문 경로
-     * @return 파싱된 메타데이터, 없거나 파싱 실패 시 null
+     * @param rawPath spool raw message path
+     * @return parsed metadata, or null when missing/parse-failed
      */
     override fun readMeta(rawPath: Path): SpoolMetadata? = runCatching {
         val jsonRaw = redisTemplate.opsForValue().get(metaKey(rawPath)) ?: return null
@@ -144,9 +144,9 @@ internal class RedisSpoolMetadataStore(
     }
 
     /**
-     * 스풀 메시지 원문과 메타 파일을 함께 제거합니다.
+     * Removes raw payload and metadata together for a spool message.
      *
-     * @param rawPath 삭제할 원문 파일 경로
+     * @param rawPath raw path to remove
      */
     override fun removeMessage(rawPath: Path) {
         runCatching {
@@ -161,10 +161,10 @@ internal class RedisSpoolMetadataStore(
     }
 
     /**
-     * Redis 원문을 임시 파일로 물리화해 배달 경로를 준비합니다.
+     * Materializes Redis raw payload into a temporary file for delivery.
      *
-     * @param rawPath 스풀 메시지 식별 경로
-     * @return 배달용 임시 원문 파일 경로
+     * @param rawPath spool message reference path
+     * @return temporary raw file path for delivery
      */
     override fun prepareRawMessageForDelivery(rawPath: Path): Path {
         val encoded = redisTemplate.opsForValue().get(rawKey(rawPath))
@@ -180,9 +180,9 @@ internal class RedisSpoolMetadataStore(
     }
 
     /**
-     * 배달용 임시 원문 파일을 정리합니다.
+     * Cleans up temporary raw file used for delivery.
      *
-     * @param preparedPath 삭제할 임시 원문 파일 경로
+     * @param preparedPath temporary raw file path to delete
      */
     override fun cleanupPreparedRawMessage(preparedPath: Path) {
         runCatching { Files.deleteIfExists(preparedPath) }
@@ -198,9 +198,9 @@ internal class RedisSpoolMetadataStore(
         RedisSpoolKeyCodec.pathToken(rawPath)
 
     /**
-     * Redis 키 갱신을 트랜잭션으로 실행합니다.
+     * Executes Redis key updates in a transaction.
      *
-     * @param mutator 트랜잭션 내 키 조작
+     * @param mutator key operations within transaction
      */
     private fun executeAtomically(mutator: (RedisOperations<String, String>) -> Unit) {
         redisTemplate.execute(object : SessionCallback<List<Any?>> {

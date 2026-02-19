@@ -13,7 +13,7 @@ import java.time.Duration
 class RedisSpoolLockManagerTest {
 
     /**
-     * Redis `setIfAbsent`가 true를 반환하면 락 획득에 성공해야 합니다.
+     * Lock acquisition should succeed when Redis `setIfAbsent` returns true.
      */
     @Test
     fun `try lock succeeds when setIfAbsent returns true`() {
@@ -36,7 +36,7 @@ class RedisSpoolLockManagerTest {
     }
 
     /**
-     * 락 획득 전 refresh는 실패해야 합니다.
+     * Refresh should fail before lock ownership is acquired.
      */
     @Test
     fun `refresh lock fails without ownership`() {

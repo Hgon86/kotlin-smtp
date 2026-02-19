@@ -1,40 +1,40 @@
 package io.github.kotlinsmtp.relay.api
 
 /**
- * 수신자/요청 정보에 따라 아웃바운드 릴레이 경로를 결정하는 SPI.
+ * SPI that determines outbound relay route from recipient/request information.
  *
- * 기본 구현은 설정 파일(application.yml) 기반으로 동작하며,
- * 사용자는 DB/설정 서버 조회 구현으로 교체할 수 있습니다.
+ * Default implementation is based on configuration file (application.yml),
+ * and can be replaced with DB/config-server lookup implementation.
  */
 public fun interface RelayRouteResolver {
     /**
-     * 주어진 릴레이 요청의 전송 경로를 반환합니다.
+     * Return transfer route for the given relay request.
      *
-     * @param request 릴레이 입력 컨텍스트
-     * @return 선택된 릴레이 경로
+     * @param request Relay input context
+     * @return Selected relay route
      */
     public fun resolve(request: RelayRequest): RelayRoute
 }
 
 /**
- * 아웃바운드 릴레이 경로 모델.
+ * Outbound relay route model.
  */
 public sealed interface RelayRoute {
-    /** MX 조회 기반 직접 전송 경로. */
+    /** Direct transfer route based on MX lookup. */
     public data object DirectMx : RelayRoute
 
     /**
-     * 지정 SMTP 서버(Smart Host) 전송 경로.
+     * Transfer route via specified SMTP server (Smart Host).
      *
-     * @property host 대상 SMTP 호스트
-     * @property port 대상 SMTP 포트
-     * @property username SMTP AUTH 사용자명(선택)
-     * @property password SMTP AUTH 비밀번호(선택)
-     * @property startTlsEnabled STARTTLS 시도 여부(선택)
-     * @property startTlsRequired STARTTLS 필수 여부(선택)
-     * @property checkServerIdentity 서버 인증서 호스트명 검증 여부(선택)
-     * @property trustAll 개발/테스트용 trust-all 여부(선택)
-     * @property trustHosts 허용할 신뢰 호스트 목록(선택)
+     * @property host Target SMTP host
+     * @property port Target SMTP port
+     * @property username SMTP AUTH username (optional)
+     * @property password SMTP AUTH password (optional)
+     * @property startTlsEnabled Whether to attempt STARTTLS (optional)
+     * @property startTlsRequired Whether STARTTLS is required (optional)
+     * @property checkServerIdentity Whether to verify server certificate hostname (optional)
+     * @property trustAll Whether trust-all is enabled for dev/test (optional)
+     * @property trustHosts List of trusted hosts to allow (optional)
      */
     public data class SmartHost(
         val host: String,

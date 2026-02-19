@@ -18,10 +18,10 @@ import kotlinx.coroutines.withContext
 /**
  * ESMTP CHUNKING (RFC 3030) - BDAT
  *
- * 형식: BDAT <chunk-size> [LAST]
- * - DATA 대신 사용 가능
- * - 각 BDAT 청크마다 250 응답을 반환(서버가 다음 청크를 받을 준비가 됐음을 의미)
- * - LAST 청크에서는 전체 메시지 처리가 완료된 뒤 최종 250/4xx/5xx를 반환
+ * Format: BDAT <chunk-size> [LAST]
+ * - Can be used instead of DATA
+ * - Returns 250 for each BDAT chunk (meaning server is ready for next chunk)
+ * - For LAST chunk, returns final 250/4xx/5xx after full message processing
  */
 internal class BdatCommand : SmtpCommand(
     "BDAT",
@@ -35,8 +35,8 @@ internal class BdatCommand : SmtpCommand(
 
         val chunkSize = command.parts[1].toLongOrNull()
             ?: run {
-                // BDAT는 바로 뒤에 raw bytes가 이어질 수 있어, 파싱 불가 시 동기화가 어렵습니다.
-                // 따라서 501 응답 후 연결을 종료합니다(보수적).
+                // BDAT may be immediately followed by raw bytes, making synchronization difficult when parsing fails.
+                // Therefore respond 501 and close connection (conservative).
                 session.sendResponse(SmtpStatusCode.COMMAND_SYNTAX_ERROR.code, "Invalid BDAT chunk-size")
                 session.shouldQuit = true
                 session.close()
@@ -49,7 +49,7 @@ internal class BdatCommand : SmtpCommand(
             return
         }
         if (chunkSize > Values.MAX_BDAT_CHUNK_SIZE.toLong()) {
-            // 너무 큰 청크는 읽기 전에 차단(메모리 폭주 방지)
+            // Reject excessively large chunks before reading (prevent memory blow-up)
             session.sendResponse(
                 SmtpStatusCode.EXCEEDED_STORAGE_ALLOCATION.code,
                 "BDAT chunk too large (max ${Values.MAX_BDAT_CHUNK_SIZE} bytes)"
@@ -67,8 +67,8 @@ internal class BdatCommand : SmtpCommand(
             return
         }
 
-        // BINARYMIME을 선언한 트랜잭션은 BDAT만으로 본문을 받아야 합니다(이미 DATA에서 거부).
-        // - 여기서는 별도 처리는 하지 않되, 명시적으로 주석으로 남겨 혼용을 방지합니다.
+        // Transactions that declared BINARYMIME must receive body only via BDAT (already rejected in DATA).
+        // - No additional handling here; keep explicit note to prevent mixed usage.
 
         val isFirstChunk = !session.bdatState.isActive
         if (isFirstChunk) {
@@ -76,26 +76,26 @@ internal class BdatCommand : SmtpCommand(
         }
 
         // IMPORTANT:
-        // BDAT는 "명령 라인 + 바로 뒤의 raw bytes"가 한 번에 들어올 수 있습니다.
-        // 서버는 프로토콜 동기화를 위해, 오류 응답을 하더라도 지정 바이트를 '반드시 소비(drain)'해야 합니다.
+        // BDAT can arrive as "command line + immediate raw bytes" in one shot.
+        // For protocol synchronization, the server must drain the specified bytes even when responding with error.
         val bytes = session.readBytesExact(chunkSize.toInt())
             ?: run {
-                // 연결이 끊긴 경우: 스트림 정리 후 종료
+                // Connection closed: clean stream and terminate
                 session.clearBdatState()
                 session.shouldQuit = true
                 session.close()
                 return
             }
 
-        // 상태/순서 검증(드레인 이후에 수행)
+        // Validate state/sequence (performed after drain)
         if (session.sessionData.mailFrom == null || session.sessionData.recipientCount <= 0) {
-            // 수신한 청크는 폐기하고, 트랜잭션은 리셋합니다.
+            // Discard received chunk and reset transaction.
             session.clearBdatState()
             session.resetTransaction(preserveGreeting = true)
             throw SmtpSendResponse(SmtpStatusCode.BAD_COMMAND_SEQUENCE.code, "Send MAIL FROM and RCPT TO first")
         }
 
-        // 첫 BDAT 청크에서만 Rate Limiting 메시지 제한을 소모합니다.
+        // Consume rate-limited message quota only on first BDAT chunk.
         if (isFirstChunk) {
             val clientIp = session.clientIpAddress()
             if (clientIp != null && !session.server.rateLimiter.allowMessage(clientIp)) {
@@ -105,7 +105,7 @@ internal class BdatCommand : SmtpCommand(
             }
         }
 
-        // 크기 제한(선언 SIZE 및 서버 최대): 초과 시 청크 폐기 후 오류 응답
+        // Size limits (declared SIZE and server max): discard chunk and return error when exceeded
         val proposedTotal = session.currentMessageSize.toLong() + bytes.size.toLong()
         val declaredSize = session.sessionData.declaredSize
         if (declaredSize != null && proposedTotal > declaredSize) {
@@ -125,7 +125,7 @@ internal class BdatCommand : SmtpCommand(
             )
         }
 
-        // 스트리밍 상태 초기화(첫 청크) - 여기부터는 '유효한 트랜잭션'으로 처리합니다.
+        // Initialize streaming state (first chunk) - from here it is treated as a valid transaction.
         if (!session.bdatState.isActive) {
             val dataChannel = Channel<ByteArray>(Channel.BUFFERED)
             val dataStream = CoroutineInputStream(dataChannel)
@@ -142,20 +142,20 @@ internal class BdatCommand : SmtpCommand(
 
         session.currentMessageSize = proposedTotal.toInt()
 
-        // 청크를 핸들러로 전달
+        // Deliver chunk to handler
         val dataChannel = session.bdatState.dataChannel
             ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "BDAT internal state error")
 
-        // IO 디스패처에서 batch 처리(추후 청크 분할/스풀링 최적화 여지)
+        // Batch processing in IO dispatcher (room for future chunk split/spooling optimization)
         val sendChunk = runCatching {
             withContext(Dispatchers.IO) {
-                // 작은 청크는 그대로, 큰 청크도 한 번에 전달(청크 상한으로 메모리 폭주 방지)
-                // BDAT 0 케이스는 불필요한 전송을 피합니다.
+                // Send small chunks as-is, and large chunks at once too (chunk cap prevents memory blow-up)
+                // Avoid unnecessary send for BDAT 0 case.
                 if (bytes.isNotEmpty()) dataChannel.send(bytes)
             }
         }
         if (sendChunk.isFailure) {
-            // 프로토콜 동기화를 위해: 오류 응답 후 연결을 종료(보수적)
+            // For protocol synchronization: close connection after error response (conservative)
             session.clearBdatState()
             val code = SmtpStatusCode.ERROR_IN_PROCESSING.code
             val message = "Error receiving BDAT"
@@ -184,12 +184,12 @@ internal class BdatCommand : SmtpCommand(
         }
 
         if (!isLast) {
-            // 중간 청크: 다음 BDAT를 받을 준비 완료
+            // Intermediate chunk: ready to receive next BDAT
             session.sendResponse(SmtpStatusCode.OKAY.code, "Ok")
             return
         }
 
-        // LAST 청크: 입력 종료 → 스트림 종료 → 처리 결과에 따라 최종 응답
+        // LAST chunk: end input -> close stream -> final response by processing result
         runCatching { dataChannel.close() }
 
         val handlerJob = session.bdatState.handlerJob
@@ -199,7 +199,7 @@ internal class BdatCommand : SmtpCommand(
         handlerJob?.join()
         val processing = handlerResult.await()
 
-        // 상태 정리(성공/실패 공통)
+        // Cleanup state (common for success/failure)
         session.clearBdatState()
         SmtpStreamingHandlerRunner.finalizeTransaction(
             session = session,

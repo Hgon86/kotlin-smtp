@@ -156,14 +156,14 @@ class SmtpAuthStartTlsIntegrationTest {
             out.flush()
             skipEhloResponse(reader)
 
-            // STARTTLS 응답(220)을 기다리지 않고 다음 커맨드를 파이프라인하면 서버는 거부해야 합니다.
+            // The server must reject pipelined commands before STARTTLS 220 response is received.
             out.write("STARTTLS\r\nMAIL FROM:<sender@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
             out.flush()
 
             val resp = reader.readLine()
             assertTrue(resp.startsWith("501"), "Expected 501 for STARTTLS pipelining, got: $resp")
 
-            // 보수적으로 연결이 종료되는지 확인(EOF 또는 타임아웃 등)
+            // Conservatively verify connection close behavior (EOF/timeout, etc.).
             runCatching { reader.readLine() }
         }
     }
@@ -211,7 +211,7 @@ class SmtpAuthStartTlsIntegrationTest {
     }
 
     /**
-     * STARTTLS 이후 EHLO를 마쳤더라도 인증 전에는 MAIL FROM을 거부해야 합니다.
+     * MAIL FROM must be rejected before authentication, even after STARTTLS + EHLO.
      */
     @Test
     fun `MAIL FROM is rejected after STARTTLS when auth is required but not authenticated`() {
@@ -252,7 +252,7 @@ class SmtpAuthStartTlsIntegrationTest {
     }
 
     /**
-     * 잘못된 AUTH PLAIN 자격 증명은 535로 거부되어야 합니다.
+     * Invalid AUTH PLAIN credentials must be rejected with 535.
      */
     @Test
     fun `AUTH PLAIN failure returns 535`() {
@@ -449,7 +449,7 @@ class SmtpAuthStartTlsIntegrationTest {
         val tls = factory.createSocket(socket, "localhost", socket.port, true) as SSLSocket
         tls.useClientMode = true
         tls.startHandshake()
-        // TLS 핸드셰이크 완료 후 안정적인 통신을 위해 잠시 대기
+        // Wait briefly after TLS handshake for stable I/O.
         Thread.sleep(50)
         return tls
     }

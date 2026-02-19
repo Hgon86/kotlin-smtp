@@ -4,9 +4,9 @@ import io.github.kotlinsmtp.model.SessionData
 import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
 
 /**
- * 세션의 트랜잭션 핸들러 생명주기를 관리합니다.
+ * Manages transaction handler lifecycle for a session.
  *
- * @property creator 핸들러 생성 팩토리
+ * @property creator Handler factory
  */
 internal class SmtpProtocolHandlerHolder(
     private val creator: (() -> SmtpProtocolHandler)?,
@@ -15,10 +15,10 @@ internal class SmtpProtocolHandlerHolder(
     private var current: SmtpProtocolHandler? = null
 
     /**
-     * 필요 시 핸들러를 생성하고 반환합니다.
+     * Create and return handler when needed.
      *
-     * @param sessionData 핸들러 초기화에 사용할 세션 데이터
-     * @return 현재 핸들러 또는 생성된 핸들러
+     * @param sessionData Session data used for handler initialization
+     * @return Current handler or newly created handler
      */
     fun getOrCreate(sessionData: SessionData): SmtpProtocolHandler? {
         val existing = current
@@ -35,7 +35,7 @@ internal class SmtpProtocolHandlerHolder(
     }
 
     /**
-     * 핸들러를 종료하고 참조를 해제합니다.
+     * Finalize handler and clear reference.
      */
     suspend fun doneAndClear() {
         val handler = synchronized(this) {

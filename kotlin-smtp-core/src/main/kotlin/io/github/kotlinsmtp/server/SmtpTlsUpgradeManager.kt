@@ -10,10 +10,10 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * STARTTLS 업그레이드 전환(읽기 차단, 게이트, SslHandler 삽입, 핸드셰이크)을 담당합니다.
+ * Handles STARTTLS upgrade transition (read blocking, gate, SslHandler insertion, handshake).
  *
- * - begin(): pipelining 방지 및 전환 준비
- * - complete(): 220 flush 이후 호출되어야 하며, 핸드셰이크 성공 시 onHandshakeSuccess를 실행합니다.
+ * - begin(): prevent pipelining and prepare transition
+ * - complete(): must be called after 220 flush; executes onHandshakeSuccess on successful handshake.
  */
 internal class SmtpTlsUpgradeManager(
     private val channel: Channel,
@@ -26,15 +26,15 @@ internal class SmtpTlsUpgradeManager(
     suspend fun begin(): Boolean {
         if (!tlsUpgrading.compareAndSet(false, true)) return false
 
-        // 읽기 중단(autoRead=false)은 event loop에서 수행해야 안전합니다.
+        // Disabling reads (autoRead=false) should be performed on event loop for safety.
         setAutoReadOnEventLoop(false)
 
-        // autoRead=false 전환 직후에도 이미 스케줄된 read가 수행될 수 있으므로,
-        // SslHandler가 삽입되기 전까지는 raw bytes가 디코더로 흘러가지 않도록 게이트를 둡니다.
+        // Even right after switching autoRead=false, already scheduled reads may still run,
+        // so place a gate to block raw bytes from reaching decoder before SslHandler is inserted.
         addStartTlsInboundGateOnEventLoop()
 
-        // STARTTLS는 파이프라이닝할 수 없습니다. 이미 큐에 남은 입력이 있으면(=대기 커맨드/데이터)
-        // 프로토콜 동기화를 위해 업그레이드를 거부하는 쪽이 안전합니다.
+        // STARTTLS cannot be pipelined. If queued input already exists (pending command/data),
+        // rejecting upgrade is safer for protocol synchronization.
         val hasPending = drainPendingInboundFrames()
         if (hasPending) {
             tlsUpgrading.set(false)
@@ -49,11 +49,11 @@ internal class SmtpTlsUpgradeManager(
         try {
             val sslHandler = addSslHandlerOnEventLoop(sslContext)
 
-            // 게이트가 버퍼링한 raw bytes가 있으면(클라이언트가 매우 빨리 ClientHello를 보내는 경우)
-            // SslHandler가 먼저 처리할 수 있도록 게이트 제거 후 pipeline head에서 재주입합니다.
+            // If gate buffered raw bytes (e.g., client sends ClientHello very quickly),
+            // remove gate and replay from pipeline head so SslHandler processes first.
             removeStartTlsInboundGateAndReplayOnEventLoop()
 
-            // TLS 핸드셰이크 바이트를 읽기 위해 읽기를 재개합니다.
+            // Resume reads to consume TLS handshake bytes.
             setAutoReadOnEventLoop(true)
 
             awaitHandshake(sslHandler)
@@ -117,7 +117,7 @@ internal class SmtpTlsUpgradeManager(
                 val buffered = gate.drain()
                 runCatching { pipeline.remove(STARTTLS_GATE_NAME) }
 
-                // pipeline.fireChannelRead는 head에서 시작하므로, ssl 핸들러가 있으면 ssl이 먼저 처리합니다.
+                // pipeline.fireChannelRead starts at head, so ssl handler processes first when present.
                 for (msg in buffered) {
                     pipeline.fireChannelRead(msg)
                 }

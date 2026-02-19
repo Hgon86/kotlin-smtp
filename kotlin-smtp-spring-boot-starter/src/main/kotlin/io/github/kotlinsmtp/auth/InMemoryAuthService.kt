@@ -6,12 +6,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 private val log = KotlinLogging.logger {}
 
 /**
- * 인메모리 사용자 저장소 기반 인증 서비스(BCrypt 지원)
+ * Authentication service backed by in-memory user store (BCrypt supported)
  */
 class InMemoryAuthService(
     override val enabled: Boolean,
     override val required: Boolean,
-    private val users: Map<String, String>, // 값은 해시 또는 평문(자동 감지)
+    private val users: Map<String, String>, // Values may be hash or plaintext (auto-detected)
     private val passwordEncoder: BCryptPasswordEncoder = BCryptPasswordEncoder(),
 ) : AuthService {
     override fun verify(username: String, password: String): Boolean {

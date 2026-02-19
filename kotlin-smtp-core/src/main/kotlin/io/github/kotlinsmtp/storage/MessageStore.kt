@@ -4,18 +4,18 @@ import java.io.InputStream
 import java.nio.file.Path
 
 /**
- * SMTP가 수신한 메시지 원문(RFC 5322; 흔히 .eml)을 저장하는 경계.
+ * Boundary for storing raw messages (RFC 5322; typically .eml) received by SMTP.
  *
- * - DB/S3 등 최종 저장소는 아직 미정이므로, 지금은 파일 기반 구현만 제공합니다.
- * - TODO(storage): 운영/확장 시에는 S3/DB로 교체할 수 있도록 이 인터페이스를 유지합니다.
+ * - Final storage backend (DB/S3, etc.) is not finalized yet, so only file-based implementation is currently provided.
+ * - TODO(storage): keep this interface so it can be replaced with S3/DB for operations/scaling.
  */
 public interface MessageStore {
     /**
-     * SMTP 본문(rawInput)을 "Received 헤더 + 원문" 형태로 저장합니다.
+     * Store SMTP body (rawInput) in "Received header + raw body" form.
      *
-     * @param messageId 서버 내부 트랜잭션 식별자(로그/추적용)
-     * @param receivedHeaderValue Received: 헤더 값(헤더명 제외)
-     * @param rawInput DATA/BDAT로 들어온 본문 스트림(바이트 보존)
+     * @param messageId Internal server transaction identifier (for logs/tracing)
+     * @param receivedHeaderValue Received: header value (excluding header name)
+     * @param rawInput Body stream from DATA/BDAT (byte-preserving)
      */
     public suspend fun storeRfc822(
         messageId: String,

@@ -1,7 +1,7 @@
 package io.github.kotlinsmtp.spool
 
 /**
- * 스풀 메시지의 원문/메타 정합성이 깨졌을 때 사용하는 예외입니다.
+ * Exception used when raw/meta consistency of a spool message is broken.
  */
 class SpoolCorruptedMessageException(
     message: String,

@@ -86,7 +86,7 @@ class StarterMvpSmokeTest {
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
             .withPropertyValues(
-                // docs/application.example.yml 핵심 키들과 정합을 유지하기 위한 스모크 테스트
+                // Smoke test to stay aligned with key docs/application.example.yml properties.
                 "smtp.hostname=localhost",
                 "smtp.port=0",
                 "smtp.serviceName=ESMTP",
@@ -98,7 +98,7 @@ class StarterMvpSmokeTest {
                 "smtp.storage.listsDir=${dirs.listsDir}",
                 "smtp.spool.dir=${dirs.spoolDir}",
 
-                // AUTH + rate limit (docs와 동기화 목적)
+                // AUTH + rate limit (kept in sync with docs)
                 "smtp.auth.enabled=true",
                 "smtp.auth.required=false",
                 "smtp.auth.rateLimitEnabled=true",
@@ -107,7 +107,7 @@ class StarterMvpSmokeTest {
                 "smtp.auth.rateLimitLockoutSeconds=600",
                 "smtp.auth.users.user=password",
 
-                // relay는 기본 비활성(relay starter 없어도 부팅 가능해야 함)
+                // Relay is disabled by default (should boot without relay starter).
                 "smtp.relay.enabled=false",
             )
             .run { context ->
@@ -134,7 +134,7 @@ class StarterMvpSmokeTest {
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
             .withPropertyValues(
                 "smtp.hostname=localhost",
-                "smtp.port=2525", // listeners가 있으면 무시되어야 함
+                "smtp.port=2525", // should be ignored when listeners are configured
                 "smtp.serviceName=ESMTP",
 
                 "smtp.routing.localDomain=local.test",
@@ -147,7 +147,7 @@ class StarterMvpSmokeTest {
                 "smtp.auth.enabled=true",
                 "smtp.auth.required=false",
 
-                // 2개의 리스너(포트 0으로 바인드)
+                // Two listeners (bind with port 0).
                 "smtp.listeners[0].port=0",
                 "smtp.listeners[0].serviceName=SUBMISSION",
                 "smtp.listeners[0].implicitTls=false",
@@ -156,7 +156,7 @@ class StarterMvpSmokeTest {
                 "smtp.listeners[0].requireAuthForMail=true",
 
                 "smtp.listeners[1].port=0",
-                // serviceName 미지정: smtp.serviceName으로 fallback
+                // serviceName omitted: fallback to smtp.serviceName.
                 "smtp.listeners[1].implicitTls=false",
                 "smtp.listeners[1].enableStartTls=false",
                 "smtp.listeners[1].enableAuth=true",
@@ -276,10 +276,10 @@ class StarterMvpSmokeTest {
     }
 
     /**
-     * 테스트별 임시 디렉터리 묶음을 생성합니다.
+     * Creates a bundle of temporary directories per test case.
      *
-     * @param suffix 테스트 구분 접미사
-     * @return 생성된 테스트 디렉터리 정보
+     * @param suffix test-specific suffix
+     * @return created test directory bundle
      */
     private fun createTestDirectories(suffix: String): TestDirectories = TestDirectories(
         mailboxDir = Files.createDirectories(tempDir.resolve("mailboxes-$suffix")),
@@ -289,12 +289,12 @@ class StarterMvpSmokeTest {
     )
 
     /**
-     * 스모크 테스트용 디렉터리 경로 묶음입니다.
+     * Directory path bundle for smoke tests.
      *
-     * @property mailboxDir 로컬 메일박스 디렉터리
-     * @property messageTempDir 메시지 임시 저장 디렉터리
-     * @property listsDir 메일링 리스트 파일 디렉터리
-     * @property spoolDir 스풀 디렉터리
+     * @property mailboxDir local mailbox directory
+     * @property messageTempDir temporary message storage directory
+     * @property listsDir mailing-list file directory
+     * @property spoolDir spool directory
      */
     private data class TestDirectories(
         val mailboxDir: Path,

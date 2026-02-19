@@ -6,15 +6,15 @@ import java.util.concurrent.ConcurrentHashMap
 private val log = KotlinLogging.logger {}
 
 /**
- * 활성 SMTP 세션 추적기
- * 
- * Graceful shutdown 시 모든 세션이 종료될 때까지 대기하기 위해 사용됩니다.
+ * Active SMTP session tracker
+ *
+ * Used to wait until all sessions are closed during graceful shutdown.
  */
 internal class ActiveSessionTracker {
     private val activeSessions = ConcurrentHashMap<String, SmtpSession>()
 
     /**
-     * 세션 등록
+     * Register session
      */
     fun register(sessionId: String, session: SmtpSession) {
         activeSessions[sessionId] = session
@@ -22,7 +22,7 @@ internal class ActiveSessionTracker {
     }
 
     /**
-     * 세션 제거
+     * Unregister session
      */
     fun unregister(sessionId: String) {
         activeSessions.remove(sessionId)
@@ -30,12 +30,12 @@ internal class ActiveSessionTracker {
     }
 
     /**
-     * 현재 활성 세션 수
+     * Current active session count
      */
     fun count(): Int = activeSessions.size
 
     /**
-     * 모든 세션 종료 요청
+     * Request close for all sessions
      */
     fun closeAllSessions() {
         val sessions = activeSessions.values.toList()
@@ -50,8 +50,8 @@ internal class ActiveSessionTracker {
     }
 
     /**
-     * 모든 세션이 종료될 때까지 대기 (with timeout)
-     * @return true if all sessions closed, false if timeout
+     * Wait until all sessions are closed (with timeout)
+     * @return true if all sessions closed, false on timeout
      */
     suspend fun awaitAllSessionsClosed(timeoutMs: Long = 30000): Boolean {
         val startTime = System.currentTimeMillis()

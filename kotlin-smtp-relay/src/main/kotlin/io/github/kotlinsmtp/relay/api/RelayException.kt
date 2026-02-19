@@ -1,9 +1,9 @@
 package io.github.kotlinsmtp.relay.api
 
 /**
- * outbound 릴레이 실패 분류.
+ * Failure classification for outbound relay.
  *
- * 구현체는 실패를 transient/permanent로 분류하여 스풀러/재시도 정책이 판단할 수 있도록 한다.
+ * Implementations classify failures as transient/permanent so spooler/retry policies can decide.
  */
 public sealed class RelayException(
     message: String,
@@ -11,16 +11,18 @@ public sealed class RelayException(
 ) : RuntimeException(message, cause) {
     public abstract val isTransient: Boolean
 
-    /** RFC 3463 Enhanced Status Code(예: 4.4.1, 5.7.1). */
+    /** RFC 3463 Enhanced Status Code (e.g., 4.4.1, 5.7.1). */
     public open val enhancedStatusCode: String? = null
 
-    /** 원격 서버 응답(가능한 경우). */
+    /** Remote server response (when available). */
     public open val remoteReply: String? = null
 }
 
 public class RelayTransientException(
     message: String,
     cause: Throwable? = null,
+    override val enhancedStatusCode: String? = null,
+    override val remoteReply: String? = null,
 ) : RelayException(message, cause) {
     override val isTransient: Boolean = true
 }
@@ -28,6 +30,8 @@ public class RelayTransientException(
 public class RelayPermanentException(
     message: String,
     cause: Throwable? = null,
+    override val enhancedStatusCode: String? = null,
+    override val remoteReply: String? = null,
 ) : RelayException(message, cause) {
     override val isTransient: Boolean = false
 }

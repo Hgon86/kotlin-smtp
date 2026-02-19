@@ -28,8 +28,8 @@ private val log = KotlinLogging.logger {}
 
 @AutoConfiguration(
     beforeName = [
-        // kotlin-smtp-spring-boot-starter의 기본 빈보다 먼저 적용되어야 합니다.
-        // (RelayAccessPolicy 등 @ConditionalOnMissingBean 충돌을 방지)
+        // Must be applied before default beans of kotlin-smtp-spring-boot-starter.
+        // (Prevent @ConditionalOnMissingBean conflicts such as RelayAccessPolicy)
         "io.github.kotlinsmtp.config.KotlinSmtpAutoConfiguration",
     ]
 )
@@ -153,9 +153,9 @@ class KotlinSmtpRelayAutoConfiguration {
     }
 
     /**
-     * Smart Host 설정 바인딩 객체를 전송 경로 모델로 변환합니다.
+     * Convert Smart Host config-binding object into transfer-route model.
      *
-     * @return 유효성 검증이 완료된 Smart Host 경로
+     * @return Smart Host route with validated values
      */
     private fun RelayProperties.SmartHostRouteProperties.toSmartHost(): RelayRoute.SmartHost {
         val normalizedHost = host.trim()

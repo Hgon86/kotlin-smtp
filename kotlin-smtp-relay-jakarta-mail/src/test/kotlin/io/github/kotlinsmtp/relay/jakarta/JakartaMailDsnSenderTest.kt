@@ -14,7 +14,7 @@ import java.util.Properties
 class JakartaMailDsnSenderTest {
 
     /**
-     * SMTP 코드/확장 코드를 포함한 실패 사유는 RFC 3464 필드에 반영되어야 합니다.
+     * Failure reasons with SMTP code/enhanced code should map to RFC 3464 fields.
      */
     @Test
     fun `maps smtp reply to status and diagnostic code`() {
@@ -40,7 +40,7 @@ class JakartaMailDsnSenderTest {
     }
 
     /**
-     * SMTP 코드가 없는 실패 사유는 보수적 매핑과 ORCPT 반영이 되어야 합니다.
+     * Failure reasons without SMTP code should use conservative mapping and include ORCPT.
      */
     @Test
     fun `maps heuristic status and includes original recipient`() {
@@ -67,10 +67,10 @@ class JakartaMailDsnSenderTest {
     }
 
     /**
-     * 생성된 DSN RFC822에서 message/delivery-status 파트를 추출합니다.
+     * Extracts message/delivery-status part from generated DSN RFC822.
      *
-     * @param rawDsn 캡처한 DSN RFC822 원문 바이트
-     * @return delivery-status 파트 텍스트
+     * @param rawDsn captured DSN RFC822 raw bytes
+     * @return delivery-status part text
      */
     private fun extractDeliveryStatusText(rawDsn: ByteArray?): String {
         val bytes = checkNotNull(rawDsn) { "DSN message was not captured" }

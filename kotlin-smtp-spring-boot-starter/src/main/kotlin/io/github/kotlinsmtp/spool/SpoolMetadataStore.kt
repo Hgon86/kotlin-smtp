@@ -15,41 +15,41 @@ import kotlin.io.path.writeText
 private val metadataLog = KotlinLogging.logger {}
 
 /**
- * 스풀 메타데이터 저장소 추상화입니다.
+ * Abstraction for spool metadata stores.
  */
 interface SpoolMetadataStore {
     /**
-     * 스풀 저장소가 사용할 디렉터리를 준비합니다.
+     * Prepares directory used by spool storage.
      */
     fun initializeDirectory()
 
     /**
-     * 현재 대기 중인 스풀 메시지 수를 계산합니다.
+     * Counts currently pending spool messages.
      *
-     * @return 대기 메시지 수
+     * @return pending message count
      */
     fun scanPendingMessageCount(): Long
 
     /**
-     * 스풀 메시지 원문 파일 목록을 조회합니다.
+     * Lists raw file references of spool messages.
      *
-     * @return 메시지 파일 경로 목록
+     * @return message file path list
      */
     fun listMessages(): List<Path>
 
     /**
-     * 신규 스풀 메시지를 생성합니다.
+     * Creates a new spool message.
      *
-     * @param rawMessagePath 원본 RFC822 파일 경로
+     * @param rawMessagePath source RFC822 file path
      * @param sender envelope sender
-     * @param recipients 수신자 목록
-     * @param messageId 메시지 식별자
-     * @param authenticated 인증 여부
-     * @param peerAddress 클라이언트 주소
-     * @param dsnRet DSN RET 옵션
-     * @param dsnEnvid DSN ENVID 옵션
-     * @param rcptDsn 수신자별 DSN 옵션
-     * @return 생성된 스풀 메타데이터
+     * @param recipients recipient list
+     * @param messageId message identifier
+     * @param authenticated authentication state
+     * @param peerAddress client address
+     * @param dsnRet DSN RET option
+     * @param dsnEnvid DSN ENVID option
+     * @param rcptDsn per-recipient DSN options
+     * @return created spool metadata
      */
     fun createMessage(
         rawMessagePath: Path,
@@ -64,65 +64,65 @@ interface SpoolMetadataStore {
     ): SpoolMetadata
 
     /**
-     * 메타데이터를 저장합니다.
+     * Persists metadata.
      *
-     * @param meta 저장 대상 메타데이터
+     * @param meta metadata to persist
      */
     fun writeMeta(meta: SpoolMetadata)
 
     /**
-     * 메타데이터를 읽습니다.
+     * Reads metadata.
      *
-     * @param rawPath 스풀 메시지 원문 경로
-     * @return 파싱된 메타데이터, 없거나 파싱 실패 시 null
+     * @param rawPath spool raw message path
+     * @return parsed metadata, or null when missing/parse-failed
      */
     fun readMeta(rawPath: Path): SpoolMetadata?
 
     /**
-     * 스풀 메시지 원문과 메타 파일을 함께 제거합니다.
+     * Removes raw payload and metadata together for a spool message.
      *
-     * @param rawPath 삭제할 원문 파일 경로
+     * @param rawPath raw path to remove
      */
     fun removeMessage(rawPath: Path)
 
     /**
-     * 배달 처리를 위한 원문 접근 경로를 준비합니다.
+     * Prepares raw-message access path for delivery.
      *
-     * 파일 기반 구현은 입력 경로를 그대로 반환하고,
-     * 비파일 기반 구현은 임시 파일을 생성해 반환할 수 있습니다.
+     * File-based implementations return input path as-is,
+     * while non-file implementations may materialize a temporary file.
      *
-     * @param rawPath 스풀 메시지 식별 경로
-     * @return 배달에 사용할 원문 파일 경로
+     * @param rawPath spool message reference path
+     * @return raw file path to use for delivery
      */
     fun prepareRawMessageForDelivery(rawPath: Path): Path = rawPath
 
     /**
-     * 배달 처리를 위해 준비한 원문 접근 경로를 정리합니다.
+     * Cleans up prepared raw-message access path used for delivery.
      *
-     * @param preparedPath `prepareRawMessageForDelivery`로 획득한 경로
+     * @param preparedPath path acquired from `prepareRawMessageForDelivery`
      */
     fun cleanupPreparedRawMessage(preparedPath: Path) = Unit
 }
 
 /**
- * 파일 기반 스풀 메타데이터 저장소를 담당합니다.
+ * File-based spool metadata store implementation.
  *
- * @property spoolDir 스풀 디렉터리
+ * @property spoolDir spool directory
  */
 class FileSpoolMetadataStore(
     private val spoolDir: Path,
 ) : SpoolMetadataStore {
     /**
-     * 스풀 디렉터리를 준비합니다.
+     * Prepares spool directory.
      */
     override fun initializeDirectory() {
         Files.createDirectories(spoolDir)
     }
 
     /**
-     * 현재 대기 중인 스풀 메시지 수를 계산합니다.
+     * Counts currently pending spool messages.
      *
-     * @return `*.eml` 파일 개수
+     * @return number of `*.eml` files
      */
     override fun scanPendingMessageCount(): Long = runCatching {
         Files.list(spoolDir).use { stream ->
@@ -134,25 +134,25 @@ class FileSpoolMetadataStore(
     }
 
     /**
-     * 스풀 메시지 파일 목록을 조회합니다.
+     * Lists spool message files.
      *
-     * @return 스풀 메시지 경로 목록
+     * @return spool message path list
      */
     override fun listMessages(): List<Path> = spoolDir.listDirectoryEntries("*.eml")
 
     /**
-     * 신규 스풀 메시지를 생성합니다.
+     * Creates a new spool message.
      *
-     * @param rawMessagePath 원본 RFC822 파일 경로
+     * @param rawMessagePath source RFC822 file path
      * @param sender envelope sender
-     * @param recipients 수신자 목록
-     * @param messageId 메시지 식별자
-     * @param authenticated 인증 여부
-     * @param peerAddress 클라이언트 주소
-     * @param dsnRet DSN RET 옵션
-     * @param dsnEnvid DSN ENVID 옵션
-     * @param rcptDsn 수신자별 DSN 옵션
-     * @return 생성된 스풀 메타데이터
+     * @param recipients recipient list
+     * @param messageId message identifier
+     * @param authenticated authentication state
+     * @param peerAddress client address
+     * @param dsnRet DSN RET option
+     * @param dsnEnvid DSN ENVID option
+     * @param rcptDsn per-recipient DSN options
+     * @return created spool metadata
      */
     override fun createMessage(
         rawMessagePath: Path,
@@ -184,9 +184,9 @@ class FileSpoolMetadataStore(
     }
 
     /**
-     * 메타데이터를 저장합니다.
+     * Persists metadata.
      *
-     * @param meta 저장 대상 메타데이터
+     * @param meta metadata to persist
      */
     override fun writeMeta(meta: SpoolMetadata) {
         val metaPath = metaPath(meta.rawPath)
@@ -194,10 +194,10 @@ class FileSpoolMetadataStore(
     }
 
     /**
-     * 메타데이터를 읽습니다.
+     * Reads metadata.
      *
-     * @param rawPath 스풀 메시지 원문 경로
-     * @return 파싱된 메타데이터, 없거나 파싱 실패 시 null
+     * @param rawPath spool raw message path
+     * @return parsed metadata, or null when missing/parse-failed
      */
     override fun readMeta(rawPath: Path): SpoolMetadata? = runCatching {
         val metaPath = metaPath(rawPath)
@@ -209,9 +209,9 @@ class FileSpoolMetadataStore(
     }
 
     /**
-     * 스풀 메시지 원문과 메타 파일을 함께 제거합니다.
+     * Removes raw payload and metadata together for a spool message.
      *
-     * @param rawPath 삭제할 원문 파일 경로
+     * @param rawPath raw path to remove
      */
     override fun removeMessage(rawPath: Path) {
         runCatching { Files.deleteIfExists(rawPath) }

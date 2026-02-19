@@ -21,17 +21,17 @@ internal class MailCommand : SmtpCommand(
     "FROM:<senderAddress> [SIZE=<size>] [BODY=7BIT]"
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
-        // 상태/순서 검증: HELO/EHLO 이전에는 MAIL 금지
+        // State/sequence validation: MAIL is not allowed before HELO/EHLO.
         if (!session.sessionData.greeted) {
             throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "Send HELO/EHLO first")
         }
 
-        // 설정상 인증이 필수인 경우: STARTTLS + AUTH 이후에만 MAIL 트랜잭션을 시작할 수 있게 합니다.
-        // - 운영(MTA 수신)에서는 보통 required=false
-        // - 제출(Submission) 용도로만 required=true 권장
+        // If authentication is required by config, allow MAIL transaction only after STARTTLS + AUTH.
+        // - In operations (MTA receiving), required=false is typical.
+        // - required=true is recommended only for submission use.
         if (session.server.requireAuthForMail) {
             if (!session.isTls) {
-                // TLS 없이 인증 강제는 보안상 의미가 없으므로 STARTTLS를 먼저 요구합니다.
+                // Enforcing auth without TLS is not meaningful for security, so require STARTTLS first.
                 throw SmtpSendResponse(530, "5.7.0 Must issue STARTTLS first")
             }
             if (!session.sessionData.isAuthenticated) {
@@ -39,22 +39,22 @@ internal class MailCommand : SmtpCommand(
             }
         }
 
-        // 전체 원본 명령 문자열을 파서에 전달
+        // Pass full raw command string to parser
         val esmtp = try {
             parseMailArguments(command.rawCommand)
         } catch (e: IllegalArgumentException) {
             respondSyntax(e.message ?: "Invalid MAIL FROM syntax")
         }
 
-        // 빈 reverse-path (<>) 허용: DSN/bounce 메시지용
+        // Allow empty reverse-path (<>): for DSN/bounce messages
         val from = esmtp.address.ifBlank { null }
 
-        // ESMTP 파라미터 검증
+        // Validate ESMTP parameters
         validateMailParameters(esmtp)
         val smtpUtf8 = esmtp.parameters.containsKey("SMTPUTF8")
 
         if (from != null) {
-            // SMTPUTF8 파라미터 없이 UTF-8 주소를 받으면 RFC 의미상 거부해야 합니다(기능 위주 최소 준수).
+            // Receiving UTF-8 address without SMTPUTF8 parameter should be rejected per RFC semantics (minimum practical compliance).
             val localPart = from.substringBeforeLast('@', "")
             if (!smtpUtf8 && !AddressUtils.isAllAscii(localPart)) {
                 throw SmtpSendResponse(553, "5.6.7 SMTPUTF8 required")
@@ -63,32 +63,32 @@ internal class MailCommand : SmtpCommand(
             if (!ok) throw SmtpSendResponse(INVALID_MAILBOX.code, "Invalid email address")
         }
 
-        // 상태 업데이트
+        // Update state
         session.resetTransaction(preserveGreeting = true)
-        session.sessionData.mailFrom = from ?: "" // 빈 reverse-path는 빈 문자열로 표기
+        session.sessionData.mailFrom = from ?: "" // Represent empty reverse-path as empty string
         session.sessionData.mailParameters = esmtp.parameters
         session.sessionData.declaredSize = esmtp.parameters["SIZE"]?.toLongOrNull()
         session.sessionData.smtpUtf8 = smtpUtf8
-        // RFC 3461(DSN) 관련 파라미터 저장
+        // Store RFC 3461 (DSN) related parameters
         session.sessionData.dsnRet = esmtp.parameters["RET"]?.uppercase()
         session.sessionData.dsnEnvid = esmtp.parameters["ENVID"]?.trim()
 
-        // 트랜잭션 핸들러에 발신자 전달
+        // Pass sender to transaction handler
         session.transactionHandler?.from(from ?: "")
 
         session.sendResponse(OKAY.code, "Ok")
     }
 
     /**
-     * MAIL FROM 파라미터를 검증합니다.
-     * 지원: SIZE, BODY=7BIT | BODY=8BITMIME
-     * 미지원 파라미터는 555 오류로 거부
+     * Validate MAIL FROM parameters.
+     * Supported: SIZE, BODY=7BIT | BODY=8BITMIME
+     * Unsupported parameters are rejected with 555
      */
     private fun validateMailParameters(esmtp: MailArguments) {
         esmtp.parameters.forEach { (key, value) ->
             when (key) {
                 "SIZE" -> {
-                    // SIZE 파라미터: 숫자 검증 및 최대 크기 확인
+                    // SIZE parameter: validate numeric value and max size
                     val numeric = value.toLongOrNull()
                         ?: throw SmtpSendResponse(
                             RECIPIENT_NOT_RECOGNIZED.code,
@@ -103,8 +103,8 @@ internal class MailCommand : SmtpCommand(
                 }
 
                 "BODY" -> {
-                    // BODY 파라미터: 7BIT/8BITMIME/BINARYMIME 지원(실사용 기준)
-                    // - BINARYMIME는 CHUNKING(BDAT) 경로로만 처리(아래 DATA에서 강제)
+                    // BODY parameter: support 7BIT/8BITMIME/BINARYMIME (practical baseline)
+                    // - BINARYMIME is handled only through CHUNKING(BDAT) path (enforced in DATA below)
                     val normalized = value.uppercase()
                     if (normalized != "7BIT" && normalized != "8BITMIME" && normalized != "BINARYMIME") {
                         throw SmtpSendResponse(
@@ -117,7 +117,7 @@ internal class MailCommand : SmtpCommand(
                 // RFC 3461 (DSN)
                 // - RET=FULL|HDRS
                 // - ENVID=<id>
-                // NOTE: 지금은 저장만 하고, 실제 DSN 생성 포맷(RFC 3464)은 TODO로 둡니다.
+                // NOTE: currently only stored; actual DSN generation format (RFC 3464) remains TODO.
                 "RET" -> {
                     val normalized = value.uppercase()
                     if (normalized != "FULL" && normalized != "HDRS") {
@@ -129,7 +129,7 @@ internal class MailCommand : SmtpCommand(
                 }
                 "ENVID" -> {
                     val trimmed = value.trim()
-                    // ENVID는 공백이 없는 opaque identifier로 취급합니다(보수적).
+                    // Treat ENVID as whitespace-free opaque identifier (conservative).
                     if (trimmed.isEmpty() || trimmed.length > 100 || trimmed.any { it.isWhitespace() }) {
                         throw SmtpSendResponse(
                             RECIPIENT_NOT_RECOGNIZED.code,
@@ -139,8 +139,8 @@ internal class MailCommand : SmtpCommand(
                 }
 
                 // RFC 6531 (SMTPUTF8)
-                // - MAIL FROM에서 "SMTPUTF8" 플래그를 수용합니다.
-                // - 값이 붙는 형태는 허용하지 않습니다(보수적으로 거부).
+                // - Accept "SMTPUTF8" flag at MAIL FROM.
+                // - Form with value is not allowed (conservative rejection).
                 "SMTPUTF8" -> {
                     if (value.isNotBlank()) {
                         throw SmtpSendResponse(
@@ -151,7 +151,7 @@ internal class MailCommand : SmtpCommand(
                 }
 
                 else -> {
-                    // 미지원 파라미터는 명시적으로 거부
+                    // Explicitly reject unsupported parameters
                     throw SmtpSendResponse(
                         RECIPIENT_NOT_RECOGNIZED.code,
                         "$key parameter not supported"

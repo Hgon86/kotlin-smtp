@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test
 class MicrometerSmtpEventHookTest {
 
     /**
-     * 세션/메시지 이벤트가 기대한 카운터와 게이지를 갱신하는지 검증합니다.
+     * Verifies that session/message events update expected counters and gauge.
      */
     @Test
     fun `event hook updates session and message metrics`() = runBlocking {

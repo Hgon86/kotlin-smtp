@@ -8,18 +8,18 @@ import io.netty.util.AttributeKey
 import io.netty.util.CharsetUtil
 
 /**
- * SMTP 입력 프레이밍 디코더
+ * SMTP inbound framing decoder
  *
- * 기존 LineBasedFrameDecoder/StringDecoder 조합은 BDAT(CHUNKING) 처리를 할 수 없습니다.
- * (BDAT는 '정확히 N바이트'를 읽어야 하며, 청크 바이트 안에는 CRLF가 포함될 수 있음)
+ * Existing LineBasedFrameDecoder/StringDecoder combination cannot handle BDAT (CHUNKING).
+ * (BDAT requires reading exactly N bytes, and chunk bytes may include CRLF)
  *
- * 이 디코더는 "라인 모드"와 "raw bytes 모드"를 내부 상태로 전환합니다.
- * - 기본은 라인 모드(CRLF 기준)로 [SmtpInboundFrame.Line]을 출력합니다.
- * - BDAT 라인을 감지하면, 다음에 오는 바이트를 "정확히 N바이트"로 읽어 [SmtpInboundFrame.Bytes]를 출력합니다.
+ * This decoder switches internal state between "line mode" and "raw bytes mode".
+ * - Default is line mode (CRLF-based), emitting [SmtpInboundFrame.Line].
+ * - When BDAT line is detected, it reads the following bytes as "exactly N bytes" and emits [SmtpInboundFrame.Bytes].
  *
- * NOTE: BDAT는 커맨드 라인과 청크 바이트가 같은 패킷에 함께 올 수 있어,
- *       '다운스트림이 attribute로 expectedBytes를 설정'하는 방식은 레이스로 깨질 수 있습니다.
- *       그래서 디코더가 BDAT 라인을 직접 인지해 모드를 전환합니다.
+ * NOTE: BDAT command line and chunk bytes can arrive in the same packet,
+ *       so the approach of downstream setting expectedBytes via attribute can break due to races.
+ *       Therefore this decoder directly recognizes BDAT lines and switches mode.
  */
 internal class SmtpInboundDecoder(
     private val maxLineLength: Int = Values.MAX_SMTP_LINE_LENGTH,
@@ -28,8 +28,8 @@ internal class SmtpInboundDecoder(
 
     companion object {
         /**
-         * DATA 본문 수신 중에는 "본문 라인"이 커맨드처럼 보일 수 있습니다(예: "BDAT 123").
-         * 이 경우 BDAT 자동 감지를 하면 프레이밍이 깨지므로, DATA 모드에서는 auto-detect를 비활성화합니다.
+         * While receiving DATA body, "body lines" may look like commands (e.g., "BDAT 123").
+         * In that case BDAT auto-detection would break framing, so auto-detect is disabled in DATA mode.
          */
         internal val IN_DATA_MODE: AttributeKey<Boolean> =
             AttributeKey.valueOf("smtp.inDataMode")
@@ -38,10 +38,10 @@ internal class SmtpInboundDecoder(
     private var pendingRawBytes: Int? = null
 
     /**
-     * 디코더 레벨에서 추적하는 DATA 본문 수신 모드입니다.
+     * DATA body receiving mode tracked at decoder level.
      *
-     * 세션이 `inDataMode=true`를 반영하기 전에도(PIPELINING/동일 패킷) 프레이밍이 깨지지 않도록,
-     * DATA 라인을 감지하면 곧바로 BDAT auto-detect를 비활성화합니다.
+     * To avoid framing breaks even before session reflects `inDataMode=true` (pipelining/same packet),
+     * BDAT auto-detect is disabled immediately when DATA line is detected.
      */
     private var dataModeForFraming: Boolean = false
 
@@ -59,7 +59,7 @@ internal class SmtpInboundDecoder(
                     continue
                 }
                 if (expectedBytes > Values.MAX_BDAT_CHUNK_SIZE) {
-                    // 방어: 너무 큰 청크는 디코더 단계에서 차단(메모리 폭주 방지)
+                    // Defense: block oversized chunk at decoder stage (prevent memory blow-up)
                     pendingRawBytes = null
                     throw TooLongFrameException("BDAT chunk too large (max=${Values.MAX_BDAT_CHUNK_SIZE} bytes)")
                 }
@@ -91,7 +91,7 @@ internal class SmtpInboundDecoder(
             }
 
             if (lineLength > maxLineLength) {
-                // 해당 라인을 버리고 에러 처리
+                // Discard this line and handle as error
                 input.readerIndex(lfIndex + 1)
                 throw TooLongFrameException("SMTP line too long (max=$maxLineLength bytes)")
             }
@@ -101,11 +101,11 @@ internal class SmtpInboundDecoder(
             if (hasCr) input.skipBytes(1) // '\r'
             input.skipBytes(1) // '\n'
 
-            // SMTP 커맨드/데이터는 8BITMIME를 고려해 ISO-8859-1로 1:1 보존합니다.
+            // Preserve SMTP command/data bytes 1:1 with ISO-8859-1 for 8BITMIME considerations.
             val line = String(lineBytes, CharsetUtil.ISO_8859_1)
 
-            // DATA 본문 수신 중에는 본문 라인이 "BDAT ..."로 시작할 수 있으므로 auto-detect를 끕니다.
-            // 세션 반영(IN_DATA_MODE) 이전 입력까지 방어하기 위해 디코더 자체 state도 함께 사용합니다.
+            // While receiving DATA body, body lines may start with "BDAT ...", so disable auto-detect.
+            // Use decoder-local state as well to guard inputs before session reflects IN_DATA_MODE.
             val inDataMode = dataModeForFraming || (ctx.channel().attr(IN_DATA_MODE).get() == true)
             if (!inDataMode) {
                 parseBdatSizeIfAny(line)?.let { size ->
@@ -116,9 +116,9 @@ internal class SmtpInboundDecoder(
                 }
             }
 
-            // 프레이밍 레벨에서 DATA 모드 전환/해제를 추적합니다.
-            // - DATA 라인 이후(354 응답 전이라도) 본문이 연속으로 들어올 수 있습니다.
-            // - 본문 종료 마커('.')를 처리한 뒤에는 다음 커맨드 라인을 정상적으로 파싱할 수 있어야 합니다.
+            // Track DATA mode enter/exit at framing level.
+            // - Body may continue right after DATA line (even before 354 response).
+            // - After processing body terminator ('.'), next command line must be parsed normally.
             val commandPart = line.trimStart()
             if (!dataModeForFraming && commandPart.equals("DATA", ignoreCase = true)) {
                 dataModeForFraming = true
@@ -139,10 +139,10 @@ internal class SmtpInboundDecoder(
     }
 
     /**
-     * BDAT <size> 라인을 파싱합니다.
+     * Parse BDAT <size> line.
      *
-     * - size는 0 이상의 정수입니다.
-     * - LAST 같은 후속 토큰은 무시합니다.
+     * - size is a non-negative integer.
+     * - Ignores trailing tokens such as LAST.
      */
     private fun parseBdatSizeIfAny(line: String): Int? {
         val trimmed = line.trimStart()

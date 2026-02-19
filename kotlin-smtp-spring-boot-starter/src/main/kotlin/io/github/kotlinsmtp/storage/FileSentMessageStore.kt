@@ -9,26 +9,26 @@ import java.time.Instant
 private val sentStoreLog = KotlinLogging.logger {}
 
 /**
- * 파일 기반 보낸 메일함 저장소입니다.
+ * File-based Sent mailbox storage.
  *
- * `mailboxDir/<sender>/sent/` 하위에 발신 원문을 보관합니다.
+ * Stores submitted raw messages under `mailboxDir/<sender>/sent/`.
  *
- * @property mailboxDir 메일박스 루트 디렉터리
+ * @property mailboxDir mailbox root directory
  */
 class FileSentMessageStore(
     private val mailboxDir: Path,
 ) : SentMessageStore {
     /**
-     * 발신 메시지를 보낸 메일함에 저장합니다.
+     * Archives a submitted message into the sender's Sent mailbox.
      *
-     * sender가 비어있으면 저장하지 않습니다.
+     * Skips archiving when sender identity is empty.
      *
-     * @param rawPath 원문 RFC822 파일 경로
+     * @param rawPath raw RFC822 file path
      * @param envelopeSender envelope sender
-     * @param submittingUser 인증된 제출 사용자 식별자
-     * @param recipients 수신자 목록
-     * @param messageId 메시지 식별자
-     * @param authenticated 인증 세션 여부
+     * @param submittingUser authenticated submitting user identifier
+     * @param recipients recipient list
+     * @param messageId message identifier
+     * @param authenticated whether the session is authenticated
      */
     override fun archiveSubmittedMessage(
         rawPath: Path,
@@ -64,10 +64,10 @@ class FileSentMessageStore(
     }
 
     /**
-     * 보낸 메일함 소유자 식별자를 파일시스템 안전 문자열로 정규화합니다.
+     * Normalizes Sent mailbox owner identifier into a filesystem-safe token.
      *
-     * @param owner 원본 소유자 식별자
-     * @return 파일시스템 안전 문자열
+     * @param owner original owner identifier
+     * @return filesystem-safe token
      */
     private fun sanitizeMailboxOwner(owner: String): String {
         val sanitized = owner.map { ch ->

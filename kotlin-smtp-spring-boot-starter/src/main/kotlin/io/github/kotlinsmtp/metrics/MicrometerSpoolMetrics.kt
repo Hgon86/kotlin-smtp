@@ -6,42 +6,42 @@ import io.micrometer.core.instrument.MeterRegistry
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Micrometer 기반 스풀 메트릭 구현입니다.
+ * Micrometer-based spool metrics implementation.
  *
- * @property registry 메트릭 등록 대상 레지스트리
+ * @property registry Registry where metrics are registered
  */
 class MicrometerSpoolMetrics(
     private val registry: MeterRegistry,
 ) : SpoolMetrics {
     private val pendingMessages = AtomicLong(0)
     private val queuedCounter: Counter = Counter.builder("smtp.spool.queued.total")
-        .description("스풀 큐에 적재된 메시지 누적 수")
+        .description("Total messages enqueued in spool queue")
         .register(registry)
     private val completedCounter: Counter = Counter.builder("smtp.spool.completed.total")
-        .description("스풀 큐에서 정상 완료로 제거된 메시지 누적 수")
+        .description("Total messages removed from spool queue after successful completion")
         .register(registry)
     private val droppedCounter: Counter = Counter.builder("smtp.spool.dropped.total")
-        .description("스풀 큐에서 드롭된 메시지 누적 수")
+        .description("Total messages dropped from spool queue")
         .register(registry)
     private val retryScheduledCounter: Counter = Counter.builder("smtp.spool.retry.scheduled.total")
-        .description("스풀 재시도 스케줄링 누적 수")
+        .description("Total spool retry scheduling events")
         .register(registry)
     private val deliveredRecipientsCounter: Counter = Counter.builder("smtp.spool.delivery.recipients.total")
-        .description("스풀 전달 성공 수신자 누적 수")
+        .description("Total successfully delivered recipients from spool")
         .tag("result", "delivered")
         .register(registry)
     private val transientFailureRecipientsCounter: Counter = Counter.builder("smtp.spool.delivery.recipients.total")
-        .description("스풀 전달 실패 수신자 누적 수")
+        .description("Total transient-failure recipients in spool delivery")
         .tag("result", "transient_failure")
         .register(registry)
     private val permanentFailureRecipientsCounter: Counter = Counter.builder("smtp.spool.delivery.recipients.total")
-        .description("스풀 전달 실패 수신자 누적 수")
+        .description("Total permanent-failure recipients in spool delivery")
         .tag("result", "permanent_failure")
         .register(registry)
 
     init {
         Gauge.builder("smtp.spool.pending", pendingMessages) { it.get().toDouble() }
-            .description("현재 스풀 대기 메시지 수")
+            .description("Current pending messages in spool")
             .register(registry)
     }
 

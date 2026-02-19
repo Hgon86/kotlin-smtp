@@ -7,10 +7,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 인바운드 입력 폭주 시 Netty autoRead를 토글하여 스로틀링합니다.
+ * Throttles by toggling Netty autoRead when inbound input bursts.
  *
- * - 프레임 큐가 가득 차기 전에 읽기를 잠시 멈춰 불필요한 연결 종료를 줄입니다.
- * - BDAT(CHUNKING) 바이트 인플라이트 상한을 포함해 메모리 사용을 제어합니다.
+ * - Temporarily pauses reads before frame queue fills up, reducing unnecessary connection closures.
+ * - Controls memory usage including in-flight byte cap for BDAT (CHUNKING).
  */
 internal class SmtpBackpressureController(
     private val scope: CoroutineScope,
@@ -24,15 +24,15 @@ internal class SmtpBackpressureController(
     private val inflightBdatBytes = AtomicLong(0)
 
     fun estimateLineBytes(line: String): Long {
-        // 입력 라인은 ISO-8859-1로 1:1 바이트 보존을 가정합니다.
-        // CRLF는 프레이밍에서 제거되므로 보수적으로 +2만 더합니다.
+        // Assume input lines preserve bytes 1:1 in ISO-8859-1.
+        // CRLF is removed during framing, so conservatively add +2.
         return (line.length + 2).toLong()
     }
 
     fun onQueued(bytes: Long) {
         val current = queuedInboundBytes.addAndGet(bytes)
         if (current >= highWatermarkBytes && autoReadPaused.compareAndSet(false, true)) {
-            // STARTTLS 업그레이드 중에는 핸드셰이크 진행을 위해 autoRead 토글에 개입하지 않습니다.
+            // Do not intervene in autoRead toggling during STARTTLS upgrade to allow handshake progression.
             if (!isTlsUpgrading()) {
                 scope.launch { setAutoRead(false) }
             }

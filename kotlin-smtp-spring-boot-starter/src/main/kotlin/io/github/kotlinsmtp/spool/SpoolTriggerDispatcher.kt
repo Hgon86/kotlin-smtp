@@ -8,10 +8,10 @@ import kotlinx.coroutines.launch
 private val triggerLog = KotlinLogging.logger {}
 
 /**
- * 외부 스풀 트리거를 coalescing 큐로 직렬 실행합니다.
+ * Serially executes external spool triggers through a coalescing queue.
  *
- * @property scope 실행 스코프
- * @property runOnce 단일 트리거 실행 콜백
+ * @property scope execution scope
+ * @property runOnce callback for single trigger execution
  */
 internal class SpoolTriggerDispatcher(
     private val scope: CoroutineScope,
@@ -22,9 +22,9 @@ internal class SpoolTriggerDispatcher(
     private val triggerCoalescer = TriggerCoalescer()
 
     /**
-     * 트리거를 등록합니다.
+     * Registers a trigger request.
      *
-     * @param targetDomain null이면 전체 큐, 값이 있으면 해당 도메인만 실행
+     * @param targetDomain null for full queue, value to run only that domain
      */
     fun submit(targetDomain: String?) {
         val shouldStartDrainer = synchronized(triggerStateLock) {
@@ -43,7 +43,7 @@ internal class SpoolTriggerDispatcher(
     }
 
     /**
-     * 적재된 트리거를 순차 실행합니다.
+     * Drains and executes queued triggers sequentially.
      */
     private suspend fun drainPendingTriggers() {
         while (true) {

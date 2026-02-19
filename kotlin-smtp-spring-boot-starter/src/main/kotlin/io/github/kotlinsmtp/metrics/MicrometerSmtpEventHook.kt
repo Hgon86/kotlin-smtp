@@ -11,30 +11,30 @@ import io.micrometer.core.instrument.MeterRegistry
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 코어 SMTP 이벤트를 Micrometer 메트릭으로 브릿지하는 기본 훅입니다.
+ * Default hook that bridges core SMTP events into Micrometer metrics.
  *
- * @property registry 메트릭 등록 대상 레지스트리
+ * @property registry Registry where metrics are registered
  */
 class MicrometerSmtpEventHook(
     private val registry: MeterRegistry,
 ) : SmtpEventHook {
     private val activeSessions = AtomicInteger(0)
     private val sessionStartedCounter: Counter = Counter.builder("smtp.sessions.started.total")
-        .description("시작된 SMTP 세션 누적 수")
+        .description("Total started SMTP sessions")
         .register(registry)
     private val sessionEndedCounter: Counter = Counter.builder("smtp.sessions.ended.total")
-        .description("종료된 SMTP 세션 누적 수")
+        .description("Total ended SMTP sessions")
         .register(registry)
     private val acceptedCounter: Counter = Counter.builder("smtp.messages.accepted.total")
-        .description("수락된 SMTP 메시지 누적 수")
+        .description("Total accepted SMTP messages")
         .register(registry)
     private val rejectedCounter: Counter = Counter.builder("smtp.messages.rejected.total")
-        .description("거부된 SMTP 메시지 누적 수")
+        .description("Total rejected SMTP messages")
         .register(registry)
 
     init {
         Gauge.builder("smtp.connections.active", activeSessions) { it.get().toDouble() }
-            .description("현재 활성 SMTP 세션 수")
+            .description("Current active SMTP sessions")
             .register(registry)
     }
 

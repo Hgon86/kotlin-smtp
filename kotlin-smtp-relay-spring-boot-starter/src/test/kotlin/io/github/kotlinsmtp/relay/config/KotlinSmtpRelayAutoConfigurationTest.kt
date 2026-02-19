@@ -20,8 +20,8 @@ class KotlinSmtpRelayAutoConfigurationTest {
 
     @Test
     fun `enabled with open relay config should start with warning`() {
-        // 오픈 릴�이 설정(requireAuthForRelay=false, allowedSenderDomains 비어있음)도
-        // 이제는 시작되지만 경고 로그를 출력합니다.
+        // Open relay config (`requireAuthForRelay=false`, empty `allowedSenderDomains`)
+        // now starts successfully but emits a warning log.
         contextRunner
             .withPropertyValues(
                 "smtp.relay.enabled=true",

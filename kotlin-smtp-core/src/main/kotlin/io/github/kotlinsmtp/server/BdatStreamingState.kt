@@ -5,10 +5,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 
 /**
- * BDAT(CHUNKING) 스트리밍 상태를 캡슐화합니다.
+ * Encapsulates BDAT (CHUNKING) streaming state.
  *
- * - 트랜잭션 단위로 채널/스트림/잡을 유지합니다.
- * - RSET/트랜잭션 종료/세션 종료 시 clear()로 안전하게 정리합니다.
+ * - Keeps channel/stream/job for each transaction.
+ * - Safely cleans up through clear() on RSET/transaction end/session end.
  */
 internal class BdatStreamingState {
     var dataChannel: Channel<ByteArray>? = null

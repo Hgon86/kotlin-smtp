@@ -4,7 +4,7 @@ import io.github.kotlinsmtp.model.RcptDsn
 import java.nio.file.Path
 
 /**
- * DSN 메시지(RFC822 원문)를 스풀/큐에 등록하는 최소 경계.
+ * Minimal boundary for enqueuing DSN messages (RFC822 raw) to spool/queue.
  */
 public fun interface DsnStore {
     public fun enqueue(

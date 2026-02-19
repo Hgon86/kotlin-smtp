@@ -20,7 +20,7 @@ internal class HeloCommand : SmtpCommand(
         session.sessionData.greeted = true
         session.sessionData.usedEhlo = false
 
-        // 확장 코드 없이 응답 전송
+        // Send response without enhanced code
         session.respondLine("${OKAY.code} ${session.server.hostname} at your service")
     }
 }

@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 
 /**
- * 예제 애플리케이션의 기본 부팅 경로를 검증합니다.
+ * Verifies the default boot path of the example application.
  */
 @SpringBootTest
 class SmtpExampleApplicationTest {

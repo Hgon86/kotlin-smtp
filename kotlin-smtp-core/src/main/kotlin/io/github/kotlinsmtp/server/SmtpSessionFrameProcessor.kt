@@ -10,23 +10,23 @@ import kotlinx.coroutines.channels.Channel as KChannel
 private val frameLog = KotlinLogging.logger {}
 
 /**
- * SMTP 세션의 인바운드 프레임 처리 책임을 분리합니다.
+ * Separates inbound frame processing responsibility for SMTP sessions.
  *
- * @property sessionId 세션 식별자
- * @property incomingFrames 수신 프레임 큐
- * @property backpressure 백프레셔 제어기
- * @property channel 네트워크 채널
- * @property logSanitizer 로그 마스킹 도우미
- * @property responseFormatter 응답 포맷터
- * @property inDataMode DATA 수신 모드 조회기
- * @property getDataModeFramingHint DATA 프레이밍 힌트 조회기
- * @property setDataModeFramingHint DATA 프레이밍 힌트 변경기
- * @property failAndClose 오류 응답 후 종료 콜백
- * @property sendResponse 즉시 응답 전송 콜백
- * @property sendResponseAwait flush 보장 응답 전송 콜백
- * @property isClosing 세션 종료 중 여부 조회기
- * @property isTlsUpgrading STARTTLS 전환 중 여부 조회기
- * @property closeOnly 응답 없이 종료 콜백
+ * @property sessionId Session identifier
+ * @property incomingFrames Incoming frame queue
+ * @property backpressure Backpressure controller
+ * @property channel Network channel
+ * @property logSanitizer Log masking helper
+ * @property responseFormatter Response formatter
+ * @property inDataMode DATA receiving mode accessor
+ * @property getDataModeFramingHint DATA framing hint accessor
+ * @property setDataModeFramingHint DATA framing hint mutator
+ * @property failAndClose Callback to terminate after error response
+ * @property sendResponse Callback to send immediate response
+ * @property sendResponseAwait Callback to send response with flush guarantee
+ * @property isClosing Accessor for session-closing state
+ * @property isTlsUpgrading Accessor for STARTTLS upgrade state
+ * @property closeOnly Callback to close without response
  */
 internal class SmtpSessionFrameProcessor(
     private val sessionId: String,
@@ -46,9 +46,9 @@ internal class SmtpSessionFrameProcessor(
     private val closeOnly: () -> Unit,
 ) {
     /**
-     * 다음 라인 프레임을 읽어 문자열로 반환합니다.
+     * Read next line frame and return as string.
      *
-     * @return 수신 라인 또는 종료 시 null
+     * @return Received line, or null on termination
      */
     suspend fun readLine(): String? {
         val frame = incomingFrames.receiveCatching().getOrNull() ?: return null
@@ -91,10 +91,10 @@ internal class SmtpSessionFrameProcessor(
     }
 
     /**
-     * 정확한 바이트 수를 기대하고 바이트 프레임을 읽습니다.
+     * Read byte frame while expecting exact byte count.
      *
-     * @param expectedBytes 기대 바이트 수
-     * @return 수신 바이트 또는 종료 시 null
+     * @param expectedBytes Expected byte count
+     * @return Received bytes, or null on termination
      */
     suspend fun readBytesExact(expectedBytes: Int): ByteArray? {
         val frame = incomingFrames.receiveCatching().getOrNull() ?: return null
@@ -117,10 +117,10 @@ internal class SmtpSessionFrameProcessor(
     }
 
     /**
-     * 수신 프레임을 세션 큐에 적재합니다.
+     * Enqueue inbound frame into session queue.
      *
-     * @param frame 적재할 인바운드 프레임
-     * @return 적재 성공 여부
+     * @param frame Inbound frame to enqueue
+     * @return Whether enqueue succeeded
      */
     fun tryEnqueueInboundFrame(frame: SmtpInboundFrame): Boolean {
         if (isClosing()) return false
@@ -136,9 +136,9 @@ internal class SmtpSessionFrameProcessor(
     }
 
     /**
-     * 큐에서 폐기한 프레임의 백프레셔 카운터를 보정합니다.
+     * Adjust backpressure counters for frame discarded from queue.
      *
-     * @param frame 폐기 프레임
+     * @param frame Discarded frame
      */
     fun discardQueuedFrame(frame: SmtpInboundFrame) {
         when (frame) {

@@ -4,14 +4,14 @@ import java.nio.file.Path
 import java.util.Base64
 
 /**
- * Redis 스풀 키 생성 유틸리티입니다.
+ * Utility for generating Redis spool keys.
  */
 internal object RedisSpoolKeyCodec {
     /**
-     * 스풀 식별 경로를 Redis 키 세그먼트로 인코딩합니다.
+     * Encodes a spool reference path into a Redis key segment.
      *
-     * @param spoolReferencePath 스풀 식별 경로
-     * @return URL-safe Base64 토큰
+     * @param spoolReferencePath spool reference path
+     * @return URL-safe Base64 token
      */
     fun pathToken(spoolReferencePath: Path): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(spoolReferencePath.toString().toByteArray(Charsets.UTF_8))

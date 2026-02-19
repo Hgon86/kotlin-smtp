@@ -1,34 +1,34 @@
 package io.github.kotlinsmtp.routing
 
 /**
- * 수신 메일의 로컬/외부 라우팅 정책 SPI.
+ * Local/external routing policy SPI for inbound mail.
  *
- * 기본 구현은 설정 파일 기반으로 동작하며,
- * 사용자는 DB나 외부 서비스 연동 등으로 교체할 수 있습니다.
+ * Default implementation is config-file based,
+ * and can be replaced with DB or external service integration.
  */
 public fun interface InboundRoutingPolicy {
 
     /**
-     * 주어진 수신자가 로컬 도메인인지 판단합니다.
+     * Determine whether the given recipient belongs to a local domain.
      *
-     * @param recipient 수신자 이메일 주소 (예: user@example.com)
-     * @return 로컬 도메인이면 true, 외부 도메인이면 false
+     * @param recipient Recipient email address (e.g., user@example.com)
+     * @return true if local domain, false if external domain
      */
     public fun isLocalDomain(recipient: String): Boolean
 
     /**
-     * 현재 관리 중인 로컬 도메인 목록을 반환합니다.
-     * (로깅, 모니터링, HELLO 응답 등에 활용)
+     * Return currently managed local-domain list.
+     * (used for logging, monitoring, HELLO responses, etc.)
      *
-     * @return 로컬 도메인 집합
+     * @return Set of local domains
      */
     public fun localDomains(): Set<String> = emptySet()
 }
 
 /**
- * 단일 도메인 기반의 간단한 라우팅 정책.
+ * Simple single-domain routing policy.
  *
- * @property domain 로컬 도메인 (예: example.com)
+ * @property domain Local domain (e.g., example.com)
  */
 public class SingleDomainRoutingPolicy(
     private val domain: String
@@ -45,9 +45,9 @@ public class SingleDomainRoutingPolicy(
 }
 
 /**
- * 다중 도메인 기반의 라우팅 정책.
+ * Multi-domain routing policy.
  *
- * @property domains 로컬 도메인 목록
+ * @property domains List of local domains
  */
 public class MultiDomainRoutingPolicy(
     private val domains: Set<String>

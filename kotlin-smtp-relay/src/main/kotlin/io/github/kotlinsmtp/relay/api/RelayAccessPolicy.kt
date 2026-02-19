@@ -1,17 +1,17 @@
 package io.github.kotlinsmtp.relay.api
 
 /**
- * 릴레이 허용/거부 정책(오픈 릴레이 방지의 1차 경계).
+ * Relay allow/deny policy (primary boundary for open-relay prevention).
  */
 public fun interface RelayAccessPolicy {
     public fun evaluate(context: RelayAccessContext): RelayAccessDecision
 }
 
 /**
- * @property envelopeSender MAIL FROM(reverse-path)
+ * @property envelopeSender MAIL FROM (reverse-path)
  * @property recipient RCPT TO
- * @property authenticated 세션 인증 여부
- * @property peerAddress 클라이언트 주소(예: `203.0.113.10:587`, `[2001:db8::1]:587`)
+ * @property authenticated Whether session is authenticated
+ * @property peerAddress Client address (e.g., `203.0.113.10:587`, `[2001:db8::1]:587`)
  */
 public data class RelayAccessContext(
     public val envelopeSender: String?,
@@ -20,11 +20,11 @@ public data class RelayAccessContext(
     public val peerAddress: String? = null,
 ) {
     /**
-     * 기존 3-파라미터 생성자 바이너리 호환을 유지합니다.
+     * Preserves binary compatibility for the legacy 3-parameter constructor.
      *
-     * @param envelopeSender MAIL FROM(reverse-path)
+     * @param envelopeSender MAIL FROM (reverse-path)
      * @param recipient RCPT TO
-     * @param authenticated 세션 인증 여부
+     * @param authenticated Whether session is authenticated
      */
     public constructor(
         envelopeSender: String?,
@@ -42,8 +42,8 @@ public sealed interface RelayAccessDecision {
     public data object Allowed : RelayAccessDecision
 
     /**
-     * @property reason 표준화된 거부 사유
-     * @property message 운영/로그를 위한 짧은 설명(민감정보 최소화 권장)
+     * @property reason Standardized denial reason
+     * @property message Short description for operations/logging (recommend minimizing sensitive data)
      */
     public data class Denied(
         public val reason: RelayDeniedReason,

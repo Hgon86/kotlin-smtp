@@ -33,8 +33,8 @@ dependencies {
 
 kotlin {
     /**
-     * relay 모듈은 다른 구현(dnsjava/jakarta-mail 등)에 의존하지 않는 "API 경계"이므로,
-     * 공개 API가 의도치 않게 확장되는 것을 빌드 타임에 차단합니다.
+     * The relay module is an "API boundary" that does not depend on other implementations (dnsjava/jakarta-mail, etc.),
+     * so we block unintended public API expansion at build time.
      */
     explicitApi()
 }

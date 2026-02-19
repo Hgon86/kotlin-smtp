@@ -30,11 +30,11 @@ import kotlin.random.Random
 private val log = KotlinLogging.logger {}
 
 /**
- * 단일 메시지 배달 시도 결과입니다.
+ * Result of a single-message delivery attempt.
  *
- * @property delivered 성공적으로 배달된 수신자 목록
- * @property transientFailures 일시적 실패한 수신자별 사유
- * @property permanentFailures 영구적 실패한 수신자별 사유
+ * @property delivered recipients delivered successfully
+ * @property transientFailures transient failure reasons by recipient
+ * @property permanentFailures permanent failure reasons by recipient
  */
 private data class DeliveryAttemptResult(
     val delivered: List<String>,
@@ -43,20 +43,20 @@ private data class DeliveryAttemptResult(
 )
 
 /**
- * 스풀러로 메일 전달과 재시도를 관리합니다.
+ * Manages mail delivery and retries via spooling.
  *
- * 저장소 구현체에 따라 파일 또는 Redis에 메시지를 저장하며,
- * 백그라운드 워커가 재시도 간격을 두고 반복 전달을 시도합니다.
+ * Depending on storage implementation, messages are stored in file or Redis,
+ * and a background worker retries delivery at configured intervals.
  *
- * @param spoolDir 스풀 디렉터리 경로
- * @param maxRetries 최대 재시도 횟수
- * @param retryDelaySeconds 초기 재시도 지연 시간(초)
- * @param dispatcher 코루틴 디스패처
- * @param deliveryService 메일 전달 서비스
- * @param dsnSenderProvider DSN 발송기 제공자
- * @param spoolMetrics 스풀 메트릭 수집기
- * @param metadataStore 스풀 메타데이터 저장소 구현체
- * @param lockManager 스풀 락 관리자 구현체
+ * @param spoolDir spool directory path
+ * @param maxRetries maximum retry count
+ * @param retryDelaySeconds initial retry delay in seconds
+ * @param dispatcher coroutine dispatcher
+ * @param deliveryService mail delivery service
+ * @param dsnSenderProvider DSN sender provider
+ * @param spoolMetrics spool metrics collector
+ * @param metadataStore spool metadata store implementation
+ * @param lockManager spool lock manager implementation
  */
 class MailSpooler(
     private val spoolDir: Path,
@@ -72,7 +72,7 @@ class MailSpooler(
     private val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + dispatcher)
     private var worker: Job? = null
     private val staleLockThreshold = Duration.ofMinutes(15)
-    private val runMutex = Mutex() // triggerOnce()와 백그라운드 워커의 동시 실행 방지
+    private val runMutex = Mutex() // Prevent concurrent runs between triggerOnce() and worker loop.
     private val lockManager = injectedLockManager ?: FileSpoolLockManager(spoolDir, staleLockThreshold)
     private val failurePolicy = SpoolFailurePolicy()
     private val metadataStore = injectedMetadataStore ?: FileSpoolMetadataStore(spoolDir)
@@ -86,13 +86,13 @@ class MailSpooler(
     }
 
     /**
-     * 외부 트리거로 "즉시 한 번" 스풀 처리를 수행합니다.
+     * Performs one immediate spool processing run via external trigger.
      *
-     * - 기능 우선: 운영/관리 시나리오에서 유용(예: ETRN)
-     * - 동시 실행 제어: 프로세스 내에서는 뮤텍스로 1회 실행을 직렬화합니다.
-     * - TODO: rate-limit(관리 기능 남용 방지)
+     * - Feature-first: useful for ops/admin scenarios (for example, ETRN).
+     * - Concurrency control: serialize in-process runs with a mutex.
+     * - TODO: add rate-limiting to prevent admin feature abuse.
      *
-     * @return 트리거 요청 접수 결과
+     * @return trigger acceptance result
      */
     override fun tryTriggerOnce(): SpoolTriggerResult {
         triggerDispatcher.submit(targetDomain = null)
@@ -104,10 +104,10 @@ class MailSpooler(
     }
 
     /**
-     * 지정 도메인에 대해서만 "즉시 한 번" 스풀 처리를 수행합니다.
+     * Performs one immediate spool run for a specific domain only.
      *
-     * @param domain ETRN 인자로 전달된 도메인
-     * @return 트리거 요청 접수 결과
+     * @param domain domain passed via ETRN argument
+     * @return trigger acceptance result
      */
     override fun tryTriggerOnce(domain: String): SpoolTriggerResult {
         val normalized = normalizeDomain(domain)
@@ -125,18 +125,18 @@ class MailSpooler(
     }
 
     /**
-     * 메시지를 스풀에 등록합니다.
+     * Enqueues a message into spool storage.
      *
-     * @param rawMessagePath 원본 메시지 파일 경로
-     * @param sender envelope 발신자
-     * @param recipients 수신자 목록
-     * @param messageId 메시지 식별자
-     * @param authenticated 인증된 메시지 여부
-     * @param peerAddress 클라이언트 주소
-     * @param dsnRet DSN RET 옵션
-     * @param dsnEnvid DSN ENVID 옵션
-     * @param rcptDsn 수신자별 DSN 옵션
-     * @return 생성된 스풀 메타데이터
+     * @param rawMessagePath original message file path
+     * @param sender envelope sender
+     * @param recipients recipient list
+     * @param messageId message identifier
+     * @param authenticated whether message is authenticated
+     * @param peerAddress client address
+     * @param dsnRet DSN RET option
+     * @param dsnEnvid DSN ENVID option
+     * @param rcptDsn per-recipient DSN options
+     * @return created spool metadata
      */
     fun enqueue(
         rawMessagePath: Path,
@@ -166,9 +166,9 @@ class MailSpooler(
     }
 
     /**
-     * 백그라운드 워커를 시작합니다.
+     * Starts the background worker.
      *
-     * 재시도 간격을 두고 스풀 큐를 반복 처리합니다.
+     * Repeatedly processes the spool queue with retry interval.
      */
     private fun start() {
         if (worker != null) return
@@ -188,7 +188,7 @@ class MailSpooler(
     }
 
     /**
-     * 스풀러 워커를 종료하고 리소스를 정리합니다.
+     * Stops the spooler worker and releases resources.
      */
     @PreDestroy
     fun shutdown() {
@@ -198,16 +198,16 @@ class MailSpooler(
     }
 
     /**
-     * 스풀 큐를 한 번 처리합니다.
+     * Processes the spool queue once.
      *
-     * 프로세스 내에서 뮤텍스로 직렬화하여 중복 처리를 방지합니다.
+     * Serializes in-process execution with mutex to avoid duplicate processing.
      *
-     * @param targetDomain 특정 도메인만 처리하려면 해당 도메인, null이면 전체 큐 처리
+     * @param targetDomain specific domain to process; null for full queue
      */
     private suspend fun runOnce(targetDomain: String? = null) {
-        // 기능 우선: 단일 노드 기준으로는 파일락(.lock)만으로도 중복 처리를 대부분 방지하지만,
-        // triggerOnce()가 연속 호출되거나 워커 루프와 겹치면 불필요한 스캔/락 시도가 발생합니다.
-        // 따라서 프로세스 내에서는 뮤텍스로 1회 실행을 직렬화합니다.
+        // Feature-first: file locks (.lock) mostly prevent duplicates on a single node,
+        // but consecutive triggerOnce() calls or overlap with worker loop can cause
+        // unnecessary scans/lock attempts, so serialize runs with in-process mutex.
         runMutex.withLock {
             processQueueOnce(targetDomain)
             lockManager.purgeOrphanedLocks()
@@ -215,12 +215,12 @@ class MailSpooler(
     }
 
     /**
-     * 재시도 지연 시간을 계산합니다.
+     * Calculates retry delay.
      *
-     * 지수 백오프에 지터를 적용하며, 최대 10분으로 제한합니다.
+     * Applies exponential backoff with jitter, capped at 10 minutes.
      *
-     * @param attempt 현재 시도 횟수
-     * @return 다음 재시도까지 대기할 시간(초)
+     * @param attempt current attempt number
+     * @return wait time in seconds until next retry
      */
     private fun nextBackoffSeconds(attempt: Int): Long {
         val base = retryDelaySeconds.toDouble()
@@ -231,9 +231,9 @@ class MailSpooler(
     }
 
     /**
-     * 스풀 디렉터리의 모든 메시지를 한 번씩 처리합니다.
+     * Processes all messages in spool directory once.
      *
-     * @param targetDomain 특정 도메인만 처리하려면 해당 도메인, null이면 전체 큐 처리
+     * @param targetDomain specific domain to process; null for full queue
      */
     private suspend fun processQueueOnce(targetDomain: String? = null) {
         val files = metadataStore.listMessages()
@@ -248,12 +248,12 @@ class MailSpooler(
     }
 
     /**
-     * 단일 스풀 메시지를 처리합니다.
+     * Processes a single spool message.
      *
-     * 메타데이터 로드 → 수신자 전달 → 결과 분류 → DSN/재시도 처리를 수행합니다.
+     * Performs metadata load -> recipient delivery -> result classification -> DSN/retry handling.
      *
-     * @param file 스풀 메시지 파일 경로
-     * @param targetDomain 특정 도메인만 처리하려면 해당 도메인, null이면 전체 수신자 처리
+     * @param file spool message file path
+     * @param targetDomain specific domain to process; null for all recipients
      */
     private suspend fun processSingleMessage(file: Path, targetDomain: String?) {
         val meta = metadataStore.readMeta(file) ?: return
@@ -303,10 +303,10 @@ class MailSpooler(
     }
 
     /**
-     * 락을 유지하면서 메시지 처리 블록을 수행합니다.
+     * Executes message processing block while maintaining lock heartbeat.
      *
-     * @param spoolReferencePath 스풀 메시지 식별 경로
-     * @param block 실제 처리 블록
+     * @param spoolReferencePath spool message reference path
+     * @param block actual processing block
      */
     private suspend fun withLockHeartbeat(spoolReferencePath: Path, block: suspend () -> Unit) {
         coroutineScope {
@@ -328,11 +328,11 @@ class MailSpooler(
     }
 
     /**
-     * 배달 준비 단계 실패를 분류해 후속 처리를 수행합니다.
+     * Classifies preparation-stage failures and applies follow-up handling.
      *
-     * @param spoolReferencePath 스풀 메시지 식별 경로
-     * @param meta 스풀 메타데이터
-     * @param throwable 발생 예외
+     * @param spoolReferencePath spool message reference path
+     * @param meta spool metadata
+     * @param throwable raised exception
      */
     private fun handlePreparationFailure(spoolReferencePath: Path, meta: SpoolMetadata, throwable: Throwable) {
         if (throwable is SpoolCorruptedMessageException) {
@@ -345,10 +345,10 @@ class MailSpooler(
     }
 
     /**
-     * 전달이 끝난 메시지를 스풀에서 제거합니다.
+     * Removes a fully processed message from spool.
      *
-     * @param spoolReferencePath 스풀 메시지 식별 경로
-     * @param meta 스풀 메타데이터
+     * @param spoolReferencePath spool message reference path
+     * @param meta spool metadata
      */
     private fun completeMessage(spoolReferencePath: Path, meta: SpoolMetadata) {
         metadataStore.removeMessage(spoolReferencePath)
@@ -357,12 +357,12 @@ class MailSpooler(
     }
 
     /**
-     * 수신자 목록에 대해 전달을 시도합니다.
+     * Attempts delivery for the given recipient list.
      *
-     * @param meta 스풀 메타데이터
-     * @param recipientsToProcess 처리할 수신자 목록
-     * @param file 메시지 파일 경로
-     * @return 배달 시도 결과
+     * @param meta spool metadata
+     * @param recipientsToProcess recipients to process
+     * @param file message file path
+     * @return delivery attempt result
      */
     private suspend fun deliverRecipients(
         meta: SpoolMetadata,
@@ -384,7 +384,7 @@ class MailSpooler(
                     messageId = meta.messageId,
                     authenticated = meta.authenticated,
                     peerAddress = meta.peerAddress,
-                    // 스풀러가 재시도/최종 DSN을 책임지므로 여기서는 DSN을 생성하지 않습니다.
+                    // Spooler owns retries/final DSN, so do not generate DSN here.
                     generateDsnOnFailure = false,
                 )
             }.onSuccess {
@@ -406,13 +406,13 @@ class MailSpooler(
     }
 
     /**
-     * 배달 결과에 따라 수신자 목록을 업데이트합니다.
+     * Updates recipient list based on delivery results.
      *
-     * 성공/영구 실패한 수신자를 제거하여 중복 전달을 방지합니다.
+     * Removes delivered/permanently failed recipients to prevent duplicate delivery.
      *
-     * @param meta 스풀 메타데이터
-     * @param delivered 성공한 수신자 목록
-     * @param permanentFailureRecipients 영구 실패한 수신자 집합
+     * @param meta spool metadata
+     * @param delivered successfully delivered recipients
+     * @param permanentFailureRecipients recipients with permanent failures
      */
     private fun updateRecipientsAfterDelivery(
         meta: SpoolMetadata,
@@ -432,12 +432,12 @@ class MailSpooler(
     }
 
     /**
-     * 영구 실패 수신자에 대한 DSN을 발송합니다.
+     * Sends DSN for permanently failed recipients.
      *
-     * @param meta 스풀 메타데이터
-     * @param file 메시지 파일 경로
-     * @param dsnTargets DSN 발송 대상 수신자와 사유
-     * @param rcptDsnSnapshot DSN 옵션 스냅샷
+     * @param meta spool metadata
+     * @param file message file path
+     * @param dsnTargets recipient-to-reason map for DSN
+     * @param rcptDsnSnapshot snapshot of DSN options
      */
     private fun sendPermanentFailureDsn(
         meta: SpoolMetadata,
@@ -458,16 +458,16 @@ class MailSpooler(
     }
 
     /**
-     * 일시적 실패한 수신자에 대한 후속 처리를 수행합니다.
+     * Handles post-processing for transiently failed recipients.
      *
-     * 재시도 스케줄링 또는 최대 재시도 초과 시 폐기를 결정합니다.
+     * Decides retry scheduling or drop when max retries are exceeded.
      *
-     * @param meta 스풀 메타데이터
-     * @param spoolReferencePath 스풀 메시지 식별 경로
-     * @param deliveryRawPath 배달에 사용한 원문 파일 경로
-     * @param transientFailures 일시 실패한 수신자와 사유
-     * @param attemptedAllRecipients 전체 수신자 처리 여부
-     * @param targetDomain 처리 대상 도메인(ETRN용)
+     * @param meta spool metadata
+     * @param spoolReferencePath spool message reference path
+     * @param deliveryRawPath raw file path used for delivery
+     * @param transientFailures transient failure reasons by recipient
+     * @param attemptedAllRecipients whether all recipients were attempted
+     * @param targetDomain domain target for processing (ETRN)
      */
     private fun handleTransientFailures(
         meta: SpoolMetadata,
@@ -478,16 +478,16 @@ class MailSpooler(
         targetDomain: String?,
     ) {
         if (transientFailures.isEmpty()) {
-            // 방어: 영구 실패 처리 후에도 남은 수신자가 있다면 메타를 저장합니다.
+            // Defensive: persist metadata if recipients remain after permanent-failure handling.
             metadataStore.writeMeta(meta)
             log.info { "Spool state saved without retry: id=${meta.id} remainingRcpt=${meta.recipients.size}" }
             return
         }
 
         if (!attemptedAllRecipients) {
-            // ETRN 도메인 트리거처럼 일부 수신자만 처리한 경우,
-            // 메시지 전역 attempt/backoff를 올리면 미처리 수신자까지 페널티를 받습니다.
-            // 부분 처리에서는 상태만 저장하고, 전역 재시도 카운터는 유지합니다.
+            // For partial runs such as domain-targeted ETRN,
+            // increasing global attempt/backoff would penalize untouched recipients.
+            // Persist state only and keep global retry counters unchanged.
             metadataStore.writeMeta(meta)
             log.info {
                 "Spool partial run saved without retry increment: id=${meta.id} targetDomain=$targetDomain transientFail=${transientFailures.size} remainingRcpt=${meta.recipients.size}"
@@ -526,10 +526,10 @@ class MailSpooler(
     }
 
     /**
-     * 도메인을 IDNA ASCII 소문자로 정규화합니다.
+     * Normalizes domain to IDNA ASCII lowercase.
      *
-     * @param domain 비교 대상 도메인
-     * @return 정규화된 도메인 또는 유효하지 않으면 null
+     * @param domain domain to normalize
+     * @return normalized domain, or null if invalid
      */
     private fun normalizeDomain(domain: String): String? = runCatching {
         val trimmed = domain.trim().trimEnd('.')
@@ -538,11 +538,11 @@ class MailSpooler(
     }.getOrNull()
 
     /**
-     * 대상 도메인이 지정되면 해당 도메인 수신자만 반환합니다.
+     * Returns only recipients in target domain when domain is specified.
      *
-     * @param recipients 전체 수신자 목록
-     * @param targetDomain null이면 전체, 아니면 지정 도메인만 처리
-     * @return 실제 처리 대상 수신자 목록
+     * @param recipients full recipient list
+     * @param targetDomain null for all recipients, otherwise only matching domain
+     * @return effective recipients to process
      */
     private fun recipientsToProcess(recipients: List<String>, targetDomain: String?): List<String> {
         if (targetDomain == null) return recipients.toList()

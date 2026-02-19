@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 class RelayClientCidrMatcherTest {
 
     /**
-     * CIDR 목록이 비어있으면 모든 클라이언트를 허용해야 합니다.
+     * Empty CIDR list should allow any client.
      */
     @Test
     fun `empty cidr list allows any peer`() {
@@ -17,7 +17,7 @@ class RelayClientCidrMatcherTest {
     }
 
     /**
-     * IPv4 CIDR 매칭이 정상 동작해야 합니다.
+     * IPv4 CIDR matching should work as expected.
      */
     @Test
     fun `ipv4 cidr allows matching client`() {
@@ -27,7 +27,7 @@ class RelayClientCidrMatcherTest {
     }
 
     /**
-     * IPv6 CIDR 매칭이 정상 동작해야 합니다.
+     * IPv6 CIDR matching should work as expected.
      */
     @Test
     fun `ipv6 cidr allows matching client`() {
@@ -37,7 +37,7 @@ class RelayClientCidrMatcherTest {
     }
 
     /**
-     * 호스트명 형태 클라이언트 주소는 DNS 해석 없이 거부해야 합니다.
+     * Hostname-style client address should be rejected without DNS resolution.
      */
     @Test
     fun `hostname peer address is rejected`() {
@@ -46,7 +46,7 @@ class RelayClientCidrMatcherTest {
     }
 
     /**
-     * CIDR host는 IP 리터럴만 허용해야 합니다.
+     * CIDR host must be an IP literal.
      */
     @Test
     fun `cidr host must be ip literal`() {

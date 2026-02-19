@@ -13,13 +13,13 @@ import java.util.*
 private val log = KotlinLogging.logger {}
 
 /**
- * 경로 선택기(`RelayRouteResolver`) 결과에 따라
- * MX 직접 전송 또는 Smart Host 전송을 수행하는 릴레이 구현.
+ * Relay implementation that performs MX direct transfer or Smart Host transfer
+ * according to route selector (`RelayRouteResolver`) results.
  *
- * @property routeResolver 요청별 라우팅 경로 선택기
- * @property mxRelay MX 기반 전송 구현체
- * @property tls Smart Host 전송 시 기본 TLS 정책
- * @property dispatcherIO 블로킹 I/O 실행 디스패처
+ * @property routeResolver Per-request route selector
+ * @property mxRelay MX-based transfer implementation
+ * @property tls Default TLS policy for Smart Host transfer
+ * @property dispatcherIO Dispatcher for blocking I/O execution
  */
 class JakartaMailRoutingMailRelay(
     private val routeResolver: RelayRouteResolver,
@@ -56,7 +56,7 @@ class JakartaMailRoutingMailRelay(
             val message = request.rfc822.openStream().use { input ->
                 MimeMessage(Session.getInstance(propsForParsing), input)
             }.apply {
-                // Message-ID 헤더가 없으면 자동 생성 (RFC 5322 권장사항)
+                // Auto-generate Message-ID header when missing (RFC 5322 recommendation)
                 if (getHeader("Message-ID") == null) {
                     val senderDomain = senderForSend?.substringAfterLast('@')?.takeIf { it.isNotBlank() } ?: "localhost"
                     setHeader("Message-ID", "<${UUID.randomUUID()}@$senderDomain>")

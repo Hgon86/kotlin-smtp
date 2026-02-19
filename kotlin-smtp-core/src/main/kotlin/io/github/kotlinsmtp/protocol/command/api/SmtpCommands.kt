@@ -51,9 +51,9 @@ internal enum class SmtpCommands(
             val parsedCommand = ParsedCommand(rawCommand)
 
             try {
-                // CHUNKING(BDAT) 진행 중에는 BDAT 연속 청크 전송이 프로토콜 의미이므로,
-                // 다른 커맨드를 허용하면 상태가 깨질 수 있습니다(실사용 호환).
-                // - 허용: BDAT / RSET / NOOP / QUIT / HELP
+                // During CHUNKING (BDAT), BDAT consecutive chunk transmission is the protocol semantics,
+                // allowing other commands may break state (practical compatibility).
+                // - Allowed: BDAT / RSET / NOOP / QUIT / HELP
                 if (session.isBdatInProgress()) {
                     val name = parsedCommand.commandName
                     val allowed = name == "BDAT" || name == "RSET" || name == "NOOP" || name == "QUIT" || name == "HELP"
@@ -63,7 +63,7 @@ internal enum class SmtpCommands(
                     }
                 }
 
-                // STARTTLS 이후에는 EHLO/HELO만 허용 (RFC 3207 준수)
+                // Only EHLO/HELO allowed after STARTTLS (RFC 3207 compliance)
                 if (session.requireEhloAfterTls) {
                     val name = parsedCommand.commandName
                     if (name == "EHLO" || name == "HELO") {
@@ -82,7 +82,7 @@ internal enum class SmtpCommands(
                     } catch (response: SmtpSendResponse) {
                         session.sendResponse(response.statusCode, response.message)
 
-                        // DATA/BDAT 트랜잭션 거부는 메시지 단위 이벤트로도 노출합니다.
+                        // DATA/BDAT transaction rejection is also exposed as a per-message event.
                         val transferMode = when (parsedCommand.commandName) {
                             "DATA" -> SmtpMessageTransferMode.DATA
                             "BDAT" -> SmtpMessageTransferMode.BDAT
@@ -109,7 +109,7 @@ internal enum class SmtpCommands(
                     session.sendResponse(COMMAND_REJECTED.code, "Command unrecognized")
                 }
             } catch (t: Throwable) {
-                // 방어: 예상치 못한 예외로 세션이 조용히 끊기지 않도록 451로 응답합니다.
+                // Defense: Respond with 451 to prevent the session from being silently dropped by unexpected exceptions.
                 log.error(t) { "Unhandled error while processing command='${parsedCommand.commandName}'" }
                 session.sendResponse(ERROR_IN_PROCESSING.code, "Local error in processing")
                 session.resetTransaction(preserveGreeting = true)

@@ -6,14 +6,14 @@ import java.nio.file.Path
 import java.time.Instant
 
 /**
- * 스풀 메타데이터 JSON 직렬화/역직렬화를 담당합니다.
+ * Handles JSON serialization/deserialization for spool metadata.
  */
 internal object SpoolMetadataJsonCodec {
     /**
-     * 메타데이터를 JSON 문자열로 직렬화합니다.
+     * Serializes metadata to JSON string.
      *
-     * @param meta 직렬화 대상 메타데이터
-     * @return JSON 문자열
+     * @param meta metadata to serialize
+     * @return JSON string
      */
     fun toJson(meta: SpoolMetadata): String {
         val json = JSONObject()
@@ -42,11 +42,11 @@ internal object SpoolMetadataJsonCodec {
     }
 
     /**
-     * JSON 문자열을 메타데이터로 역직렬화합니다.
+     * Deserializes JSON string into metadata.
      *
-     * @param rawPath 스풀 메시지 식별 경로
-     * @param rawJson JSON 문자열
-     * @return 파싱된 메타데이터
+     * @param rawPath spool message reference path
+     * @param rawJson JSON string
+     * @return parsed metadata
      */
     fun fromJson(rawPath: Path, rawJson: String): SpoolMetadata {
         val json = JSONObject(rawJson)

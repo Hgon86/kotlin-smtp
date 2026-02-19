@@ -22,40 +22,40 @@ internal class RcptCommand : SmtpCommand(
     "TO:<(path:)address> [parameters]"
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
-        // 상태/순서 검증: MAIL FROM 이후에만 RCPT 허용
+        // State/sequence validation: allow RCPT only after MAIL FROM.
         if (session.sessionData.mailFrom == null) {
             throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "Send MAIL FROM first")
         }
 
-        // ESMTP 파라미터 파싱
+        // Parse ESMTP parameters
         val esmtp = try {
             parseRcptArguments(command.rawCommand)
         } catch (e: IllegalArgumentException) {
             respondSyntax(e.message ?: "Invalid RCPT TO syntax")
         }
 
-        // RFC 3461(DSN) 파라미터 최소 검증(실사용 기준)
+        // Minimal validation for RFC 3461 (DSN) parameters (practical baseline)
         validateRcptDsnParameters(esmtp.parameters)
 
-        // forward-path 파싱: <@host1,@host2:user@final> 형식 지원
+        // Parse forward-path: support <@host1,@host2:user@final> format
         val addressParts = esmtp.address.split(':')
         var forwardPath: List<String>? = null
         val recipient = when (addressParts.size) {
-            1 -> addressParts[0] // 단순 주소: user@domain
+            1 -> addressParts[0] // Simple address: user@domain
             2 -> {
-                // forward-path 포함: @host1,@host2:user@final
+                // Includes forward-path: @host1,@host2:user@final
                 forwardPath = addressParts[0].split(',')
                 addressParts[1]
             }
             else -> throw SmtpSendResponse(INVALID_MAILBOX.code, "Invalid recipient syntax")
         }
 
-        // forward-path 검증 (있는 경우)
+        // Validate forward-path (if present)
         if (forwardPath?.any { !it.isValidEmailHost() } == true) {
             throw SmtpSendResponse(INVALID_MAILBOX.code, "Invalid forward path")
         }
 
-        // 최종 수신자 주소 검증
+        // Validate final recipient address
         val recipientLocalPart = recipient.substringBeforeLast('@', "")
         if (!session.sessionData.smtpUtf8 && !AddressUtils.isAllAscii(recipientLocalPart)) {
             throw SmtpSendResponse(553, "5.6.7 SMTPUTF8 required")
@@ -65,28 +65,28 @@ internal class RcptCommand : SmtpCommand(
             throw SmtpSendResponse(INVALID_MAILBOX.code, "Invalid email address")
         }
 
-        // 수신자 상한 검증
+        // Validate recipient upper limit
         if (session.sessionData.recipientCount >= MAX_RECIPIENTS) {
             throw SmtpSendResponse(INSUFFICIENT_STORAGE.code, "Too many recipients")
         }
 
-        // 상태 업데이트
+        // Update state
         session.sessionData.recipientCount += 1
         session.envelopeRecipients.add(recipient)
-        // DSN 옵션 저장(수신자별)
+        // Store DSN options (per recipient)
         val notify = esmtp.parameters["NOTIFY"]?.trim()?.takeIf { it.isNotBlank() }
         val orcpt = esmtp.parameters["ORCPT"]?.trim()?.takeIf { it.isNotBlank() }
         if (notify != null || orcpt != null) {
             session.sessionData.rcptDsn[recipient] = RcptDsn(notify = notify, orcpt = orcpt)
         }
 
-        // 트랜잭션 핸들러에 최종 수신자 전달
+        // Pass final recipient to transaction handler
         session.transactionHandler?.to(recipient)
         session.sendResponse(OKAY.code, "Ok")
     }
 
     private fun validateRcptDsnParameters(parameters: Map<String, String>) {
-        // NOTIFY=NEVER | (SUCCESS,FAILURE,DELAY 조합)
+        // NOTIFY=NEVER | (combination of SUCCESS,FAILURE,DELAY)
         parameters["NOTIFY"]?.let { raw ->
             val value = raw.trim()
             if (value.isEmpty()) respondSyntax("Invalid NOTIFY value")
@@ -97,7 +97,7 @@ internal class RcptCommand : SmtpCommand(
             if (tokens.any { it !in allowed }) respondSyntax("Invalid NOTIFY value")
         }
 
-        // ORCPT=rfc822;addr 형태를 보수적으로 검증합니다.
+        // Conservatively validate ORCPT=rfc822;addr format.
         parameters["ORCPT"]?.let { raw ->
             val value = raw.trim()
             if (!value.startsWith("rfc822;", ignoreCase = true)) {
@@ -109,7 +109,7 @@ internal class RcptCommand : SmtpCommand(
             }
         }
 
-        // 그 외 미지원 RCPT 파라미터는 거부(실사용 기준에서 안전).
+        // Reject other unsupported RCPT parameters (safe for practical baseline).
         val supported = setOf("NOTIFY", "ORCPT")
         for (key in parameters.keys) {
             if (key !in supported) {

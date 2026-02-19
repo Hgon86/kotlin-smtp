@@ -11,13 +11,13 @@ import java.util.UUID
 private val redisLockLog = KotlinLogging.logger {}
 
 /**
- * Redis 기반 스풀 락 관리자입니다.
+ * Redis-based spool lock manager.
  *
- * 락은 `SET NX EX` 기반으로 생성되며 TTL로 stale 락을 자동 정리합니다.
+ * Locks are created with `SET NX EX`, and stale locks are cleaned up by TTL.
  *
- * @property redisTemplate Redis 문자열 템플릿
- * @property keyPrefix Redis 키 접두사
- * @property lockTtl 락 TTL
+ * @property redisTemplate Redis string template
+ * @property keyPrefix Redis key prefix
+ * @property lockTtl lock TTL
  */
 internal class RedisSpoolLockManager(
     private val redisTemplate: StringRedisTemplate,
@@ -27,10 +27,10 @@ internal class RedisSpoolLockManager(
     private val lockTokens = ConcurrentHashMap<String, String>()
 
     /**
-     * 대상 메시지 파일에 대한 락 획득을 시도합니다.
+     * Tries to acquire lock for target message file.
      *
-     * @param rawPath 대상 메시지 파일 경로
-     * @return 락 획득 성공 여부
+     * @param rawPath target message file path
+     * @return whether lock acquisition succeeded
      */
     override fun tryLock(rawPath: Path): Boolean = runCatching {
         val key = lockKey(rawPath)
@@ -44,9 +44,9 @@ internal class RedisSpoolLockManager(
     }
 
     /**
-     * 대상 메시지 파일의 락을 해제합니다.
+     * Releases lock for target message file.
      *
-     * @param rawPath 대상 메시지 파일 경로
+     * @param rawPath target message file path
      */
     override fun unlock(rawPath: Path) {
         val key = lockKey(rawPath)
@@ -59,10 +59,10 @@ internal class RedisSpoolLockManager(
     }
 
     /**
-     * 대상 메시지 파일의 락 TTL을 연장합니다.
+     * Refreshes lock TTL for target message file.
      *
-     * @param rawPath 대상 메시지 파일 경로
-     * @return 연장 성공 여부
+     * @param rawPath target message file path
+     * @return whether refresh succeeded
      */
     override fun refreshLock(rawPath: Path): Boolean {
         val key = lockKey(rawPath)
@@ -82,7 +82,7 @@ internal class RedisSpoolLockManager(
     }
 
     /**
-     * Redis TTL을 사용하므로 별도 정리 작업은 수행하지 않습니다.
+     * No explicit purge is needed because Redis TTL handles orphan locks.
      */
     override fun purgeOrphanedLocks() = Unit
 

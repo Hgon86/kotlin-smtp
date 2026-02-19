@@ -3,7 +3,7 @@ package io.github.kotlinsmtp.relay.jakarta
 import java.net.IDN
 
 /**
- * outbound relay에서 사용하는 도메인/주소 정규화 유틸.
+ * Domain/address normalization utility used in outbound relay.
  */
 internal object AddressUtils {
     fun normalizeDomain(domain: String): String? = runCatching {

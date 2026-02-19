@@ -3,10 +3,10 @@ package io.github.kotlinsmtp.utils
 import java.net.InetAddress
 
 /**
- * IP CIDR(예: 10.0.0.0/8, 192.168.0.1/32, ::1/128) 매칭 유틸.
+ * IP CIDR (e.g., 10.0.0.0/8, 192.168.0.1/32, ::1/128) matching utility.
  *
- * - PROXY protocol은 스푸핑 위험이 있으므로 "신뢰 프록시 IP 대역" 검사에 사용합니다.
- * - 기능 우선: IPv4/IPv6 공통 지원, 최소한의 비교 로직만 제공합니다.
+ * - PROXY protocol has spoofing risk, so this is used to check "trusted proxy IP ranges".
+ * - Feature-first: supports both IPv4/IPv6 with minimal comparison logic.
  */
 internal class IpCidr private constructor(
     private val network: ByteArray,
@@ -14,7 +14,7 @@ internal class IpCidr private constructor(
 ) {
     fun contains(address: InetAddress): Boolean {
         val addr = address.address
-        if (addr.size != network.size) return false // IPv4/IPv6 혼합 비교 방지
+        if (addr.size != network.size) return false // Prevent mixed IPv4/IPv6 comparison
 
         var bitsRemaining = prefixBits
         var i = 0
@@ -42,7 +42,7 @@ internal class IpCidr private constructor(
             val maxBits = addr.address.size * 8
             val prefix = (prefixPart?.toIntOrNull() ?: maxBits).coerceIn(0, maxBits)
 
-            // 네트워크 주소로 정규화(마스크 적용)
+            // Normalize to network address (apply mask)
             val network = addr.address.clone()
             var bitsRemaining = prefix
             for (i in network.indices) {

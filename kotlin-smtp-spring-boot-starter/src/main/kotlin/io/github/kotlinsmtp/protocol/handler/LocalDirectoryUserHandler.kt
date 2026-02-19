@@ -5,10 +5,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * 로컬 파일 시스템(mailboxDir) 기반의 간단한 사용자 검증 핸들러
+ * Simple user verification handler backed by local filesystem (mailboxDir).
  *
- * - 기능 구현 우선: VRFY를 제한된 환경에서 켜고 싶을 때 최소 구현으로 사용
- * - TODO(DB/MSA): 실제 프로덕션에서는 DB/Directory 서비스(또는 Policy 서비스)로 이관
+ * - Feature-first: minimal implementation for enabling VRFY in constrained setups.
+ * - TODO(DB/MSA): migrate to DB/directory service (or policy service) for production.
  */
 class LocalDirectoryUserHandler(
     private val mailboxDir: Path,
@@ -28,7 +28,7 @@ class LocalDirectoryUserHandler(
             term to localDomain
         }
 
-        // 외부 도메인은 로컬 사용자 저장소로 검증할 수 없습니다.
+        // External domains cannot be verified against local user storage.
         if (!domain.equals(localDomain, ignoreCase = true)) return emptyList()
 
         val sanitized = sanitizeUsername(localPart)

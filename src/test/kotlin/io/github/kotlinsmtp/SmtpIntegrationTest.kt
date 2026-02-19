@@ -18,14 +18,14 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * SMTP 프로토콜 통합 테스트
+ * SMTP protocol integration tests.
  *
- * 실제 소켓 통신을 통해 SMTP 서버의 핵심 시나리오를 검증합니다:
- * 1. 기본 HELO/EHLO 시퀀스
- * 2. STARTTLS 업그레이드 및 상태 리셋
- * 3. AUTH PLAIN/LOGIN 인증
- * 4. MAIL FROM/RCPT TO 트랜잭션
- * 5. DATA 수신 및 dot-stuffing
+ * Validates core server scenarios over real socket I/O:
+ * 1. Basic HELO/EHLO sequence
+ * 2. STARTTLS upgrade and state reset
+ * 3. AUTH PLAIN/LOGIN authentication
+ * 4. MAIL FROM/RCPT TO transaction
+ * 5. DATA receive and dot-stuffing
  * 6. BDAT CHUNKING
  */
 class SmtpIntegrationTest {
@@ -42,7 +42,7 @@ class SmtpIntegrationTest {
             serviceName = "test-smtp"
             useProtocolHandlerFactory { TestSmtpProtocolHandler() }
 
-            // 테스트에서는 TLS/AUTH 없이 진행
+            // Run tests without TLS/AUTH.
             listener.enableStartTls = false
             listener.enableAuth = false
             listener.implicitTls = false
@@ -53,7 +53,7 @@ class SmtpIntegrationTest {
         runBlocking {
             server.start()
             testPort = resolveBoundPort(server)
-            // 서버 시작 대기
+            // Wait for server startup.
             Thread.sleep(100)
         }
     }
@@ -63,12 +63,12 @@ class SmtpIntegrationTest {
         runBlocking {
             server.stop(gracefulTimeoutMs = 5000)
         }
-        // 임시 디렉토리 정리
+        // Clean up temporary directory.
         tempDir.toFile().deleteRecursively()
     }
 
     /**
-     * 기본 HELO/EHLO 테스트
+     * Basic HELO/EHLO test.
      */
     @Test
     fun `test basic EHLO sequence`() = runBlocking {
@@ -76,15 +76,15 @@ class SmtpIntegrationTest {
             val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
             val writer = OutputStreamWriter(socket.getOutputStream())
 
-            // 1. Greeting 수신
+            // 1. Receive greeting.
             val greeting = reader.readLine()
             assertTrue(greeting.startsWith("220"), "Expected 220 greeting, got: $greeting")
 
-            // 2. EHLO 전송
+            // 2. Send EHLO.
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
 
-            // 3. EHLO 응답 수신 (multiline)
+            // 3. Receive EHLO response (multiline).
             val responses = mutableListOf<String>()
             var line = reader.readLine()
             while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
@@ -106,7 +106,7 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * MAIL FROM/RCPT TO/DATA 전체 트랜잭션 테스트
+     * Full MAIL FROM/RCPT TO/DATA transaction test.
      */
     @Test
     fun `test full mail transaction`() = runBlocking {
@@ -140,14 +140,14 @@ class SmtpIntegrationTest {
             val dataResponse = reader.readLine()
             assertTrue(dataResponse.startsWith("354"), "Expected 354 go ahead")
 
-            // 메일 본문 전송 (dot-stuffing 테스트 포함)
+            // Send message body (including dot-stuffing case).
             writer.write("Subject: Test Mail\r\n")
             writer.write("From: sender@test.com\r\n")
             writer.write("To: recipient@test.com\r\n")
             writer.write("\r\n")
             writer.write("This is a test message.\r\n")
-            writer.write("Line with dot: .test\r\n") // dot-stuffing 테스트
-            writer.write(".\r\n") // 종료 마커
+            writer.write("Line with dot: .test\r\n") // dot-stuffing case
+            writer.write(".\r\n") // terminator marker
             writer.flush()
 
             val finalResponse = reader.readLine()
@@ -161,7 +161,7 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * SMTPUTF8 미선언 상태에서 UTF-8 local-part 주소는 거부되어야 합니다.
+     * UTF-8 local-part must be rejected when SMTPUTF8 is not declared.
      */
     @Test
     fun `test MAIL FROM rejects UTF8 local part without SMTPUTF8`() = runBlocking {
@@ -184,7 +184,7 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * SMTPUTF8 선언 시 IDN(punycode) 수신자 경로가 정상 동작해야 합니다.
+     * IDN (punycode) recipient path should work when SMTPUTF8 is declared.
      */
     @Test
     fun `test RCPT TO accepts IDN recipient with SMTPUTF8`() = runBlocking {
@@ -211,7 +211,7 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * ASCII local-part + IDN 도메인 주소는 SMTPUTF8 없이도 수용되어야 합니다.
+     * ASCII local-part + IDN domain should be accepted without SMTPUTF8.
      */
     @Test
     fun `test MAIL FROM accepts IDN domain without SMTPUTF8 when local part is ASCII`() = runBlocking {
@@ -233,9 +233,9 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * DATA 본문이 파이프라인으로 들어와도 프레이밍이 깨지지 않아야 합니다.
+     * DATA framing must stay intact even when body arrives in a pipeline.
      *
-     * 특히 본문 라인이 "BDAT ..."로 시작하더라도 BDAT로 오인하면 안 됩니다.
+     * In particular, a body line starting with "BDAT ..." must not be misparsed as BDAT command.
      */
     @Test
     fun `test DATA pipelined body does not trigger BDAT framing`() = runBlocking {
@@ -257,9 +257,9 @@ class SmtpIntegrationTest {
             writer.flush()
             reader.readLine()
 
-            // 354 응답을 기다리지 않고, DATA 이후 본문을 연속으로 보냄
+            // Send body continuously right after DATA, without waiting for 354.
             writer.write("DATA\r\n")
-            // DATA 본문 내용물이 "BDAT 4" 문자열을 포함하는 경우(BDAT 명령으로 오인하면 안 됨)
+            // Body contains "BDAT 4" text and must not be treated as BDAT command.
             writer.write("BDAT 4\r\n")
             writer.write(".\r\n")
             writer.flush()
@@ -276,7 +276,7 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * BDAT 라인과 청크 바이트가 같은 write로 들어와도 정확히 프레이밍되어야 합니다.
+     * BDAT line and chunk bytes must be framed correctly even in the same write.
      */
     @Test
     fun `test BDAT line and bytes in same write`() = runBlocking {
@@ -310,7 +310,7 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * RSET 테스트 - 트랜잭션 중단 및 재시작
+     * RSET test - transaction abort and restart.
      */
     @Test
     fun `test RSET resets transaction`() = runBlocking {
@@ -341,7 +341,7 @@ class SmtpIntegrationTest {
             val rsetResponse = reader.readLine()
             assertTrue(rsetResponse.startsWith("250"), "Expected 250 response after RSET, got: $rsetResponse")
 
-            // RSET 후 새로운 트랜잭션 시작 가능
+            // A new transaction should start after RSET.
             writer.write("MAIL FROM:<new-sender@test.com>\r\n")
             writer.flush()
             val mailResponse = reader.readLine()
@@ -353,7 +353,7 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * 잘못된 명령어 순서 테스트
+     * Invalid command sequence test.
      */
     @Test
     fun `test invalid command sequence`() = runBlocking {
@@ -363,7 +363,7 @@ class SmtpIntegrationTest {
 
             reader.readLine() // Greeting
 
-            // EHLO 없이 MAIL FROM 시도
+            // Try MAIL FROM without EHLO.
             writer.write("MAIL FROM:<sender@test.com>\r\n")
             writer.flush()
             
@@ -376,7 +376,7 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * HELO/EHLO 강제 테스트 - RSET 후에도 EHLO 필요
+     * HELO/EHLO enforcement test - behavior after RSET.
      */
     @Test
     fun `test requires EHLO after RSET`() = runBlocking {
@@ -391,12 +391,12 @@ class SmtpIntegrationTest {
             writer.flush()
             skipEhloResponse(reader)
 
-            // RSET (greeting 상태 유지)
+            // RSET (greeting state preserved)
             writer.write("RSET\r\n")
             writer.flush()
             reader.readLine()
 
-            // RSET 후에도 MAIL FROM 가능 (greeting 유지됨)
+            // MAIL FROM should still be allowed after RSET (greeting kept).
             writer.write("MAIL FROM:<sender@test.com>\r\n")
             writer.flush()
             val response = reader.readLine()
@@ -408,11 +408,11 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * Graceful shutdown 테스트
+     * Graceful shutdown test.
      */
     @Test
     fun `test graceful shutdown waits for sessions`() = runBlocking {
-        // 먼저 클라이언트 연결
+        // Connect client first.
         val clientSocket = Socket("localhost", testPort)
         val reader = BufferedReader(InputStreamReader(clientSocket.getInputStream()))
         val writer = OutputStreamWriter(clientSocket.getOutputStream())
@@ -427,36 +427,36 @@ class SmtpIntegrationTest {
             // internal implementation details (session tracker) are intentionally hidden from the public API.
             // This test only verifies that graceful shutdown completes without hanging.
 
-        // 별도 코루틴에서 graceful shutdown 실행
+        // Execute graceful shutdown in a separate coroutine.
         val shutdownJob = launch {
             server.stop(gracefulTimeoutMs = 5000)
         }
 
-        // 잠시 대기 후 세션이 여전히 활성인지 확인 (graceful shutdown 진행 중)
+        // Wait briefly and verify session is still active during graceful shutdown.
         Thread.sleep(100)
         
-        // 클라이언트에서 QUIT 전송 (graceful shutdown 중에도 처리되어야 함)
+        // Send QUIT from client (should still be handled during graceful shutdown).
         try {
             writer.write("QUIT\r\n")
             writer.flush()
-            // 서버가 종료 중일 수 있으므로 응답을 기다리되 예외는 무시
+            // Server may be shutting down; wait for response but ignore exceptions.
             kotlin.runCatching { reader.readLine() }
         } catch (e: Exception) {
-            // 서버가 이미 종료된 경우 예외 발생 가능
+            // Exception can occur if server is already closed.
         }
         
         kotlin.runCatching { clientSocket.close() }
 
-        // shutdown 완료 대기
+        // Wait for shutdown completion.
         withTimeout(10.seconds) {
             shutdownJob.join()
         }
 
-        // 서버가 정지되었는지 확인 (세션은 graceful timeout으로 인해 강제 종료될 수 있음)
+        // Verify shutdown completion (session may be force-closed by graceful timeout).
         assertTrue(true, "Shutdown completed successfully")
     }
 
-    // Helper 메서드
+    // Helper method
     private fun skipEhloResponse(reader: BufferedReader) {
         var line = reader.readLine()
         while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
@@ -466,10 +466,10 @@ class SmtpIntegrationTest {
     }
 
     /**
-     * 테스트에서 서버가 실제 바인드한 포트를 반사(reflection)로 조회합니다.
+     * Reads the actual bound port of the test server via reflection.
      *
-     * @param smtpServer 시작된 SMTP 서버 인스턴스
-     * @return 실제 리스닝 포트
+     * @param smtpServer started SMTP server instance
+     * @return actual listening port
      */
     private fun resolveBoundPort(smtpServer: SmtpServer): Int {
         val channelFutureField = SmtpServer::class.java.getDeclaredField("channelFuture")

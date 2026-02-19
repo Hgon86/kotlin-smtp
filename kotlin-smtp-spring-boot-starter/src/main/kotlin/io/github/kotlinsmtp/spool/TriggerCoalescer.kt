@@ -1,20 +1,20 @@
 package io.github.kotlinsmtp.spool
 
 /**
- * 스풀 트리거 요청을 병합(coalescing)하기 위한 큐입니다.
+ * Queue for coalescing spool trigger requests.
  *
- * 규칙:
- * - 전체 트리거(Full)는 도메인 트리거보다 우선하며, 기존 도메인 트리거를 흡수합니다.
- * - 도메인 트리거는 중복 도메인을 1개로 병합합니다.
+ * Rules:
+ * - Full trigger has priority over domain trigger and absorbs queued domain triggers.
+ * - Domain triggers merge duplicate domains into a single entry.
  */
 internal class TriggerCoalescer {
     private var fullPending = false
     private val domains = linkedSetOf<String>()
 
     /**
-     * 트리거 요청을 큐에 반영합니다.
+     * Applies trigger request to the queue.
      *
-     * @param domain null이면 전체 트리거, 값이 있으면 도메인 트리거
+     * @param domain null for full trigger, value for domain trigger
      */
     fun submit(domain: String?) {
         if (domain == null) {
@@ -30,9 +30,9 @@ internal class TriggerCoalescer {
     }
 
     /**
-     * 다음 실행 대상을 반환합니다.
+     * Returns the next trigger to execute.
      *
-     * @return 실행할 트리거가 없으면 null
+     * @return null if no pending trigger exists
      */
     fun poll(): SpoolTrigger? = when {
         fullPending -> {
@@ -49,16 +49,16 @@ internal class TriggerCoalescer {
 }
 
 /**
- * 스풀 트리거 실행 단위를 표현합니다.
+ * Represents a spool trigger execution unit.
  */
 internal sealed interface SpoolTrigger {
-    /** 전체 큐 트리거 */
+    /** Full-queue trigger. */
     data object Full : SpoolTrigger
 
     /**
-     * 도메인 한정 트리거
+     * Domain-scoped trigger.
      *
-     * @property domain IDNA ASCII로 정규화된 도메인
+     * @property domain domain normalized to IDNA ASCII
      */
     data class Domain(val domain: String) : SpoolTrigger
 }

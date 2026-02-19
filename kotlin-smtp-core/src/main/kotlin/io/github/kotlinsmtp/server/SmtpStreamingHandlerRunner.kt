@@ -14,14 +14,14 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * DATA/BDAT 본문 스트리밍 처리에서 공통으로 사용하는 핸들러 실행/결과 응답 유틸입니다.
+ * Utility for shared handler execution/result response used in DATA/BDAT body streaming.
  */
 internal object SmtpStreamingHandlerRunner {
 
     /**
-     * 트랜잭션 핸들러의 data()를 별도 코루틴에서 실행하고 결과를 deferred에 기록합니다.
+     * Run transaction handler data() in a separate coroutine and record result into deferred.
      *
-     * @param timeout 본문 처리 최대 시간
+     * @param timeout Maximum body processing time
      */
     fun launch(
         session: SmtpSession,
@@ -42,9 +42,9 @@ internal object SmtpStreamingHandlerRunner {
     }
 
     /**
-     * 핸들러 실행 결과에 따라 SMTP 응답을 보내고 트랜잭션 상태를 리셋합니다.
+     * Send SMTP response and reset transaction state based on handler execution result.
      *
-     * @return 성공 처리면 true
+     * @return true when processed successfully
      */
     suspend fun finalizeTransaction(
         session: SmtpSession,

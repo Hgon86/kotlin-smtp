@@ -11,7 +11,7 @@ internal object AddressUtils {
     )
 
     /**
-     * 문자열에서 괄호로 둘러싸인 내용 추출
+     * Extract content enclosed by brackets from string
      */
     fun extractFromBrackets(string: String, openingBracket: String = "<", closingBracket: String = ">"): String? =
         string.indexOf(openingBracket).takeIf { it >= 0 }?.let { fromIndex ->
@@ -21,7 +21,7 @@ internal object AddressUtils {
         }
 
     /**
-     * 이메일 주소 검증
+     * Validate email address
      */
     fun validateAddress(address: String): Boolean = runCatching {
         val trimmed = address.trim()
@@ -53,15 +53,15 @@ internal object AddressUtils {
     }.getOrDefault(false)
 
     /**
-     * SMTPUTF8 주소(UTF-8 local-part) 최소 검증
+     * Minimal validation for SMTPUTF8 address (UTF-8 local-part)
      *
-     * - RFC 전체를 엄밀히 구현하기보다, "실사용에서 터지지 않게" 보수적으로 검증합니다.
-     * - 도메인은 IDNA(Punycode)로 변환 가능해야 합니다.
+     * - Rather than strict full RFC implementation, validates conservatively for practical robustness.
+     * - Domain must be convertible to IDNA (Punycode).
      */
     fun validateSmtpUtf8Address(address: String): Boolean = runCatching {
         val trimmed = address.trim()
         if (trimmed.isEmpty()) return false
-        // 헤더/프로토콜 파손 방지
+        // Prevent header/protocol corruption
         if (trimmed.any { it == '\r' || it == '\n' }) return false
         val at = trimmed.indexOf('@')
         if (at <= 0) return false
@@ -69,25 +69,25 @@ internal object AddressUtils {
         val local = trimmed.substring(0, at)
         val domain = trimmed.substring(at + 1)
         if (domain.isEmpty()) return false
-        // local-part는 whitespace/제어문자만 막고 나머지는 허용(UTF-8)
+        // Allow UTF-8 local-part except whitespace/control characters
         if (local.any { it.isWhitespace() || it.code < 0x20 }) return false
-        // 도메인은 IDN 변환 가능해야 함
+        // Domain must be IDN-convertible
         normalizeDomain(domain) != null
     }.getOrDefault(false)
 
     /**
-     * 도메인을 비교/정책 판단용으로 정규화합니다.
-     * - Unicode 도메인 → IDNA ASCII로 변환
+     * Normalize domain for comparison/policy checks.
+     * - Convert Unicode domain to IDNA ASCII
      */
     fun normalizeDomain(domain: String): String? = runCatching {
         val d = domain.trim().trimEnd('.')
         if (d.isEmpty()) return null
-        // ALLOW_UNASSIGNED: 운영상 보수적으로 허용. 필요하면 USE_STD3_ASCII_RULES 등으로 강화 가능.
+        // ALLOW_UNASSIGNED: conservative operational allowance. Can be tightened with USE_STD3_ASCII_RULES if needed.
         IDN.toASCII(d, IDN.ALLOW_UNASSIGNED).lowercase()
     }.getOrNull()
 
     /**
-     * 도메인을 정규화하고 유효성(라벨/길이 규칙)을 함께 확인합니다.
+     * Normalize domain and validate label/length rules.
      */
     fun normalizeValidDomain(domain: String): String? {
         val normalized = normalizeDomain(domain) ?: return null
@@ -96,7 +96,7 @@ internal object AddressUtils {
     }
 
     /**
-     * 도메인 문자열이 정책상 허용 가능한 형태인지 확인합니다.
+     * Check whether domain string is in policy-acceptable form.
      */
     fun isValidDomain(domain: String): Boolean {
         return normalizeValidDomain(domain) != null
@@ -105,8 +105,8 @@ internal object AddressUtils {
     fun isAllAscii(value: String): Boolean = value.all { it.code in 0x20..0x7E }
 
     /**
-     * 주소에서 도메인 부분만 IDNA(ASCII)로 정규화합니다.
-     * - local-part는 그대로 둡니다(UTF-8 local-part는 SMTPUTF8에서 필요).
+     * Normalize only domain part in address to IDNA (ASCII).
+     * - Keep local-part unchanged (UTF-8 local-part is needed for SMTPUTF8).
      */
     fun normalizeDomainInAddress(address: String): String {
         val trimmed = address.trim()
@@ -119,31 +119,31 @@ internal object AddressUtils {
     }
 
     /**
-     * 호스트 부분 검증
+     * Validate host part
      */
     fun validateHost(host: String): Boolean {
         if (!host.startsWith("@")) return false
 
         return runCatching {
-            val domain = host.substring(1) // @ 제거
+            val domain = host.substring(1) // Remove @
             val normalized = normalizeDomain(domain) ?: return false
             asciiDomainRegex.matches(normalized)
         }.getOrDefault(false)
     }
 
     /**
-     * 이메일에서 도메인 부분 추출
+     * Extract domain part from email
      */
     fun extractDomain(email: String): String? =
         email.substringAfterLast('@', "").takeIf { it.isNotEmpty() }
 }
 
 /**
- * 문자열이 유효한 이메일 주소인지 확인하는 확장 함수
+ * Extension function to check whether string is a valid email address
  */
 internal fun String.isValidEmailAddress(): Boolean = AddressUtils.validateAddress(this)
 
 /**
- * 문자열이 유효한 이메일 호스트인지 확인하는 확장 함수
+ * Extension function to check whether string is a valid email host
  */
 internal fun String.isValidEmailHost(): Boolean = AddressUtils.validateHost(this)

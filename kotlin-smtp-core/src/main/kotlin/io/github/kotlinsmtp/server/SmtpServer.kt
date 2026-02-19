@@ -45,22 +45,22 @@ public class SmtpServer internal constructor(
     internal val enableVrfy: Boolean = false,
     internal val enableEtrn: Boolean = false,
     internal val enableExpn: Boolean = false,
-    internal val implicitTls: Boolean = false, // 465(SMTPS)처럼 접속 즉시 TLS
-    internal val enableStartTls: Boolean = true, // STARTTLS 커맨드/광고 허용
-    internal val enableAuth: Boolean = true, // AUTH 커맨드/광고 허용
-    internal val requireAuthForMail: Boolean = false, // MAIL 트랜잭션 시작 전 AUTH 강제(Submission 용도)
-    // PROXY protocol(v1) 지원 (HAProxy 등 L4 프록시 뒤에서 원본 클라이언트 IP 복원)
+    internal val implicitTls: Boolean = false, // Immediate TLS on connect like 465 (SMTPS)
+    internal val enableStartTls: Boolean = true, // Allow STARTTLS command/advertisement
+    internal val enableAuth: Boolean = true, // Allow AUTH command/advertisement
+    internal val requireAuthForMail: Boolean = false, // Enforce AUTH before MAIL transaction start (submission use)
+    // PROXY protocol (v1) support (restore original client IP behind L4 proxy such as HAProxy)
     internal val proxyProtocolEnabled: Boolean = false,
     internal val trustedProxyCidrs: List<String> = listOf("127.0.0.1/32", "::1/128"),
     private val certChainFile: File? = null,
     private val privateKeyFile: File? = null,
-    // TLS 하드닝 설정
+    // TLS hardening settings
     private val minTlsVersion: String = "TLSv1.2",
     private val tlsHandshakeTimeoutMs: Int = 30_000,
     private val tlsCipherSuites: List<String> = emptyList(),
     maxConnectionsPerIp: Int = 10,
     maxMessagesPerIpPerHour: Int = 100,
-    internal val idleTimeoutSeconds: Int = 300, // 5분 (0이면 타임아웃 없음)
+    internal val idleTimeoutSeconds: Int = 300, // 5 minutes (no timeout if 0)
 ) {
     internal var serverScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val serverMutex = Mutex()
@@ -69,10 +69,10 @@ public class SmtpServer internal constructor(
     private var workerGroup: NioEventLoopGroup? = null
     private var maintenanceScheduler: SmtpServerMaintenanceScheduler? = null
 
-    // Rate Limiter (스팸 및 DoS 방지)
+    // Rate limiter (spam and DoS prevention)
     internal val rateLimiter = RateLimiter(maxConnectionsPerIp, maxMessagesPerIpPerHour)
 
-    // 활성 세션 추적 (graceful shutdown용)
+    // Active session tracking (for graceful shutdown)
     internal val sessionTracker = ActiveSessionTracker()
 
     internal fun hasEventHooks(): Boolean = eventHooks.isNotEmpty()
@@ -87,7 +87,7 @@ public class SmtpServer internal constructor(
         }
     }
 
-    // 신뢰 프록시 CIDR 파싱(런타임 오버헤드 최소화)
+    // Parse trusted proxy CIDRs (minimize runtime overhead)
     internal val trustedProxyCidrsParsed = trustedProxyCidrs.mapNotNull { io.github.kotlinsmtp.utils.IpCidr.parse(it) }
 
     @Volatile
@@ -96,10 +96,10 @@ public class SmtpServer internal constructor(
     internal val sslContext: SslContext?
         get() = currentSslContext
 
-    // TLS 하드닝 설정 접근자 (SmtpSession 등에서 사용)
+    // TLS hardening settings accessor (used by SmtpSession, etc.)
     internal val tlsHandshakeTimeout: Long = tlsHandshakeTimeoutMs.toLong()
 
-    /** 서버 실행 상태를 추적합니다. */
+    /** Tracks server runtime state. */
     private enum class LifecycleState {
         STOPPED,
         RUNNING,
@@ -113,7 +113,7 @@ public class SmtpServer internal constructor(
             return runCatching {
                 val builder = SslContextBuilder.forServer(certChainFile, privateKeyFile)
 
-                // 최소 TLS 버전 설정 (TLSv1.2 권장)
+                // Configure minimum TLS version (TLSv1.2 recommended)
                 val protocols = when (minTlsVersion.uppercase()) {
                     "TLSV1.3", "TLSv1.3" -> arrayOf("TLSv1.3", "TLSv1.2")
                     "TLSV1.2", "TLSv1.2" -> arrayOf("TLSv1.2")
@@ -121,7 +121,7 @@ public class SmtpServer internal constructor(
                 }
                 builder.protocols(*protocols)
 
-                // 암호 스위트 설정 (지정된 경우)
+                // Configure cipher suites (if specified)
                 if (tlsCipherSuites.isNotEmpty()) {
                     builder.ciphers(tlsCipherSuites)
                 }
@@ -174,10 +174,10 @@ public class SmtpServer internal constructor(
     }
 
     /**
-     * SMTP 서버를 시작합니다.
+     * Start SMTP server.
      *
-     * @param wait true인 경우 서버 채널이 닫힐 때까지 반환하지 않습니다.
-     * @return 이미 실행 중이면 false, 새로 시작하면 true
+     * @param wait If true, do not return until server channel is closed.
+     * @return false if already running, true when newly started
      */
     public suspend fun start(wait: Boolean = false): Boolean {
         var closeFutureToWait: io.netty.channel.ChannelFuture? = null
@@ -225,14 +225,14 @@ public class SmtpServer internal constructor(
     }
 
     /**
-     * SMTP 서버를 종료합니다.
+     * Stop SMTP server.
      *
-     * - 신규 연결 accept를 중단합니다.
-     * - 활성 세션에 close를 요청하고, 지정된 시간 내에 드레인(drain)합니다.
-     * - Netty 이벤트 루프 종료까지 최대한 기다립니다.
+     * - Stop accepting new connections.
+     * - Request close on active sessions and drain within the specified timeout.
+     * - Wait as much as possible until Netty event loops terminate.
      *
-     * @param gracefulTimeoutMs graceful shutdown에 사용할 전체 타임아웃(ms)
-     * @return 실행 중인 서버를 종료했으면 true, 이미 종료 상태면 false
+     * @param gracefulTimeoutMs Total timeout (ms) for graceful shutdown
+     * @return true when running server was stopped, false when already stopped
      */
     public suspend fun stop(gracefulTimeoutMs: Long = 30000): Boolean = serverMutex.withLock {
         if (state == LifecycleState.RUNNING && channelFuture != null) {

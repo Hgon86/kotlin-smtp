@@ -3,10 +3,10 @@ package io.github.kotlinsmtp.server
 import io.github.kotlinsmtp.model.SessionData
 
 /**
- * 트랜잭션 리셋 시 SessionData를 재구성합니다.
+ * Rebuild SessionData when resetting transaction state.
  *
- * - STARTTLS 이후 등에서 인증/세션 상태 리셋 요구사항을 반영합니다.
- * - 보안 강화를 위해 ESMTP/DSN 파라미터는 트랜잭션 단위로 초기화합니다.
+ * - Reflects requirements to reset auth/session state (e.g., after STARTTLS).
+ * - For stronger security, ESMTP/DSN parameters are reset per transaction.
  */
 internal object SmtpSessionDataResetter {
 

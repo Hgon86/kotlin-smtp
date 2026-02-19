@@ -1,11 +1,11 @@
 package io.github.kotlinsmtp.server
 
 /**
- * 서버 기능 플래그 모음입니다.
+ * Collection of server feature flags.
  *
- * @property enableVrfy VRFY 커맨드 활성화
- * @property enableEtrn ETRN 커맨드 활성화
- * @property enableExpn EXPN 커맨드 활성화
+ * @property enableVrfy Enable VRFY command
+ * @property enableEtrn Enable ETRN command
+ * @property enableExpn Enable EXPN command
  */
 public class SmtpFeatureFlags {
     public var enableVrfy: Boolean = false
@@ -14,13 +14,13 @@ public class SmtpFeatureFlags {
 }
 
 /**
- * 리스너(포트)별 정책입니다.
+ * Per-listener (port) policy.
  *
- * @property implicitTls 접속 즉시 TLS 시작 여부 (SMTPS/465)
- * @property enableStartTls STARTTLS 지원 여부
- * @property enableAuth AUTH 커맨드/광고 허용 여부
- * @property requireAuthForMail MAIL 트랜잭션 시작 전 AUTH 강제 여부
- * @property idleTimeoutSeconds 연결 유휴 타임아웃(초). 0이면 타임아웃 없음 (기본: 300초=5분)
+ * @property implicitTls Whether TLS starts immediately on connect (SMTPS/465)
+ * @property enableStartTls Whether STARTTLS is supported
+ * @property enableAuth Whether AUTH command/advertisement is allowed
+ * @property requireAuthForMail Whether AUTH is required before starting MAIL transaction
+ * @property idleTimeoutSeconds Connection idle timeout (seconds). 0 means no timeout (default: 300s = 5min)
  */
 public class SmtpListenerPolicy {
     public var implicitTls: Boolean = false
@@ -31,10 +31,10 @@ public class SmtpListenerPolicy {
 }
 
 /**
- * PROXY protocol(v1) 설정입니다.
+ * PROXY protocol (v1) configuration.
  *
- * @property enabled PROXY protocol 수신 여부
- * @property trustedProxyCidrs 신뢰 프록시 CIDR 목록
+ * @property enabled Whether PROXY protocol is accepted
+ * @property trustedProxyCidrs Trusted proxy CIDR list
  */
 public class SmtpProxyProtocolPolicy {
     public var enabled: Boolean = false
@@ -42,13 +42,13 @@ public class SmtpProxyProtocolPolicy {
 }
 
 /**
- * TLS 설정입니다.
+ * TLS configuration.
  *
- * @property certChainPath 인증서 체인 경로
- * @property privateKeyPath 개인키 경로
- * @property minTlsVersion 최소 TLS 버전
- * @property handshakeTimeoutMs TLS 핸드셰이크 타임아웃(ms)
- * @property cipherSuites 허용 cipher suites(지정 시)
+ * @property certChainPath Certificate chain path
+ * @property privateKeyPath Private key path
+ * @property minTlsVersion Minimum TLS version
+ * @property handshakeTimeoutMs TLS handshake timeout (ms)
+ * @property cipherSuites Allowed cipher suites (when specified)
  */
 public class SmtpTlsPolicy {
     public var certChainPath: java.nio.file.Path? = null
@@ -59,10 +59,10 @@ public class SmtpTlsPolicy {
 }
 
 /**
- * 연결/메시지 Rate Limit 설정입니다.
+ * Connection/message rate-limit configuration.
  *
- * @property maxConnectionsPerIp IP당 최대 동시 연결 수
- * @property maxMessagesPerIpPerHour IP당 시간당 최대 메시지 수
+ * @property maxConnectionsPerIp Maximum concurrent connections per IP
+ * @property maxMessagesPerIpPerHour Maximum messages per hour per IP
  */
 public class SmtpRateLimitPolicy {
     public var maxConnectionsPerIp: Int = 10
@@ -70,12 +70,12 @@ public class SmtpRateLimitPolicy {
 }
 
 /**
- * 인증(AUTH) Rate Limit 설정입니다.
+ * Authentication (AUTH) rate-limit configuration.
  *
- * @property enabled 인증 rate limit 사용 여부
- * @property maxFailuresPerWindow 윈도우 내 최대 실패 횟수
- * @property windowSeconds 윈도우 크기(초)
- * @property lockoutDurationSeconds 잠금 지속 시간(초)
+ * @property enabled Whether auth rate limit is enabled
+ * @property maxFailuresPerWindow Maximum failures within window
+ * @property windowSeconds Window size (seconds)
+ * @property lockoutDurationSeconds Lockout duration (seconds)
  */
 public class SmtpAuthRateLimitPolicy {
     public var enabled: Boolean = true

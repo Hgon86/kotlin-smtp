@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 class SmtpServerPropertiesRedisValidationTest {
 
     /**
-     * Redis 백엔드에서 maxRawBytes가 0 이하면 검증 실패해야 합니다.
+     * Validation must fail when `maxRawBytes <= 0` for Redis backend.
      */
     @Test
     fun `redis maxRawBytes must be positive`() {
@@ -21,7 +21,7 @@ class SmtpServerPropertiesRedisValidationTest {
     }
 
     /**
-     * Redis 백엔드에서 lockTtlSeconds가 0 이하면 검증 실패해야 합니다.
+     * Validation must fail when `lockTtlSeconds <= 0` for Redis backend.
      */
     @Test
     fun `redis lockTtlSeconds must be positive`() {
@@ -36,9 +36,9 @@ class SmtpServerPropertiesRedisValidationTest {
     }
 
     /**
-     * 테스트에 필요한 최소 유효 설정을 구성합니다.
+     * Builds minimum valid properties for test setup.
      *
-     * @return 유효한 SMTP 설정
+     * @return valid SMTP properties
      */
     private fun baseProps(): SmtpServerProperties = SmtpServerProperties().apply {
         hostname = "localhost"

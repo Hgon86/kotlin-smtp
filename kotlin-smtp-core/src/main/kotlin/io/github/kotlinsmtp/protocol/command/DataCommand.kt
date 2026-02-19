@@ -30,44 +30,44 @@ internal class DataCommand : SmtpCommand(
             respondSyntax()
         }
 
-        // CHUNKING(BDAT) 진행 중에는 DATA를 허용하지 않습니다(실사용 클라이언트 호환/상태 일관성).
-        // - BDAT를 시작한 뒤에는 BDAT ... LAST로 트랜잭션을 끝내야 합니다.
+        // Do not allow DATA while CHUNKING (BDAT) is in progress (real-world client compatibility/state consistency).
+        // - After starting BDAT, the transaction must be finished with BDAT ... LAST.
         if (session.isBdatInProgress()) {
             throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "BDAT in progress; use BDAT <size> LAST to finish")
         }
 
-        // BINARYMIME는 DATA(도트 투명성/라인 기반)로 처리하면 의미가 없고 깨질 수 있으므로 BDAT로만 허용합니다.
+        // BINARYMIME can be meaningless/broken with DATA (dot transparency/line-based), so allow only with BDAT.
         val body = session.sessionData.mailParameters["BODY"]?.uppercase()
         if (body == "BINARYMIME") {
             throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "BINARYMIME requires BDAT (CHUNKING)")
         }
 
-        // 상태/순서 검증: 최소 1개 이상의 RCPT 이후에만 DATA 허용
+        // State/sequence validation: allow DATA only after at least one RCPT.
         if (session.sessionData.mailFrom == null || session.sessionData.recipientCount <= 0) {
             throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "Send MAIL FROM and RCPT TO first")
         }
 
-        // Rate Limiting: 메시지 전송 제한 검사
+        // Rate limiting: check message send limit.
         val clientIp = session.clientIpAddress()
         if (clientIp != null && !session.server.rateLimiter.allowMessage(clientIp)) {
             throw SmtpSendResponse(452, "4.7.1 Too many messages from your IP. Try again later.")
         }
 
         session.sendResponse(START_MAIL_INPUT.code, "Start mail input - end data with <CRLF>.<CRLF>")
-        session.currentMessageSize = 0 // 메시지 크기 초기화
+        session.currentMessageSize = 0 // Reset message size
 
-        val dataChannel = Channel<ByteArray>(Channel.BUFFERED) // 코루틴 채널 생성
-        val dataStream = CoroutineInputStream(dataChannel) // 데이터 스트림 생성
+        val dataChannel = Channel<ByteArray>(Channel.BUFFERED) // Create coroutine channel
+        val dataStream = CoroutineInputStream(dataChannel) // Create data stream
         val handlerResult = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
 
-        // 별도 코루틴에서 트랜잭션 핸들러 실행
-        // 중요: 여기서 SMTP 응답을 보내지 않고(Result로만 반환) DATA의 최종 응답은 execute()가 "단 한 번"만 보냅니다.
+        // Run transaction handler in a separate coroutine.
+        // Important: do not send SMTP response here (return as Result only); execute() sends the final DATA response exactly once.
         val handlerJob = SmtpStreamingHandlerRunner.launch(session, dataStream, handlerResult)
 
-        // DATA 본문은 로그에 남기지 않도록 세션 플래그를 켭니다.
+        // Enable session flag so DATA body is not logged.
         session.inDataMode = true
 
-        // 메시지 데이터 수신(라인 기반) → 바이트 스트림으로 변환 → 핸들러로 전달
+        // Receive message data (line-based) -> convert to byte stream -> pass to handler.
         val receiveResult = try {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -78,17 +78,17 @@ internal class DataCommand : SmtpCommand(
                         val line = session.readLine() ?: break
                         if (line == ".") break
 
-                        // 점으로 시작하는 라인 처리 (SMTP 도트 투명성)
+                        // Process lines starting with dot (SMTP dot transparency)
                         val processedLine = if (line.startsWith(".")) line.substring(1) else line
 
-                        // 라인을 바이트로 변환 (CRLF 포함)
-                    // 8BITMIME 지원을 위해 ISO-8859-1로 바이트를 1:1 보존합니다.
+                        // Convert line to bytes (including CRLF)
+                        // Preserve bytes 1:1 with ISO-8859-1 for 8BITMIME support.
                     val lineBytes = "$processedLine\r\n".toByteArray(Charsets.ISO_8859_1)
 
-                        // 크기 제한 확인
+                        // Check size limit
                         session.currentMessageSize += lineBytes.size
 
-                        // SIZE 파라미터로 선언된 크기 검증 (조기 종료)
+                        // Validate size declared by SIZE parameter (early termination)
                         val declaredSize = session.sessionData.declaredSize
                         if (declaredSize != null && session.currentMessageSize > declaredSize) {
                             throw SmtpSendResponse(
@@ -97,7 +97,7 @@ internal class DataCommand : SmtpCommand(
                             )
                         }
 
-                        // 전역 최대 크기 제한 확인
+                        // Check global max size limit
                         if (session.currentMessageSize > MAX_MESSAGE_SIZE) {
                             throw SmtpSendResponse(
                                 EXCEEDED_STORAGE_ALLOCATION.code,
@@ -105,17 +105,17 @@ internal class DataCommand : SmtpCommand(
                             )
                         }
 
-                        // 데이터 배치에 추가 (IO 디스패처 내에서 실행)
+                        // Add to data batch (runs in IO dispatcher)
                         batch.write(lineBytes)
 
-                        // 배치 크기에 도달하면 전송
+                        // Send when batch size is reached
                         if (batch.size() >= batchSize) {
                             dataChannel.send(batch.toByteArray())
                             batch.reset()
                         }
                     }
 
-                    // 남은 데이터가 있으면 전송
+                    // Send if any data remains
                     if (batch.size() > 0) {
                         dataChannel.send(batch.toByteArray())
                     }
@@ -125,10 +125,10 @@ internal class DataCommand : SmtpCommand(
             session.inDataMode = false
         }
 
-        // 입력 종료 → 스트림 종료
+        // Input complete -> close stream
         runCatching { dataChannel.close() }
 
-        // 수신 중 실패했다면: 프로토콜 동기화를 위해 연결을 종료(보수적)
+        // If receiving failed: close connection for protocol synchronization (conservative)
         if (receiveResult.isFailure) {
             handlerJob.cancel()
             runCatching { dataStream.close() }
@@ -164,7 +164,7 @@ internal class DataCommand : SmtpCommand(
             return
         }
 
-        // 핸들러 결과 확인 (성공시에만 250)
+        // Check handler result (250 only on success)
         handlerJob.join()
         val processing = handlerResult.await()
         SmtpStreamingHandlerRunner.finalizeTransaction(

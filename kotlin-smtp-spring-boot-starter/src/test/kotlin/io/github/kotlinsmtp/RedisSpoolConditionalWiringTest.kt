@@ -15,7 +15,7 @@ import java.nio.file.Path
 class RedisSpoolConditionalWiringTest {
 
     /**
-     * Redis 백엔드 선택 시 Redis 템플릿이 없고 커스텀 스풀 빈도 없으면 부팅이 실패해야 합니다.
+     * Boot must fail for Redis backend when no Redis template and no custom spool beans are provided.
      */
     @Test
     fun `redis type without redis template fails`() {
@@ -28,7 +28,7 @@ class RedisSpoolConditionalWiringTest {
     }
 
     /**
-     * Redis 백엔드 선택 시 커스텀 스풀 빈이 있으면 Redis 템플릿 없이도 부팅 가능해야 합니다.
+     * Boot should succeed for Redis backend without Redis template when custom spool beans exist.
      */
     @Test
     fun `redis type allows custom spool beans without redis template`() {
@@ -43,7 +43,7 @@ class RedisSpoolConditionalWiringTest {
     }
 
     /**
-     * auto 타입에서 Redis 템플릿이 없으면 파일 스풀 저장소를 선택해야 합니다.
+     * AUTO type should choose file spool store when Redis template is absent.
      */
     @Test
     fun `auto type falls back to file store without redis template`() {
@@ -57,9 +57,9 @@ class RedisSpoolConditionalWiringTest {
     }
 
     /**
-     * 스모크 테스트용 최소 설정을 반환합니다.
+     * Returns minimal properties for smoke wiring tests.
      *
-     * @return 필수 속성 배열
+     * @return required property array
      */
     private fun minimalProps(): Array<String> = arrayOf(
         "smtp.hostname=localhost",
@@ -72,7 +72,7 @@ class RedisSpoolConditionalWiringTest {
     )
 
     /**
-     * 테스트용 no-op 스풀 메타데이터 저장소입니다.
+     * No-op spool metadata store for tests.
      */
     private class NoopSpoolMetadataStore : SpoolMetadataStore {
         override fun initializeDirectory() = Unit
@@ -96,7 +96,7 @@ class RedisSpoolConditionalWiringTest {
     }
 
     /**
-     * 테스트용 no-op 스풀 락 관리자입니다.
+     * No-op spool lock manager for tests.
      */
     private class NoopSpoolLockManager : SpoolLockManager {
         override fun tryLock(rawPath: Path): Boolean = true

@@ -8,29 +8,29 @@ import java.time.Instant
 private val log = KotlinLogging.logger {}
 
 /**
- * IP 기반 Rate Limiter
- * 스팸 및 DoS 공격 방지를 위한 연결 수 및 메시지 수 제한
+ * IP-based rate limiter
+ * Limits connection count and message count to prevent spam/DoS attacks
  */
 internal class RateLimiter(
     private val maxConnectionsPerIp: Int = 10,
     private val maxMessagesPerIpPerHour: Int = 100
 ) {
-    // IP별 현재 연결 수
+    // Current connection count per IP
     private val connectionCounts = ConcurrentHashMap<String, AtomicInteger>()
     
-    // IP별 시간당 메시지 수 (타임스탬프, 카운트)
+    // Hourly message count per IP (timestamps)
     private val messageCounts = ConcurrentHashMap<String, MutableList<Long>>()
     
     /**
-     * IP 주소에서 연결 허용 여부 확인
-     * @return true면 허용, false면 거부
+     * Check whether connection is allowed for IP
+     * @return true if allowed, false if rejected
      */
     fun allowConnection(ipAddress: String): Boolean {
         val count = connectionCounts.computeIfAbsent(ipAddress) { AtomicInteger(0) }
         val currentCount = count.incrementAndGet()
         
         if (currentCount > maxConnectionsPerIp) {
-            count.decrementAndGet() // 롤백
+            count.decrementAndGet() // Rollback
             log.warn { "Rate limit: IP $ipAddress exceeded connection limit ($currentCount > $maxConnectionsPerIp)" }
             return false
         }
@@ -40,12 +40,12 @@ internal class RateLimiter(
     }
     
     /**
-     * 연결 종료 시 카운트 감소
+     * Decrease count on connection close
      */
     fun releaseConnection(ipAddress: String) {
         connectionCounts[ipAddress]?.decrementAndGet()?.let { newCount ->
             log.debug { "Rate limit: IP $ipAddress connection released (remaining: $newCount)" }
-            // 카운트가 0이 되면 맵에서 제거 (메모리 누수 방지)
+            // Remove from map when count reaches 0 (prevent memory leak)
             if (newCount <= 0) {
                 connectionCounts.remove(ipAddress)
             }
@@ -53,8 +53,8 @@ internal class RateLimiter(
     }
     
     /**
-     * 메시지 전송 허용 여부 확인
-     * @return true면 허용, false면 거부
+     * Check whether message sending is allowed
+     * @return true if allowed, false if rejected
      */
     fun allowMessage(ipAddress: String): Boolean {
         val now = Instant.now().epochSecond
@@ -63,7 +63,7 @@ internal class RateLimiter(
         val timestamps = messageCounts.computeIfAbsent(ipAddress) { mutableListOf() }
         
         synchronized(timestamps) {
-            // 1시간 이전 기록 제거
+            // Remove records older than one hour
             timestamps.removeIf { it < oneHourAgo }
             
             if (timestamps.size >= maxMessagesPerIpPerHour) {
@@ -71,7 +71,7 @@ internal class RateLimiter(
                 return false
             }
             
-            // 새 메시지 기록
+            // Record new message
             timestamps.add(now)
             log.debug { "Rate limit: IP $ipAddress message allowed (${timestamps.size}/$maxMessagesPerIpPerHour per hour)" }
         }
@@ -80,8 +80,8 @@ internal class RateLimiter(
     }
     
     /**
-     * 주기적 정리 (메모리 누수 방지)
-     * 1시간 이상 활동 없는 IP 제거
+     * Periodic cleanup (prevent memory leaks)
+     * Remove IPs with no activity for over one hour
      */
     fun cleanup() {
         val now = Instant.now().epochSecond

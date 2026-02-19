@@ -58,7 +58,7 @@ class SmtpStartTlsHandshakeTimeoutIntegrationTest {
                 val startTlsResp = reader.readLine()
                 assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-                // 클라이언트가 TLS 핸드셰이크를 시작하지 않으면 서버는 handshake timeout으로 연결을 종료해야 합니다.
+                // If client does not start TLS handshake, server must close on handshake timeout.
                 Thread.sleep(1_000)
 
                 try {

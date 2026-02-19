@@ -1,10 +1,10 @@
 package io.github.kotlinsmtp.server
 
 /**
- * Netty inbound 바이트 스트림을 SMTP 레벨에서 소비하기 쉬운 형태로 프레이밍한 결과입니다.
+ * Framed result of Netty inbound byte stream into SMTP-level consumable forms.
  *
- * - [Line]: CRLF 로 끝나는 "텍스트 라인" (SMTP 커맨드 라인, DATA 라인)
- * - [Bytes]: BDAT 등 "정확한 바이트 길이"로 읽어야 하는 청크
+ * - [Line]: "text line" ending with CRLF (SMTP command line, DATA line)
+ * - [Bytes]: chunk requiring exact byte-length reads, such as BDAT
  */
 internal sealed interface SmtpInboundFrame {
     data class Line(val text: String) : SmtpInboundFrame

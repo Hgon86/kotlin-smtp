@@ -14,8 +14,8 @@ internal class ExpnCommand : SmtpCommand(
     "searchTerm"
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
-        // EXPN도 VRFY와 마찬가지로 정보 노출(메일링 리스트/멤버십 열거)에 악용될 수 있어,
-        // 인터넷 노출 기본값은 비활성화로 두고, 설정+인증된 세션에서만 허용합니다.
+        // EXPN, like VRFY, can be abused for information disclosure (mailing list/membership enumeration),
+        // so default for internet exposure is disabled, and it is allowed only for configured + authenticated sessions.
         if (!session.server.enableExpn || session.server.mailingListHandler == null) {
             session.sendResponse(COMMAND_NOT_IMPLEMENTED.code, "The expand command is not supported")
             return

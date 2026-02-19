@@ -5,9 +5,9 @@ import java.net.Inet6Address
 import java.net.InetAddress
 
 /**
- * 릴레이 제출 클라이언트 IP의 CIDR allowlist 매칭기입니다.
+ * CIDR allowlist matcher for relay-submitting client IPs.
  *
- * @property cidrs 허용 CIDR 목록
+ * @property cidrs Allowed CIDR list
  */
 internal class RelayClientCidrMatcher(
     cidrs: List<String>,
@@ -15,12 +15,12 @@ internal class RelayClientCidrMatcher(
     private val networks = cidrs.map { CidrNetwork.parse(it) }
 
     /**
-     * 클라이언트 주소가 허용 CIDR에 포함되는지 검사합니다.
+     * Check whether client address is included in allowed CIDRs.
      *
-     * CIDR 목록이 비어있으면 true를 반환합니다.
+     * Returns true when CIDR list is empty.
      *
-     * @param peerAddress 세션 클라이언트 주소 문자열
-     * @return 허용 여부
+     * @param peerAddress Session client address string
+     * @return Whether allowed
      */
     fun isAllowed(peerAddress: String?): Boolean {
         if (networks.isEmpty()) return true

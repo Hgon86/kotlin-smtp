@@ -13,8 +13,8 @@ internal class VrfyCommand : SmtpCommand(
     "searchTerm"
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
-        // 인터넷 노출 SMTP 서버에서는 VRFY가 사용자 열거(User Enumeration)로 악용되기 쉽습니다.
-        // 따라서 기본값은 252로 고정하고, 설정으로만 활성화합니다.
+        // On internet-exposed SMTP servers, VRFY can be abused for user enumeration.
+        // Therefore keep default behavior fixed at 252 and enable only via configuration.
         if (!session.server.enableVrfy || session.server.userHandler == null) {
             session.sendResponse(CANNOT_VERIFY_USER.code, "Cannot VRFY user, but will accept message and attempt delivery")
             return

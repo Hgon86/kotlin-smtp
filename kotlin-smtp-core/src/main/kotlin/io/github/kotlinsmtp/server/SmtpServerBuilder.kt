@@ -7,10 +7,10 @@ import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
 import io.github.kotlinsmtp.spi.SmtpEventHook
 
 /**
- * SMTP 서버 빌더입니다.
+ * SMTP server builder.
  *
- * @property port 바인딩 포트
- * @property hostname 서버 호스트명
+ * @property port Binding port
+ * @property hostname Server hostname
  */
 public class SmtpServerBuilder internal constructor(
     private val port: Int,
@@ -49,11 +49,11 @@ public class SmtpServerBuilder internal constructor(
     }
 
     /**
-     * 엔진 이벤트 훅(SPI)을 추가합니다.
+     * Add engine event hook (SPI).
      *
-     * - 훅 예외는 기본적으로 Non-fatal이며, 서버 처리는 계속됩니다.
+     * - Hook exceptions are non-fatal by default, and server processing continues.
      *
-     * @param hook 등록할 훅
+     * @param hook Hook to register
      */
     public fun addEventHook(hook: SmtpEventHook): Unit {
         eventHooks.add(hook)

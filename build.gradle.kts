@@ -2,7 +2,7 @@ plugins {
     kotlin("jvm") version "1.9.25"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.18.1"
-    // 새 Central Portal 지원 플러그인
+    // New Central Portal support plugin
     id("com.vanniktech.maven.publish") version "0.29.0" apply false
 }
 
@@ -18,7 +18,7 @@ group = "io.github.hgon86"
 version = "0.1.2"
 
 allprojects {
-    // Central Portal namespace 검증과 배포 좌표를 일관되게 강제합니다.
+    // Enforce Central Portal namespace validation and consistent publishing coordinates.
     group = "io.github.hgon86"
     version = "0.1.2"
 }
@@ -62,10 +62,10 @@ tasks.withType<Test> {
 }
 
 apiValidation {
-    // 현재 단계에서는 core/relay "API 경계"만 고정하고, Spring wiring/impl 모듈은 제외합니다.
+    // At this stage, only fix the core/relay "API boundary", excluding Spring wiring/impl modules.
     ignoredProjects.addAll(
         listOf(
-            // root project는 라이브러리 모듈이 아니라 테스트 harness/docs 용도이므로 API 검증에서 제외합니다.
+            // root project is not a library module but for test harness/docs, so excluded from API validation.
             "kotlin-smtp",
             "kotlin-smtp-example-app",
             "kotlin-smtp-spring-boot-starter",
@@ -79,9 +79,9 @@ subprojects {
     if (name in publishableModules) {
         apply(plugin = "com.vanniktech.maven.publish")
 
-        // Maven Central Portal 설정
+        // Maven Central Portal configuration
         extensions.configure<com.vanniktech.maven.publish.MavenPublishBaseExtension> {
-            // Central Portal 자동 게시(배포 후 자동 publish)
+            // Automatic publishing to Central Portal (automatic publish after deployment)
             publishToMavenCentral(
                 com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL,
                 automaticRelease = true,
@@ -122,18 +122,18 @@ subprojects {
     }
 }
 
-// Gradle 8.x에서는 같은 빌드에서 apiDump + apiCheck를 함께 실행할 때
-// task output 의존성(암묵적 의존) 검증이 실패할 수 있습니다.
-// 개발자가 수동으로 `apiDump` 후 `apiCheck`를 연달아 실행할 때도 안전하도록,
-// 동일 프로젝트 내에서 실행 순서만 보장합니다.
+// In Gradle 8.x, when running apiDump + apiCheck together in the same build,
+// task output dependency (implicit dependency) validation may fail.
+// To ensure safety when developers manually run `apiDump` followed by `apiCheck`,
+// we only guarantee execution order within the same project.
 allprojects {
     tasks.matching { it.name == "apiCheck" }.configureEach {
         mustRunAfter("apiDump")
     }
 }
 
-// 새 Central Portal 인증 설정
-// GitHub Secrets 필요:
+// New Central Portal authentication settings
+// GitHub Secrets required:
 // - MAVEN_CENTRAL_USERNAME: central.sonatype.com User Token Username
 // - MAVEN_CENTRAL_PASSWORD: central.sonatype.com User Token Password
 // - SIGNING_KEY: GPG private key

@@ -8,8 +8,8 @@ import io.netty.util.ReferenceCountUtil
 internal const val STARTTLS_GATE_NAME: String = "startTlsGate"
 
 /**
- * STARTTLS 업그레이드 전환 구간에서 SslHandler 삽입 전에 들어온 raw bytes가
- * SMTP 디코더로 흘러가 프로토콜이 깨지는 것을 방지하기 위한 임시 게이트입니다.
+ * Temporary gate to prevent raw bytes received before SslHandler insertion during STARTTLS upgrade
+ * from flowing into SMTP decoder and breaking protocol synchronization.
  */
 internal class StartTlsInboundGate : ChannelInboundHandlerAdapter() {
     private val buffered: MutableList<Any> = ArrayList(2)
@@ -25,13 +25,13 @@ internal class StartTlsInboundGate : ChannelInboundHandlerAdapter() {
                 return
             }
 
-            // 이후 재주입을 위해 retain한 뒤, 현재 read는 소비합니다.
+            // Retain for later replay, and consume current read.
             buffered.add(ReferenceCountUtil.retain(msg))
             ReferenceCountUtil.release(msg)
             return
         }
 
-        // 예상치 못한 타입은 세션/프로토콜 동기화가 깨졌을 가능성이 높아 종료합니다.
+        // Unexpected type likely means broken session/protocol sync; close connection.
         ReferenceCountUtil.release(msg)
         ctx.close()
     }
@@ -45,7 +45,7 @@ internal class StartTlsInboundGate : ChannelInboundHandlerAdapter() {
     }
 
     override fun handlerRemoved(ctx: ChannelHandlerContext) {
-        // 누수 방지: 제거되는데도 drain되지 않았다면 모두 해제합니다.
+        // Leak prevention: if removed without drain, release all buffered messages.
         for (msg in buffered) {
             ReferenceCountUtil.release(msg)
         }

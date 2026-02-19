@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 class MicrometerSpoolMetricsTest {
 
     /**
-     * 스풀 메트릭 구현이 대기 큐와 카운터를 일관되게 갱신하는지 검증합니다.
+     * Verifies spool metrics implementation consistently updates pending gauge and counters.
      */
     @Test
     fun `spool metrics track pending and counters`() {

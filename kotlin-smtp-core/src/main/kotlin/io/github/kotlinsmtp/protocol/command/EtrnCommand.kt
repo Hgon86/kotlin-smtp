@@ -12,10 +12,10 @@ import io.github.kotlinsmtp.utils.SmtpStatusCode
 /**
  * ETRN (RFC 1985)
  *
- * 프로덕션에서 흔한 커맨드는 아니지만, 운영/관리 시나리오에서 "큐(스풀) 즉시 처리" 트리거로 유용합니다.
+ * Not a common command in production, but useful as a "queue (spool) immediate processing" trigger in operations/admin scenarios.
  *
- * - 인터넷 노출 기본값은 비활성화(enableEtrn=false)
- * - 활성화 시에도 남용 방지를 위해 인증된 세션에서만 허용합니다.
+ * - Default is disabled for internet exposure (enableEtrn=false)
+ * - Even when enabled, allow only authenticated sessions to prevent abuse.
  */
 internal class EtrnCommand : SmtpCommand(
     "ETRN",
@@ -41,7 +41,7 @@ internal class EtrnCommand : SmtpCommand(
                 val result = spooler.tryTriggerOnce(queueDomain)
                 result to "Queue run triggered for $queueDomain"
             } else {
-                // 도메인 미지원 스풀러는 기존 동작(전체 큐 트리거)으로 폴백합니다.
+                // For spoolers without domain support, fall back to existing behavior (trigger whole queue).
                 val result = spooler.tryTriggerOnce()
                 result to "Queue run triggered (domain filter not supported)"
             }
@@ -64,10 +64,10 @@ internal class EtrnCommand : SmtpCommand(
     }
 
     /**
-     * ETRN 인자를 도메인 형태로 정규화합니다.
+     * Normalize ETRN argument into domain form.
      *
-     * @param rawArg 커맨드 원문에서 command 토큰을 제외한 인자 문자열
-     * @return 정규화된 ASCII 도메인 또는 유효하지 않으면 null
+     * @param rawArg Argument string excluding command token from the raw command line
+     * @return Normalized ASCII domain, or null if invalid
      */
     private fun normalizeQueueDomain(rawArg: String): String? {
         val term = rawArg.trim()

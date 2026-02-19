@@ -5,16 +5,16 @@ import io.github.kotlinsmtp.utils.Values
 import java.net.InetSocketAddress
 
 /**
- * SMTP 입력 로그에서 민감 정보를 마스킹합니다.
+ * Masks sensitive information in SMTP input logs.
  */
 internal class SmtpSessionLogSanitizer {
     /**
-     * 로깅 가능한 안전한 문자열로 변환합니다.
+     * Converts to a safe string suitable for logging.
      *
-     * @param line 원본 입력 라인
-     * @param inDataMode DATA 본문 수신 여부
-     * @param dataModeFramingHint DATA 모드 전환 힌트 여부
-     * @return 마스킹된 로그 문자열
+     * @param line Raw input line
+     * @param inDataMode Whether DATA body is being received
+     * @param dataModeFramingHint Whether DATA mode transition hint is active
+     * @return Masked log string
      */
     fun sanitize(line: String, inDataMode: Boolean, dataModeFramingHint: Boolean): String {
         if (inDataMode || dataModeFramingHint) {
@@ -34,15 +34,15 @@ internal class SmtpSessionLogSanitizer {
 }
 
 /**
- * SMTP 응답 포맷을 표준 형태로 생성합니다.
+ * Builds SMTP response format in standard form.
  */
 internal class SmtpResponseFormatter {
     /**
-     * 단일 응답 라인을 생성합니다.
+     * Build a single response line.
      *
-     * @param code SMTP 상태 코드
-     * @param message 응답 메시지
-     * @return RFC 형식 응답 라인
+     * @param code SMTP status code
+     * @param message Response message
+     * @return RFC-formatted response line
      */
     fun formatLine(code: Int, message: String?): String {
         if (message != null && enhancedStatusRegex.containsMatchIn(message.trimStart())) {
@@ -58,11 +58,11 @@ internal class SmtpResponseFormatter {
     }
 
     /**
-     * 멀티라인 응답 라인을 생성합니다.
+     * Build multiline response lines.
      *
-     * @param code SMTP 상태 코드
-     * @param lines 응답 라인 목록
-     * @return RFC 형식 멀티라인 응답
+     * @param code SMTP status code
+     * @param lines Response line list
+     * @return RFC-formatted multiline response
      */
     fun formatMultiline(code: Int, lines: List<String>): List<String> {
         val statusCode = SmtpStatusCode.fromCode(code)
@@ -76,14 +76,14 @@ internal class SmtpResponseFormatter {
 }
 
 /**
- * 원격 피어 주소를 로깅/메타데이터용 문자열로 변환합니다.
+ * Converts remote peer address to string for logging/metadata.
  */
 internal object SmtpPeerAddressResolver {
     /**
-     * 주소를 표준 문자열로 변환합니다.
+     * Convert address to standard string format.
      *
-     * @param address 원격 주소 객체
-     * @return `host:port` 또는 `[ipv6]:port` 형식 문자열
+     * @param address Remote address object
+     * @return `host:port` or `[ipv6]:port` formatted string
      */
     fun resolve(address: Any?): String? {
         val inet = (address as? InetSocketAddress) ?: return address?.toString()
@@ -92,5 +92,5 @@ internal object SmtpPeerAddressResolver {
     }
 }
 
-// "5.7.1 ..." 같은 Enhanced Status Code 형태를 감지합니다.
+// Detect Enhanced Status Code form like "5.7.1 ...".
 private val enhancedStatusRegex = Regex("^\\d\\.\\d\\.\\d\\b")

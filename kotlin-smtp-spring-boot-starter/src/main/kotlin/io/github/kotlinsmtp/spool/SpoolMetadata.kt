@@ -5,7 +5,7 @@ import java.nio.file.Path
 import java.time.Instant
 
 /**
- * 스풀 메시지 메타데이터
+ * Spool message metadata.
  */
 data class SpoolMetadata(
     val id: String,

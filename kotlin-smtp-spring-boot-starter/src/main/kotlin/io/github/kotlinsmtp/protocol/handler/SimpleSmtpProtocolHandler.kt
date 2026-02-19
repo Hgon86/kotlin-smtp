@@ -39,10 +39,10 @@ class SimpleSmtpProtocolHandler(
         val isLocal = deliveryService.isLocalDomain(domain)
         if (!isLocal) {
             if (!relayEnabled) {
-                // RFC 관례에 맞춰 5.7.1로 릴레이 거부를 명확히 표현합니다.
+                // Use 5.7.1 to clearly express relay rejection per RFC convention.
                 throw io.github.kotlinsmtp.exception.SmtpSendResponse(550, "5.7.1 Relay access denied")
             }
-            // 오픈 릴레이 방지: RCPT 단계에서 정책을 조기 검증합니다.
+            // Prevent open relay: validate policy early at RCPT stage.
             deliveryService.enforceRelayPolicySmtp(
                 sender = sender?.ifBlank { null },
                 recipient = recipient,
@@ -67,8 +67,8 @@ class SimpleSmtpProtocolHandler(
             val receivedValue = buildReceivedValue(
                 byServer = sessionData.serverHostname,
                 fromPeer = sessionData.peerAddress,
-                // 기능 우선: 인증 여부를 Received 헤더에 표시(ESMTPA/ESMTPSA)
-                // TODO: SMTPUTF8 등의 세부 정보까지 표준적으로 표현하는 방식은 추후 정리
+                // Feature-first: indicate auth state in Received header (ESMTPA/ESMTPSA).
+                // TODO: standardize richer details such as SMTPUTF8 representation.
                 withInfo = when {
                     sessionData.tlsActive && sessionData.isAuthenticated -> "ESMTPSA"
                     sessionData.tlsActive -> "ESMTPS"
@@ -79,8 +79,8 @@ class SimpleSmtpProtocolHandler(
                 idValue = messageId
             )
 
-            // 수신 원문을 "Received 헤더 + 원문"으로 저장합니다.
-            // TODO(storage): DB/S3 등 최종 저장소로 바뀌면 MessageStore 구현체만 교체합니다.
+            // Store incoming content as "Received header + original message".
+            // TODO(storage): replace only MessageStore implementation for DB/S3.
             val tempFile: Path = messageStore.storeRfc822(
                 messageId = messageId,
                 receivedHeaderValue = receivedValue,
@@ -143,12 +143,12 @@ class SimpleSmtpProtocolHandler(
     }
 
     /**
-     * 인증 세션에서 제출된 메시지를 보낸 메일함에 기록합니다.
+     * Archives a message submitted from an authenticated session into Sent mailbox.
      *
-     * 저장 실패는 SMTP 트랜잭션 실패로 간주하지 않고 경고 로그만 남깁니다.
+     * Archive failures are logged as warnings and do not fail the SMTP transaction.
      *
-     * @param tempFile 임시 원문 파일 경로
-     * @param messageId 메시지 식별자
+     * @param tempFile temporary raw message file path
+     * @param messageId message identifier
      */
     private fun archiveSentMailboxCopy(tempFile: Path, messageId: String) {
         if (!shouldArchiveSentMessage()) return
@@ -168,9 +168,9 @@ class SimpleSmtpProtocolHandler(
     }
 
     /**
-     * 현재 트랜잭션이 보낸 메일함 저장 대상인지 판별합니다.
+     * Determines whether the current transaction should be archived in Sent mailbox.
      *
-     * @return 저장 대상 여부
+     * @return whether archiving is required
      */
     private fun shouldArchiveSentMessage(): Boolean {
         val hasExternalRecipient = recipients.any { recipient ->

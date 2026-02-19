@@ -14,7 +14,7 @@ import java.util.*
 private val log = KotlinLogging.logger {}
 
 /**
- * dnsjava MX 조회 + jakarta-mail(angus) 기반의 기본 outbound relay 구현.
+ * Default outbound relay implementation based on dnsjava MX lookup + jakarta-mail (angus).
  */
 class JakartaMailMxMailRelay(
     private val dispatcherIO: CoroutineDispatcher = Dispatchers.IO,
@@ -45,13 +45,13 @@ class JakartaMailMxMailRelay(
         var lastException: Exception? = null
 
         val propsForParsing = Properties().apply {
-            // SMTPUTF8/UTF-8 헤더 파싱을 위해 허용(최소 구현)
+            // Allow SMTPUTF8/UTF-8 header parsing (minimal implementation)
             this["mail.mime.allowutf8"] = "true"
         }
         val message = request.rfc822.openStream().use { input ->
             MimeMessage(Session.getInstance(propsForParsing), input)
         }.apply {
-            // Message-ID 헤더가 없으면 자동 생성 (RFC 5322 권장사항)
+            // Auto-generate Message-ID header when missing (RFC 5322 recommendation)
             if (getHeader("Message-ID") == null) {
                 val senderDomain = senderForSend?.substringAfterLast('@')?.takeIf { it.isNotBlank() } ?: "localhost"
                 setHeader("Message-ID", "<${UUID.randomUUID()}@$senderDomain>")
@@ -70,7 +70,7 @@ class JakartaMailMxMailRelay(
                         this["mail.smtp.timeout"] = tls.readTimeoutMs.toString()
                         this["mail.smtp.quitwait"] = "false"
 
-                        // SMTP 엔벌로프(리턴-패스) 설정
+                        // Set SMTP envelope (return-path)
                         this["mail.smtp.from"] = (senderForSend ?: "").trim()
 
                         // SMTPUTF8/UTF-8
@@ -81,7 +81,7 @@ class JakartaMailMxMailRelay(
                         this["mail.smtp.starttls.enable"] = tls.startTlsEnabled.toString()
                         this["mail.smtp.starttls.required"] = tls.startTlsRequired.toString()
 
-                        // TLS 검증
+                        // TLS verification
                         this["mail.smtp.ssl.checkserveridentity"] = tls.checkServerIdentity.toString()
                         when {
                             tls.trustAll -> this["mail.smtp.ssl.trust"] = "*"
@@ -151,7 +151,7 @@ class JakartaMailMxMailRelay(
 }
 
 /**
- * 아웃바운드 릴레이(TCP 25 등)에서의 TLS/STARTTLS 정책
+ * TLS/STARTTLS policy for outbound relay (TCP 25, etc.)
  */
 data class OutboundTlsConfig(
     val ports: List<Int> = listOf(25),

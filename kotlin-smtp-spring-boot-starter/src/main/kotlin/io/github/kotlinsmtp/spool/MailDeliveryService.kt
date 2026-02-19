@@ -7,6 +7,7 @@ import io.github.kotlinsmtp.relay.api.DsnSender
 import io.github.kotlinsmtp.relay.api.MailRelay
 import io.github.kotlinsmtp.relay.api.RelayAccessDecision
 import io.github.kotlinsmtp.relay.api.RelayAccessPolicy
+import io.github.kotlinsmtp.relay.api.RelayException
 import io.github.kotlinsmtp.relay.api.RelayRequest
 import io.github.kotlinsmtp.util.AddressUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -64,7 +65,11 @@ class MailDeliveryService(
 
         runCatching { mailRelay.relay(request) }.getOrElse { ex ->
             log.warn(ex) { "Relay failed (rcpt=$recipient msgId=$messageId), dsnOnFailure=$generateDsnOnFailure" }
-            if (generateDsnOnFailure && shouldSendFailureDsn(rcptNotify)) {
+            val immediatePermanentFailure = when (ex) {
+                is RelayException -> !ex.isTransient
+                else -> true
+            }
+            if (generateDsnOnFailure && immediatePermanentFailure && shouldSendFailureDsn(rcptNotify)) {
                 dsnSenderProvider()?.sendPermanentFailure(
                     sender = envelopeSender,
                     failedRecipients = listOf(recipient to ex.message.orEmpty()),
@@ -80,17 +85,17 @@ class MailDeliveryService(
     }
 
     /**
-     * 외부 릴레이 허용 정책을 SMTP 응답 코드로 표현해 거부합니다.
-     * - 530 5.7.0: 인증 필요
-     * - 550 5.7.1: 릴레이 거부(정책)
+     * Rejects external relay according to policy with SMTP status codes.
+     * - 530 5.7.0: authentication required
+     * - 550 5.7.1: relay denied by policy
      *
-     * NOTE: 여기서 던진 예외는 세션 레벨에서는 즉시 거부 응답으로,
-     *       스풀/동기 전달에서는 DSN 처리 경로로 흘러갈 수 있습니다.
+     * NOTE: Exceptions thrown here become immediate rejections at session level,
+     * and may flow into DSN handling in spool/synchronous delivery paths.
      *
      * @param sender envelope sender
-     * @param recipient 수신자
-     * @param authenticated 인증 여부
-     * @param peerAddress 클라이언트 주소
+     * @param recipient recipient address
+     * @param authenticated authentication state
+     * @param peerAddress client address
      */
     fun enforceRelayPolicySmtp(
         sender: String?,
@@ -122,10 +127,10 @@ class MailDeliveryService(
     }
 
     /**
-     * RFC 3461 NOTIFY 최소 반영: 실패 DSN 억제 규칙
-     * - NOTIFY=NEVER: DSN 금지
-     * - NOTIFY에 FAILURE 포함: 실패 DSN 허용
-     * - 미지정/기타: 실사용 편의상 실패 DSN은 허용(보수적으로 발송)
+     * Minimal RFC 3461 NOTIFY handling for failure DSN suppression.
+     * - NOTIFY=NEVER: suppress DSN
+     * - NOTIFY contains FAILURE: allow failure DSN
+     * - Unspecified/other: allow failure DSN for practical interoperability
      */
     private fun shouldSendFailureDsn(notify: String?): Boolean {
         val raw = notify?.trim().orEmpty()

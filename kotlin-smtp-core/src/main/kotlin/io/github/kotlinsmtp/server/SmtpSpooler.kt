@@ -1,30 +1,30 @@
 package io.github.kotlinsmtp.server
 
 /**
- * 스풀 트리거 요청 결과입니다.
+ * Result of spool trigger request.
  */
 public enum class SpoolTriggerResult {
-    /** 트리거 요청이 정상 접수되었습니다. */
+    /** Trigger request accepted successfully. */
     ACCEPTED,
 
-    /** 요청 인자가 유효하지 않아 거부되었습니다. */
+    /** Rejected due to invalid request argument. */
     INVALID_ARGUMENT,
 
-    /** 스풀러가 현재 요청을 처리할 수 없는 상태입니다. */
+    /** Spooler is currently unable to process the request. */
     UNAVAILABLE,
 }
 
 /**
- * 스풀/딜리버리 처리를 트리거하기 위한 최소 훅입니다.
+ * Minimal hook for triggering spool/delivery processing.
  *
- * - 코어는 저장/릴레이 구현을 포함하지 않으며, 호스트가 구현체를 제공합니다.
- * - `tryTriggerOnce`는 non-blocking 계약이며, 실제 처리는 비동기 워커에서 수행될 수 있습니다.
+ * - Core does not include storage/relay implementation; host provides implementation.
+ * - `tryTriggerOnce` follows a non-blocking contract; actual processing may run in async worker.
  */
 public interface SmtpSpooler {
     /**
-     * 스풀 처리를 즉시 1회 트리거합니다.
+     * Trigger spool processing once immediately.
      *
-     * @return 요청 접수 여부
+     * @return Request acceptance status
      */
     public fun tryTriggerOnce(): SpoolTriggerResult = runCatching {
         triggerOnce()
@@ -34,19 +34,19 @@ public interface SmtpSpooler {
     }
 
     /**
-     * 기존 호환용 트리거 메서드입니다.
+     * Legacy-compatible trigger method.
      */
     public fun triggerOnce(): Unit
 }
 
 /**
- * ETRN 도메인 인자를 반영할 수 있는 스풀러 확장 훅입니다.
+ * Spooler extension hook that can reflect ETRN domain argument.
  */
 public interface SmtpDomainSpooler : SmtpSpooler {
     /**
-     * 지정한 도메인에 대해 스풀 처리를 즉시 1회 트리거합니다.
+     * Trigger spool processing once immediately for the specified domain.
      *
-     * @param domain ETRN 인자로 정규화된 ASCII 도메인
+     * @param domain Normalized ASCII domain from ETRN argument
      */
     public fun tryTriggerOnce(domain: String): SpoolTriggerResult = runCatching {
         triggerOnce(domain)
@@ -56,9 +56,9 @@ public interface SmtpDomainSpooler : SmtpSpooler {
     }
 
     /**
-     * 기존 호환용 도메인 트리거 메서드입니다.
+     * Legacy-compatible domain trigger method.
      *
-     * @param domain ETRN 인자로 정규화된 ASCII 도메인
+     * @param domain Normalized ASCII domain from ETRN argument
      */
     public fun triggerOnce(domain: String): Unit
 }

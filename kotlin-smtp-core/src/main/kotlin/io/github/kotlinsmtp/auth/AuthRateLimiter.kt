@@ -8,18 +8,18 @@ import java.util.concurrent.ConcurrentHashMap
 private val log = KotlinLogging.logger {}
 
 /**
- * 공유 인증 Rate Limiter
- * 
- * - 세션 재접속으로 우회되는 세션-스코프 잠금을 방지하기 위해,
- *   (clientIp, username) 단위로 실패 카운트/잠금을 관리합니다.
- * - 메모리 기반 구현이며, 분산 환경에서는 Redis 등으로 교체 필요.
+ * Shared Authentication Rate Limiter
+ *
+ * - To prevent session-scoped locks from being bypassed by session reconnection,
+ *   failure count/lock is managed per (clientIp, username).
+ * - Memory-based implementation; should be replaced with Redis, etc. in distributed environments.
  */
 internal class AuthRateLimiter(
     private val maxFailuresPerWindow: Int = 5,
-    private val windowSeconds: Long = 300, // 5분
-    private val lockoutDurationSeconds: Long = 600, // 10분
+    private val windowSeconds: Long = 300, // 5 minutes
+    private val lockoutDurationSeconds: Long = 600, // 10 minutes
 ) {
-    data class FailureRecord(
+    private data class FailureRecord(
         val failures: MutableList<Long> = mutableListOf(),
         var lockedUntil: Long? = null,
     )
@@ -27,14 +27,14 @@ internal class AuthRateLimiter(
     private val records = ConcurrentHashMap<String, FailureRecord>()
 
     private fun makeKey(clientIp: String?, username: String): String {
-        // IP가 없는 경우 "unknown"으로 처리
+        // Treat as "unknown" if IP is not present
         val ip = clientIp ?: "unknown"
         return "$ip:$username"
     }
 
     /**
-     * 인증 시도 전 잠금 상태 확인
-     * @return 잠금 상태일 경우 남은 초 수, 아니면 null
+     * Check lock status before authentication attempt
+     * @return Remaining seconds if locked, null otherwise
      */
     fun checkLock(clientIp: String?, username: String): Long? {
         val key = makeKey(clientIp, username)
@@ -46,15 +46,15 @@ internal class AuthRateLimiter(
             if (now < lockedUntil) {
                 return lockedUntil - now
             }
-            // 잠금 만료
+            // Lock expired
             record.lockedUntil = null
         }
         return null
     }
 
     /**
-     * 인증 실패 기록
-     * @return 잠금이 걸렸을 경우 true
+     * Record authentication failure
+     * @return true if locked
      */
     fun recordFailure(clientIp: String?, username: String): Boolean {
         val key = makeKey(clientIp, username)
@@ -65,13 +65,13 @@ internal class AuthRateLimiter(
         
         synchronized(record) {
             // DO NOT REMOVE: protects the mutable failures list inside the record.
-            // 오래된 실패 기록 제거
+            // Remove old failure records
             record.failures.removeIf { it < windowStart }
-            
-            // 새 실패 추가
+
+            // Add new failure
             record.failures.add(now)
-            
-            // 잠금 조건 확인
+
+            // Check lock condition
             if (record.failures.size >= maxFailuresPerWindow) {
                 record.lockedUntil = now + lockoutDurationSeconds
                 log.warn { "Auth rate limit: Locked $username from $clientIp for ${lockoutDurationSeconds}s after ${record.failures.size} failures" }
@@ -83,7 +83,7 @@ internal class AuthRateLimiter(
     }
 
     /**
-     * 인증 성공 시 기록 초기화
+     * Reset records on authentication success
      */
     fun recordSuccess(clientIp: String?, username: String) {
         val key = makeKey(clientIp, username)
@@ -92,17 +92,17 @@ internal class AuthRateLimiter(
     }
 
     /**
-     * 주기적 정리 (메모리 누수 방지)
+     * Periodic cleanup (prevent memory leaks)
      */
     fun cleanup() {
         val now = Instant.now().epochSecond
         records.entries.removeIf { (_, record) ->
             synchronized(record) {
-                // 잠금이 만료되고 실패 기록도 없는 경우 제거
+                // Remove if lock expired and no failure records
                 val lockedUntil = record.lockedUntil
                 val isLocked = lockedUntil != null && now < lockedUntil
-                val hasRecentFailures = record.failures.any { 
-                    it > now - windowSeconds 
+                val hasRecentFailures = record.failures.any {
+                    it > now - windowSeconds
                 }
                 val shouldRemove = !isLocked && !hasRecentFailures
                 if (shouldRemove) {

@@ -12,7 +12,7 @@ class FileSentMessageStoreTest {
     lateinit var root: Path
 
     /**
-     * 인증 세션은 envelope sender가 달라도 submittingUser 폴더에 저장해야 합니다.
+     * Authenticated submission should use submittingUser mailbox even if envelope sender differs.
      */
     @Test
     fun `authenticated submission uses submitting user mailbox`() {
@@ -35,7 +35,7 @@ class FileSentMessageStoreTest {
     }
 
     /**
-     * 무인증 세션은 envelope sender local-part 기준으로 저장해야 합니다.
+     * Unauthenticated submission should use envelope sender local-part mailbox.
      */
     @Test
     fun `unauthenticated submission uses envelope sender mailbox`() {

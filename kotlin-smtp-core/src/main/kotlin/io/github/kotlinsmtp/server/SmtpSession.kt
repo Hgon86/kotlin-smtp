@@ -32,7 +32,7 @@ internal class SmtpSession(
     private val channel: Channel,
     val server: SmtpServer,
 ) {
-    // 입력 라인 채널 용량 제한으로 폭주 시 메모리 압박 방지
+    // Limit inbound line-channel capacity to prevent memory pressure during bursts
     private val incomingFrames = KChannel<SmtpInboundFrame>(1024)
     private val closing = AtomicBoolean(false)
     private val tlsUpgrading = AtomicBoolean(false)
@@ -85,12 +85,12 @@ internal class SmtpSession(
     @Volatile
     var shouldQuit = false
     var sessionData = SessionData(); internal set
-    var currentMessageSize = 0; internal set // 현재 메시지 크기 추적
+    var currentMessageSize = 0; internal set // Track current message size
 
     /**
-     * DATA 수신 중 여부
-     * - 보안/운영: DATA 본문은 로그에 남기지 않기 위해 사용합니다.
-     * - false로 전환 시 프레이밍 힌트(dataModeFramingHint)도 함께 리셋합니다.
+     * Whether DATA is currently being received.
+     * - Security/operations: used to avoid logging DATA body.
+     * - When switched to false, also resets framing hint (dataModeFramingHint).
      */
     @Volatile
     var inDataMode: Boolean = false
@@ -99,15 +99,15 @@ internal class SmtpSession(
             if (!value) {
                 dataModeFramingHint = false
             }
-            // Netty 디코더가 DATA 모드에서는 BDAT auto-detect를 하지 않도록 힌트를 줍니다.
+            // Provide hint so Netty decoder does not auto-detect BDAT while in DATA mode.
             channel.attr(SmtpInboundDecoder.IN_DATA_MODE).set(value)
         }
 
     /**
-     * DATA 라인 이후 본문이 파이프라인으로 들어오는 경우를 위해 사용하는 프레이밍 힌트입니다.
+     * Framing hint used when body may enter pipeline right after DATA line.
      *
-     * - `inDataMode=true`가 되기 전에도(354 응답 전) 본문 라인이 유입될 수 있습니다.
-     * - 이 힌트는 "라인 길이 제한"과 "민감 로그 마스킹"에만 사용됩니다.
+     * - Body lines may arrive even before `inDataMode=true` (before 354 response).
+     * - This hint is used only for "line length limit" and "sensitive log masking".
      */
     @Volatile
     private var dataModeFramingHint: Boolean = false
@@ -118,23 +118,23 @@ internal class SmtpSession(
         }
 
     /**
-     * BDAT(CHUNKING) 스트리밍 상태
-     * - BDAT는 여러 번 호출될 수 있으므로, 하나의 트랜잭션 동안 스트림/잡을 유지합니다.
+     * BDAT (CHUNKING) streaming state
+     * - BDAT can be called multiple times, so stream/job are kept for one transaction.
      */
     internal val bdatState: BdatStreamingState = BdatStreamingState()
 
     var isTls: Boolean = false
         private set
 
-    // STARTTLS 이후 EHLO/HELO를 강제하기 위한 플래그
+    // Flag to enforce EHLO/HELO after STARTTLS
     var requireEhloAfterTls: Boolean = false
 
     suspend fun handle() {
-        // Graceful shutdown: 세션 추적에 등록
+        // Graceful shutdown: register in session tracker
         server.sessionTracker.register(sessionId, this)
         
         try {
-            // 세션 컨텍스트 설정
+            // Set session context
             sessionData.serverHostname = server.hostname
             sessionData.peerAddress = SmtpPeerAddressResolver.resolve(
                 ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress(),
@@ -177,7 +177,7 @@ internal class SmtpSession(
                     }
                 }
             }
-            // Graceful shutdown: 세션 추적에서 제거
+            // Graceful shutdown: unregister from session tracker
             server.sessionTracker.unregister(sessionId)
             channel.close()
         }
@@ -209,13 +209,13 @@ internal class SmtpSession(
     }
 
     internal suspend fun respondLine(message: String) {
-        // 출력 인코딩은 Netty 파이프라인(StringEncoder)에 맡깁니다.
+        // Output encoding is handled by Netty pipeline (StringEncoder).
         channel.writeAndFlush("$message\r\n")
         log.info { "Session[$sessionId] <- $message" }
     }
 
     /**
-     * STARTTLS 직후처럼 "반드시 평문으로 flush 완료 후" 파이프라인을 바꿔야 하는 경우에 사용합니다.
+     * Used when pipeline must be changed only after plaintext flush is fully completed, such as right after STARTTLS.
      */
     internal suspend fun respondLineAwait(message: String) {
         channel.writeAndFlush("$message\r\n").awaitCompletion()
@@ -237,15 +237,15 @@ internal class SmtpSession(
     }
 
     /**
-     * 트랜잭션(메일 한 통) 단위 상태를 리셋합니다.
+     * Reset transaction (single-message) scoped state.
      *
-     * - preserveGreeting=true: HELO/EHLO 상태 유지
-     * - preserveAuth=true: AUTH 상태 유지 (RFC 4954: RSET 등은 인증 상태를 지우지 않음)
+     * - preserveGreeting=true: keep HELO/EHLO state
+     * - preserveAuth=true: keep AUTH state (RFC 4954: RSET etc. do not clear auth state)
      *
-     * NOTE: STARTTLS 후에는 RFC 3207에 따라 인증/세션 상태를 리셋해야 하므로 preserveAuth=false로 호출해야 합니다.
+     * NOTE: after STARTTLS, auth/session state must be reset per RFC 3207, so call with preserveAuth=false.
      */
     suspend fun resetTransaction(preserveGreeting: Boolean = true, preserveAuth: Boolean = preserveGreeting) {
-        // BDAT 진행 중이던 스트림이 있으면 정리합니다(RSET/트랜잭션 종료 시 안전).
+        // Clean up active BDAT stream if present (safe for RSET/transaction end).
         clearBdatState()
 
         envelopeRecipients.clear()
@@ -260,10 +260,10 @@ internal class SmtpSession(
             ),
             tlsActive = isTls,
         )
-        currentMessageSize = 0  // 메시지 크기 리셋
+        currentMessageSize = 0  // Reset message size
     }
 
-    /** BDAT 스트리밍 상태를 정리합니다(RSET/세션 종료 시). */
+    /** Clean up BDAT streaming state (on RSET/session end). */
     internal suspend fun clearBdatState() {
         bdatState.clear()
     }
@@ -273,8 +273,8 @@ internal class SmtpSession(
     fun close() {
         if (!closing.compareAndSet(false, true)) return
         sessionActive.value = false
-        // BDAT 등 진행 중인 스트림/잡이 있으면 누수 방지를 위해 정리합니다.
-        // close()는 suspend가 아니므로 서버 스코프에서 비동기 정리합니다.
+        // Clean up active streams/jobs such as BDAT to prevent leaks.
+        // close() is not suspend, so cleanup is done asynchronously in server scope.
         server.serverScope.launch {
             runCatching { clearBdatState() }
             runCatching { protocolHandlerHolder.doneAndClear() }
@@ -283,17 +283,17 @@ internal class SmtpSession(
     }
 
     /**
-     * STARTTLS 업그레이드 구간에서 입력(평문)을 더 읽지 않도록 막고, 이미 큐에 들어온 프레임이 있으면
-     * 프로토콜 위반(파이프라이닝)으로 간주할 수 있도록 준비합니다.
+     * Prevent further plaintext reads during STARTTLS upgrade, and prepare to treat queued frames
+     * as protocol violation (pipelining) if already present.
      *
-     * @return 업그레이드를 계속 진행해도 되면 true
+     * @return true if upgrade can continue
      */
     internal suspend fun beginStartTlsUpgrade(): Boolean = tlsUpgrade.begin()
 
     /**
-     * 220 응답이 평문으로 flush된 뒤에 호출되어야 합니다.
-     * - SslHandler 삽입 → autoRead 재개 → 핸드셰이크 완료 대기 → 세션 상태 리셋/플래그 적용을
-     *   동일한 코루틴 흐름에서 수행합니다.
+     * Must be called after 220 response is flushed in plaintext.
+     * - Performs SslHandler insertion -> autoRead resume -> wait handshake completion -> session state reset/flag update
+     *   in the same coroutine flow.
      */
     internal suspend fun finishStartTlsUpgrade() {
         try {
@@ -301,7 +301,7 @@ internal class SmtpSession(
                 onHandshakeSuccess = {
                     isTls = true
                     sessionData.tlsActive = true
-                    // STARTTLS 이후에는 인증 상태를 포함해 세션을 리셋해야 합니다.
+                    // After STARTTLS, session must be reset including authentication state.
                     resetTransaction(preserveGreeting = false, preserveAuth = false)
                     requireEhloAfterTls = true
                 },
@@ -327,14 +327,14 @@ internal class SmtpSession(
     }
 
     /**
-     * Netty 이벤트 루프에서 호출되는 channelRead 경로에서 사용합니다.
-     * - 여기서 bytes inflight cap을 포함해 "큐에 넣기 전"에 메모리 상한을 적용합니다.
+     * Used in channelRead path called from Netty event loop.
+     * - Applies memory limits including bytes in-flight cap before enqueueing.
      */
     internal fun tryEnqueueInboundFrame(frame: SmtpInboundFrame): Boolean {
         return frameProcessor.tryEnqueueInboundFrame(frame)
     }
 
-    /** 레이트리미터에서 사용할 원본 클라이언트 IP를 반환합니다. */
+    /** Returns original client IP for rate limiter use. */
     internal fun clientIpAddress(): String? {
         val address = ProxyProtocolSupport.effectiveRemoteSocketAddress(channel) ?: channel.remoteAddress()
         val inet = address as? InetSocketAddress ?: return null
@@ -342,14 +342,14 @@ internal class SmtpSession(
     }
 
     internal fun markImplicitTlsActive() {
-        // SMTPS(implicit TLS)에서 핸드셰이크 완료 이후 호출됩니다.
+        // Called after handshake completion on SMTPS (implicit TLS).
         isTls = true
         sessionData.tlsActive = true
     }
 }
 
 /**
- * Netty ChannelFuture를 코루틴에서 기다리기 위한 최소 await 헬퍼
+ * Minimal await helper to wait for Netty ChannelFuture in coroutines
  */
 private suspend fun ChannelFuture.awaitCompletion(): Unit =
     suspendCancellableCoroutine { cont ->

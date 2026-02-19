@@ -12,7 +12,7 @@ internal class StartTlsCommand : SmtpCommand(
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
         if (session.isTls) {
-            // 이미 TLS 연결 상태면 오류 응답
+            // Return error if already in TLS connection state
             session.sendResponse(503, "5.5.1 TLS already active")
             return
         }
@@ -22,14 +22,14 @@ internal class StartTlsCommand : SmtpCommand(
             return
         }
 
-        // 서버가 TLS를 지원하지 않으면 명령 거부
+        // Reject command if server does not support TLS
         if (session.server.sslContext == null) {
             session.sendResponse(454, "4.7.0 TLS not available")
             return
         }
 
-        // STARTTLS는 파이프라이닝할 수 없습니다.
-        // - 이미 큐에 들어온 입력이 있으면(다음 커맨드/데이터) 업그레이드 전환이 깨질 수 있으므로 거부합니다.
+        // STARTTLS cannot be pipelined.
+        // - Reject if there is already queued input (next command/data), since it can break upgrade transition.
         val upgradeOk = session.beginStartTlsUpgrade()
         if (!upgradeOk) {
             session.sendResponseAwait(501, "5.5.1 STARTTLS cannot be pipelined")
@@ -38,11 +38,11 @@ internal class StartTlsCommand : SmtpCommand(
             return
         }
 
-        // RFC 3207 관례: 220 Ready to start TLS
-        // 중요: 이 라인은 반드시 "평문으로 flush 완료"된 뒤에 파이프라인에 SslHandler를 삽입해야 합니다.
+        // RFC 3207 convention: 220 Ready to start TLS
+        // Important: this line must be flushed in plaintext before inserting SslHandler into pipeline.
         session.sendResponseAwait(SERVICE_READY.code, "Ready to start TLS")
 
-        // TLS 핸드셰이크 시작 및 파이프라인 갱신
+        // Start TLS handshake and update pipeline
         session.finishStartTlsUpgrade()
     }
 }

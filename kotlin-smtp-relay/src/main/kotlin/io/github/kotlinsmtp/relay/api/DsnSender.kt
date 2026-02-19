@@ -4,14 +4,14 @@ import io.github.kotlinsmtp.model.RcptDsn
 import java.nio.file.Path
 
 /**
- * DSN(Delivery Status Notification) 발송을 위한 최소 경계.
+ * Minimal boundary for sending DSN (Delivery Status Notification).
  */
 public interface DsnSender {
     /**
-     * @param sender 원본 메시지의 envelope sender(MAIL FROM). null/blank/<>이면 DSN을 생략한다.
-     * @param failedRecipients 실패한 수신자와 간단한 사유 목록
-     * @param originalMessageId 원본 메시지 식별자
-     * @param originalMessagePath RET 정책에 따라 첨부할 원문 경로(선택)
+     * @param sender Envelope sender (MAIL FROM) of original message. DSN is omitted for null/blank/<>.
+     * @param failedRecipients List of failed recipients with simple reasons
+     * @param originalMessageId Identifier of original message
+     * @param originalMessagePath Optional path of original message to attach based on RET policy
      */
     public fun sendPermanentFailure(
         sender: String?,

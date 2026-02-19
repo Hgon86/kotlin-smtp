@@ -38,10 +38,10 @@ internal enum class SmtpStatusCode(
     RECIPIENT_NOT_RECOGNIZED(555, "5.5.4", "MAIL FROM/RCPT TO parameters not recognized or not implemented");
 
     /**
-     * 확장 상태 코드를 포함한 응답 메시지 생성
+     * Build response message including enhanced status code
      *
-     * @param customMessage 기본 설명 대신 사용할 사용자 정의 메시지 (null 이면 기본 설명 사용)
-     * @return 형식화된 응답 문자열
+     * @param customMessage Custom message to use instead of default description (if null, default description is used)
+     * @return Formatted response string
      */
     fun formatResponse(customMessage: String? = null): String {
         val responseMessage = customMessage ?: defaultDescription

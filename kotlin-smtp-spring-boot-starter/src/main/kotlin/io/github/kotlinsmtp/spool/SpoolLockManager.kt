@@ -14,53 +14,53 @@ import kotlin.io.path.readText
 private val lockLog = KotlinLogging.logger {}
 
 /**
- * 스풀 메시지 락 관리자 추상화입니다.
+ * Abstraction for spool message lock managers.
  */
 interface SpoolLockManager {
     /**
-     * 대상 메시지 파일에 대한 락 획득을 시도합니다.
+     * Tries to acquire lock for target message file.
      *
-     * @param rawPath 대상 메시지 파일 경로
-     * @return 락 획득 성공 여부
+     * @param rawPath target message file path
+     * @return whether lock acquisition succeeded
      */
     fun tryLock(rawPath: Path): Boolean
 
     /**
-     * 대상 메시지 파일의 락을 해제합니다.
+     * Releases lock for target message file.
      *
-     * @param rawPath 대상 메시지 파일 경로
+     * @param rawPath target message file path
      */
     fun unlock(rawPath: Path)
 
     /**
-     * 대상 메시지 파일의 락 TTL을 연장합니다.
+     * Refreshes lock TTL for target message file.
      *
-     * @param rawPath 대상 메시지 파일 경로
-     * @return 연장 성공 여부
+     * @param rawPath target message file path
+     * @return whether refresh succeeded
      */
     fun refreshLock(rawPath: Path): Boolean = true
 
     /**
-     * 스풀 디렉터리의 고아/stale 락을 정리합니다.
+     * Purges orphan/stale locks in spool directory.
      */
     fun purgeOrphanedLocks()
 }
 
 /**
- * 스풀 메시지 파일(.eml)에 대한 파일 락(.lock) 관리를 담당합니다.
+ * Manages file locks (`.lock`) for spool message files (`.eml`).
  *
- * @property spoolDir 스풀 디렉터리
- * @property staleLockThreshold 고아/stale 락 정리 임계값
+ * @property spoolDir spool directory
+ * @property staleLockThreshold threshold for orphan/stale lock cleanup
  */
 class FileSpoolLockManager(
     private val spoolDir: Path,
     private val staleLockThreshold: Duration,
 ) : SpoolLockManager {
     /**
-     * 대상 메시지 파일에 대한 락 획득을 시도합니다.
+     * Tries to acquire lock for target message file.
      *
-     * @param rawPath 대상 메시지 파일 경로
-     * @return 락 획득 성공 여부
+     * @param rawPath target message file path
+     * @return whether lock acquisition succeeded
      */
     override fun tryLock(rawPath: Path): Boolean {
         val lock = lockPath(rawPath)
@@ -81,24 +81,24 @@ class FileSpoolLockManager(
     }
 
     /**
-     * 대상 메시지 파일의 락을 해제합니다.
+     * Releases lock for target message file.
      *
-     * @param rawPath 대상 메시지 파일 경로
+     * @param rawPath target message file path
      */
     override fun unlock(rawPath: Path) {
         runCatching { Files.deleteIfExists(lockPath(rawPath)) }
     }
 
     /**
-     * 파일 락은 stale 정리 기반으로 동작하므로 TTL 연장은 항상 성공으로 간주합니다.
+     * File lock mode relies on stale cleanup, so TTL refresh is always treated as success.
      *
-     * @param rawPath 대상 메시지 파일 경로
-     * @return 항상 true
+     * @param rawPath target message file path
+     * @return always true
      */
     override fun refreshLock(rawPath: Path): Boolean = true
 
     /**
-     * 스풀 디렉터리의 고아/stale 락을 정리합니다.
+     * Purges orphan/stale locks in spool directory.
      */
     override fun purgeOrphanedLocks() {
         val now = Instant.now()

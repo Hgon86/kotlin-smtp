@@ -13,13 +13,13 @@ import java.time.Duration
 private val maintenanceLog = KotlinLogging.logger {}
 
 /**
- * SMTP 서버의 주기적 유지보수 작업을 스케줄링합니다.
+ * Schedules periodic maintenance tasks for SMTP server.
  *
- * @property scope 작업 실행 코루틴 스코프
- * @property certChainFile 인증서 체인 파일
- * @property privateKeyFile 개인키 파일
- * @property onCertificateChanged 인증서 변경 감지 시 실행할 콜백
- * @property onRateLimiterCleanup 레이트리미터 정리 콜백
+ * @property scope Coroutine scope for task execution
+ * @property certChainFile Certificate chain file
+ * @property privateKeyFile Private key file
+ * @property onCertificateChanged Callback when certificate changes are detected
+ * @property onRateLimiterCleanup Callback for rate-limiter cleanup
  */
 internal class SmtpServerMaintenanceScheduler(
     private val scope: CoroutineScope,
@@ -31,7 +31,7 @@ internal class SmtpServerMaintenanceScheduler(
     private val jobs: MutableList<Job> = mutableListOf()
 
     /**
-     * 유지보수 작업을 시작합니다.
+     * Start maintenance tasks.
      */
     fun start() {
         scheduleCertificateReload()
@@ -39,7 +39,7 @@ internal class SmtpServerMaintenanceScheduler(
     }
 
     /**
-     * 등록된 유지보수 작업을 중지합니다.
+     * Stop registered maintenance tasks.
      */
     fun stop() {
         jobs.forEach { it.cancel() }
@@ -47,7 +47,7 @@ internal class SmtpServerMaintenanceScheduler(
     }
 
     /**
-     * 인증서 파일 변경을 감시해 TLS 컨텍스트 재로드 콜백을 호출합니다.
+     * Watch certificate file changes and invoke TLS context reload callback.
      */
     private fun scheduleCertificateReload() {
         if (certChainFile == null || privateKeyFile == null) return
@@ -73,7 +73,7 @@ internal class SmtpServerMaintenanceScheduler(
     }
 
     /**
-     * 레이트리미터 정리 작업을 주기적으로 실행합니다.
+     * Run rate-limiter cleanup task periodically.
      */
     private fun scheduleRateLimiterCleanup() {
         val job = scope.launch {
@@ -87,10 +87,10 @@ internal class SmtpServerMaintenanceScheduler(
     }
 
     /**
-     * 파일 수정 시간을 epoch millis로 반환합니다.
+     * Return file last-modified time in epoch millis.
      *
-     * @param file 조회 대상 파일
-     * @return 수정 시간(ms), 실패 시 0
+     * @param file Target file to query
+     * @return Last-modified time (ms), or 0 on failure
      */
     private fun fileTimestamp(file: File): Long = runCatching {
         Files.getLastModifiedTime(file.toPath()).toMillis()

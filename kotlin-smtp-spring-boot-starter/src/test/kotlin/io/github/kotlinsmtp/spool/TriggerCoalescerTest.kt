@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 class TriggerCoalescerTest {
 
     /**
-     * 동일 도메인 트리거는 1건으로 병합되어야 합니다.
+     * Duplicate domain triggers should be coalesced into one.
      */
     @Test
     fun `duplicate domain triggers are coalesced`() {
@@ -22,7 +22,7 @@ class TriggerCoalescerTest {
     }
 
     /**
-     * 전체 트리거는 기존 도메인 트리거를 흡수해야 합니다.
+     * Full trigger should absorb existing domain triggers.
      */
     @Test
     fun `full trigger absorbs pending domains`() {
@@ -37,7 +37,7 @@ class TriggerCoalescerTest {
     }
 
     /**
-     * 전체 트리거가 pending일 때 추가 도메인 트리거는 무시되어야 합니다.
+     * Additional domain triggers should be ignored while full trigger is pending.
      */
     @Test
     fun `domain trigger is ignored while full trigger pending`() {

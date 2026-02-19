@@ -20,7 +20,7 @@ import java.util.Properties
 import java.util.UUID
 
 /**
- * jakarta-mail 기반 DSN(Delivery Status Notification) 생성기.
+ * DSN (Delivery Status Notification) generator based on jakarta-mail.
  */
 public class JakartaMailDsnSender(
     private val serverHostname: String,
@@ -102,7 +102,7 @@ public class JakartaMailDsnSender(
 
             store.enqueue(
                 rawMessagePath = tempFile,
-                // DSN(바운스)의 envelope sender는 빈 reverse-path(<>)로 둡니다.
+                // Keep DSN (bounce) envelope sender as empty reverse-path (<>).
                 envelopeSender = "",
                 recipients = listOf(envelopeRecipient),
                 messageId = originalMessageId,
@@ -178,10 +178,10 @@ public class JakartaMailDsnSender(
     }
 
     /**
-     * 실패 사유 문자열을 RFC 3464 핵심 필드(Status/Diagnostic-Code)로 매핑합니다.
+     * Map failure reason string into RFC 3464 core fields (Status/Diagnostic-Code).
      *
-     * @param reason 릴레이/전달 계층에서 올라온 실패 사유
-     * @return RFC 3464에 맞춘 상태 코드와 진단 코드 표현
+     * @param reason Failure reason from relay/delivery layer
+     * @return Status code and diagnostic-code representation aligned with RFC 3464
      */
     private fun mapFailureToDsnFields(reason: String?): DsnStatusFields {
         val diagnosticText = reason?.ifBlank { null } ?: "Delivery failed"
@@ -205,10 +205,10 @@ public class JakartaMailDsnSender(
     }
 
     /**
-     * 실패 사유에서 RFC 3464 enhanced status code를 추출합니다.
+     * Extract RFC 3464 enhanced status code from failure reason.
      *
-     * @param reason 실패 사유 문자열
-     * @return 추출된 enhanced status code, 없으면 null
+     * @param reason Failure reason string
+     * @return Extracted enhanced status code, or null if absent
      */
     private fun extractEnhancedStatus(reason: String?): String? {
         if (reason.isNullOrBlank()) return null
@@ -217,10 +217,10 @@ public class JakartaMailDsnSender(
     }
 
     /**
-     * 실패 사유에서 SMTP 응답 코드를 추출합니다.
+     * Extract SMTP response code from failure reason.
      *
-     * @param reason 실패 사유 문자열
-     * @return SMTP 3자리 응답 코드, 없으면 null
+     * @param reason Failure reason string
+     * @return 3-digit SMTP response code, or null if absent
      */
     private fun smtpReplyCode(reason: String?): Int? {
         if (reason.isNullOrBlank()) return null
@@ -229,10 +229,10 @@ public class JakartaMailDsnSender(
     }
 
     /**
-     * SMTP 응답 코드를 RFC 3464 enhanced status code로 단순 매핑합니다.
+     * Map SMTP response code to RFC 3464 enhanced status code with simple mapping.
      *
-     * @param code SMTP 응답 코드
-     * @return 매핑된 RFC 3464 enhanced status code
+     * @param code SMTP response code
+     * @return Mapped RFC 3464 enhanced status code
      */
     private fun mapSmtpCodeToEnhancedStatus(code: Int): String = when (code) {
         550, 551, 553 -> "5.1.1"
@@ -243,11 +243,11 @@ public class JakartaMailDsnSender(
     }
 
     /**
-     * 주어진 사유 문자열이 키워드 중 하나를 포함하는지 확인합니다.
+     * Check whether the given reason string contains any of the keywords.
      *
-     * @param reason 실패 사유 문자열
-     * @param keywords 점검할 키워드 목록
-     * @return 포함 여부
+     * @param reason Failure reason string
+     * @param keywords Keyword list to check
+     * @return Whether contained
      */
     private fun reasonContainsAny(reason: String?, vararg keywords: String): Boolean {
         if (reason.isNullOrBlank()) return false
@@ -258,11 +258,11 @@ public class JakartaMailDsnSender(
         value.replace("\r", " ").replace("\n", " ").trim().take(500)
 
     /**
-     * RFC 3464의 per-recipient 상태 표현을 담는 내부 모델입니다.
+     * Internal model holding RFC 3464 per-recipient status representation.
      *
      * @property status enhanced status code
-     * @property diagnosticType Diagnostic-Code 타입(smtp, x-*)
-     * @property diagnosticText Diagnostic-Code 본문
+     * @property diagnosticType Diagnostic-Code type (smtp, x-*)
+     * @property diagnosticText Diagnostic-Code body
      */
     private data class DsnStatusFields(
         val status: String,

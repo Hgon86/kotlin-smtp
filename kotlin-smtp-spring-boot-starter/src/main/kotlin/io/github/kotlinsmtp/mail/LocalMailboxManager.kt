@@ -28,9 +28,9 @@ class LocalMailboxManager(
     }
 
     suspend fun deliverToLocalMailbox(username: String, tempFile: Path): Path = withContext(Dispatchers.IO) {
-        // TODO(storage): 로컬 파일 저장 대신 DB/S3/오브젝트 스토리지로 교체 가능하도록 추상화(MessageStore) 도입
-        //               - 대량 트래픽/다중 인스턴스 환경에서는 로컬 디스크는 한계가 큼
-        //               - 최종 목표: "메일 본문 저장"과 "SMTP 수신/릴레이"를 느슨하게 분리
+        // TODO(storage): introduce abstraction (MessageStore) so local file storage can be replaced with DB/S3/object storage.
+        //               - Local disk has clear limitations in high-traffic/multi-instance environments.
+        //               - Final goal: loosely separate "mail body storage" from "SMTP receive/relay".
         val sanitizedUsername = sanitizeUsername(username)
         val userMailbox = getUserMailboxDir(username)
 
@@ -67,8 +67,8 @@ class LocalMailboxManager(
         val u = username.trim()
         if (u.isEmpty()) throw IllegalArgumentException("Username is blank")
 
-        // 파일시스템 경로로 쓰일 수 있으므로 매우 보수적으로 제한합니다.
-        // - 점(.)은 허용하지만 "."/".." 자체는 금지(정규화로 루트 탈출 가능)
+        // Restrict very conservatively because this may be used as filesystem path.
+        // - Dot (.) is allowed, but "."/".." itself is disallowed (normalization can escape root).
         val sanitized = u.map { ch ->
             when {
                 ch.isLetterOrDigit() || ch == '.' || ch == '_' || ch == '-' || ch == '+' -> ch

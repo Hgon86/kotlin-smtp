@@ -4,19 +4,19 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * 로컬 파일 기반 EXPN 구현
+ * Local file-based EXPN implementation.
  *
- * 디렉터리 구조:
+ * Directory structure:
  * - listsDir/<list>.txt
  *
- * 파일 포맷:
- * - 빈 줄/공백 줄 무시
- * - '#' 으로 시작하는 줄은 주석으로 무시
- * - 각 줄은 멤버(이메일 주소/설명 문자열 등)를 그대로 반환
+ * File format:
+ * - Ignore empty/blank lines.
+ * - Ignore lines starting with '#'.
+ * - Return each line as-is as a member entry (email address/description string).
  *
  * TODO(DB/S3/MSA):
- * - 메일링 리스트/멤버십 저장소를 DB 또는 Directory 서비스로 이관
- * - ACL(누가 어떤 리스트를 EXPN할 수 있는지) 정책 엔진화
+ * - Migrate mailing list/membership storage to DB or directory service.
+ * - Introduce an ACL policy engine for EXPN authorization.
  */
 class LocalFileMailingListHandler(
     private val listsDir: Path,
@@ -42,9 +42,9 @@ class LocalFileMailingListHandler(
     }
 
     private fun normalizeListKey(input: String): String {
-        // "list@domain" 형태면 local-part만 사용(기능 우선, 도메인별 분리는 TODO)
+        // If input is "list@domain", use only local-part (feature-first; per-domain split is TODO).
         val raw = input.trim().substringBeforeLast('@')
-        // 파일명 안전화
+        // Make filename-safe token.
         return raw.replace(Regex("[\\\\/:*?\"<>|\\s]"), "_").take(128)
     }
 }

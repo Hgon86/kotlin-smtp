@@ -3,32 +3,32 @@ package io.github.kotlinsmtp.utils
 internal object Values {
     val whitespaceRegex = Regex("\\s+")
     const val MAX_MESSAGE_SIZE = 52_428_800 // 50MB in bytes
-    const val MAX_RECIPIENTS = 100 // 세션당 최대 RCPT 수
-    const val MAX_COMMAND_LINE_LENGTH = 2048 // RFC 5321 권장 512, ESMTP 확장 허용
+    const val MAX_RECIPIENTS = 100 // Maximum RCPT count per session
+    const val MAX_COMMAND_LINE_LENGTH = 2048 // RFC 5321 recommends 512; allow ESMTP extensions
 
     /**
-     * SMTP 라인(커맨드 라인/ DATA 라인) 최대 길이
+     * Maximum length of SMTP line (command line / DATA line)
      *
-     * - Netty inbound에서 CRLF 기준으로 프레이밍할 때의 상한입니다.
-     * - DATA 본문 라인은 RFC 5322 권장보다 긴 경우도 있어, 운영상 적절한 상한을 둡니다.
+     * - Upper bound when framing by CRLF in Netty inbound.
+     * - DATA body lines can be longer than RFC 5322 recommendations, so use an operationally reasonable upper bound.
      */
     const val MAX_SMTP_LINE_LENGTH = 8192
 
     /**
-     * BDAT(CHUNKING) 청크 최대 크기
+     * Maximum BDAT (CHUNKING) chunk size
      *
-     * - BDAT는 '정확히 N바이트'를 메모리 버퍼로 읽게 되므로 청크 상한이 필요합니다.
-     * - 총 메시지 크기 제한은 [MAX_MESSAGE_SIZE]로 별도 적용합니다.
+     * - BDAT reads exactly N bytes into memory buffer, so a chunk upper bound is required.
+     * - Total message size limit is applied separately by [MAX_MESSAGE_SIZE].
      */
     const val MAX_BDAT_CHUNK_SIZE = 8 * 1024 * 1024 // 8MB
 
     /**
-     * BDAT 바이트 프레임 인플라이트(대기 중) 총량 제한 (bytes)
+     * Total in-flight (queued) BDAT byte-frame limit (bytes)
      *
-     * - 현재 구현은 BDAT 청크를 ByteArray로 버퍼링한 뒤 코루틴 채널로 전달합니다.
-     * - 프레임 개수(capacity) 제한만으로는 큰 청크에서 메모리 폭주를 막기 어려우므로,
-     *   "대기 중인 총 바이트" 상한을 별도로 둡니다.
-     * - 기본값: [MAX_BDAT_CHUNK_SIZE] * 2
+     * - Current implementation buffers BDAT chunks as ByteArray, then forwards through coroutine channel.
+     * - Frame count (capacity) limits alone are insufficient for large chunks,
+     *   so define a separate upper bound for "total queued bytes".
+     * - Default: [MAX_BDAT_CHUNK_SIZE] * 2
      */
     const val MAX_INFLIGHT_BDAT_BYTES: Int = MAX_BDAT_CHUNK_SIZE * 2
 }

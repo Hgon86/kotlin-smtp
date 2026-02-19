@@ -51,8 +51,8 @@ class KotlinSmtpAutoConfiguration {
     )
 
     /**
-     * 설정 파일 기반 인바운드 라우팅 정책.
-     * 사용자가 커스텀 InboundRoutingPolicy 빈을 등록하면 대첵됩니다.
+     * Configuration-based inbound routing policy.
+     * Replaced when a custom `InboundRoutingPolicy` bean is registered by the user.
      */
     @Bean
     @ConditionalOnMissingBean
@@ -132,11 +132,11 @@ class KotlinSmtpAutoConfiguration {
         }
 
     /**
-     * 설정에 따라 스풀 락 관리자를 생성합니다.
+     * Creates a spool lock manager based on configuration.
      *
-     * @param props SMTP 서버 설정
-     * @param redisTemplateProvider Redis 템플릿 제공자
-     * @return 파일/Redis 기반 스풀 락 관리자
+     * @param props SMTP server properties
+     * @param redisTemplateProvider Redis template provider
+     * @return file-based or Redis-based spool lock manager
      */
     @Bean
     @ConditionalOnMissingBean
@@ -203,10 +203,10 @@ class KotlinSmtpAutoConfiguration {
     fun spoolMetrics(): SpoolMetrics = SpoolMetrics.NOOP
 
     /**
-     * Micrometer 레지스트리가 있을 때 스풀 메트릭 구현을 활성화합니다.
+     * Enables Micrometer spool metrics when a registry is available.
      *
-     * @param meterRegistry Micrometer 메트릭 레지스트리
-     * @return Micrometer 기반 스풀 메트릭 기록기
+     * @param meterRegistry Micrometer metric registry
+     * @return Micrometer-backed spool metrics recorder
      */
     @Bean
     @ConditionalOnClass(MeterRegistry::class)
@@ -216,10 +216,10 @@ class KotlinSmtpAutoConfiguration {
         MicrometerSpoolMetrics(meterRegistry)
 
     /**
-     * Micrometer 레지스트리가 있을 때 SMTP 이벤트 메트릭 훅을 등록합니다.
+     * Registers SMTP event metric hook when a Micrometer registry is available.
      *
-     * @param meterRegistry Micrometer 메트릭 레지스트리
-     * @return SMTP 이벤트를 계측하는 훅 구현
+     * @param meterRegistry Micrometer metric registry
+     * @return hook implementation that instruments SMTP events
      */
     @Bean
     @ConditionalOnClass(MeterRegistry::class)
@@ -247,15 +247,15 @@ class KotlinSmtpAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     fun messageStore(props: SmtpServerProperties): MessageStore =
-    // 기능 우선: 파일 기반 임시 저장
-        // TODO(storage): DB/S3 등으로 교체 시 구현체만 바꾸도록 경계를 유지합니다.
+    // Feature-first: file-based temporary storage.
+        // TODO(storage): keep boundary so only implementation changes for DB/S3.
         FileMessageStore(tempDir = props.storage.tempPath)
 
     /**
-     * 기본 보낸 메일함 저장소를 파일 기반으로 제공합니다.
+     * Provides file-based Sent mailbox storage by default.
      *
-     * @param props SMTP 서버 설정
-     * @return 파일 기반 보낸 메일함 저장소
+     * @param props SMTP server properties
+     * @return file-based Sent mailbox storage
      */
     @Bean
     @ConditionalOnMissingBean
@@ -276,7 +276,7 @@ class KotlinSmtpAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     fun smtpMailingListHandler(props: SmtpServerProperties): SmtpMailingListHandler =
-        // TODO(DB/MSA): 운영에서는 메일링 리스트/멤버십을 DB 또는 Directory 서비스로 이관 권장
+        // TODO(DB/MSA): in production, migrate mailing lists/membership to DB or directory service.
         LocalFileMailingListHandler(
             listsDir = props.storage.listsPath,
         )
@@ -311,7 +311,7 @@ class KotlinSmtpAutoConfiguration {
         }
 
         val effectiveListeners = if (props.listeners.isEmpty()) {
-            // 기존 설정 호환: smtp.port 하나만 사용하는 모드
+            // Backward compatibility: single-listener mode using only smtp.port.
             listOf(
                 SmtpServerProperties.ListenerConfig(
                     port = props.port,
@@ -324,16 +324,16 @@ class KotlinSmtpAutoConfiguration {
             )
         } else props.listeners
 
-        // SMTPS(implicit TLS) 리스너는 TLS 설정이 없으면 정상 동작할 수 없으므로 fail-fast 합니다.
+        // Fail fast when SMTPS (implicit TLS) listeners are configured without TLS settings.
         if (effectiveListeners.any { it.implicitTls }) {
             require(props.ssl.enabled && cert != null && key != null) {
                 "smtp.ssl.enabled=true and valid ssl.certChainFile/privateKeyFile are required when any listener uses implicitTls=true"
             }
         }
 
-        // Spring Boot starter 안정성:
-        // - 훅 Bean이 아예 없어도(0개) 부팅이 실패하지 않도록 ObjectProvider로 받습니다.
-        // - @Order / Ordered가 붙은 훅은 orderedStream()으로 순서를 반영합니다.
+        // Spring Boot starter resilience:
+        // - Use ObjectProvider so startup succeeds even with zero hook beans.
+        // - Respect @Order / Ordered using orderedStream().
         val eventHooks = eventHooksProvider.orderedStream().collect(Collectors.toList())
 
         return effectiveListeners.map { l ->
@@ -345,7 +345,7 @@ class KotlinSmtpAutoConfiguration {
                 useMailingListHandler(mailingListHandler)
                 useSpooler(spooler)
 
-                // SPI hooks: 코어 이벤트를 외부 인프라(S3/Kafka/DB 등)로 연결합니다.
+                // SPI hooks: bridge core events to external infrastructure (S3/Kafka/DB, etc.).
                 eventHooks.forEach { hook -> addEventHook(hook) }
 
                 features.enableVrfy = props.features.vrfyEnabled

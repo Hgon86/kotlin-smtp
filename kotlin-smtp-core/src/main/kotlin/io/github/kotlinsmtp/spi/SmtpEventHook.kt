@@ -3,29 +3,29 @@ package io.github.kotlinsmtp.spi
 import io.github.kotlinsmtp.model.RcptDsn
 
 /**
- * 코어 엔진이 노출하는 최소 이벤트 훅(SPI)입니다.
+ * Minimal event hook (SPI) exposed by the core engine.
  *
- * - 저장(S3/DB), 메타데이터 기록, Kafka 발행 같은 구현은 코어에 포함하지 않고,
- *   호스트가 이 훅을 통해 호출 시점을 연결할 수 있게 합니다.
- * - 훅 예외는 기본 정책상 서버 동작을 실패시키지 않으며(Non-fatal), 코어에서 로깅만 수행합니다.
- * - 훅 구현은 가능하면 빠르게 반환해야 하며, 장기 작업은 내부에서 비동기로 위임하는 것을 권장합니다.
+ * - Implementations such as storage (S3/DB), metadata logging, Kafka publishing are not included in core,
+ *   and host can connect invocation points through this hook.
+ * - Hook exceptions do not fail server operation by default policy (non-fatal); core only logs them.
+ * - Hook implementations should return quickly when possible; long tasks are recommended to be delegated asynchronously.
  */
 public interface SmtpEventHook {
 
-    /** 세션이 시작되고, 220 greeting을 보낸 직후 호출됩니다. */
+    /** Called right after session starts and 220 greeting is sent. */
     public suspend fun onSessionStarted(event: SmtpSessionStartedEvent): Unit = Unit
 
-    /** 세션이 종료되기 직전에 호출됩니다. */
+    /** Called right before session ends. */
     public suspend fun onSessionEnded(event: SmtpSessionEndedEvent): Unit = Unit
 
-    /** DATA/BDAT 트랜잭션이 성공(최종 250) 처리된 직후 호출됩니다. */
+    /** Called right after DATA/BDAT transaction succeeds (final 250). */
     public suspend fun onMessageAccepted(event: SmtpMessageAcceptedEvent): Unit = Unit
 
-    /** DATA/BDAT 트랜잭션이 실패(4xx/5xx) 처리된 직후 호출됩니다. */
+    /** Called right after DATA/BDAT transaction fails (4xx/5xx). */
     public suspend fun onMessageRejected(event: SmtpMessageRejectedEvent): Unit = Unit
 }
 
-/** 세션 식별/환경 정보를 담는 공통 컨텍스트입니다. */
+/** Common context containing session identity/environment info. */
 public data class SmtpSessionContext(
     public val sessionId: String,
     public val peerAddress: String?,
@@ -35,7 +35,7 @@ public data class SmtpSessionContext(
     public val authenticated: Boolean,
 )
 
-/** 메시지 엔벌로프 정보입니다. */
+/** Message envelope information. */
 public data class SmtpMessageEnvelope(
     public val mailFrom: String,
     public val rcptTo: List<String>,
