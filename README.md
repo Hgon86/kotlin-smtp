@@ -15,7 +15,7 @@ Kotlin SMTP is a **server engine framework**, not a monolithic complete mail pro
   - User mailbox access protocols (IMAP/POP3/JMAP)
   - Admin control plane (queue management/API/UI/ops automation)
 
-See `docs/COMPLETE_SERVER_BLUEPRINT.md` for a James-style assembly path and staged rollout guidance.
+See the `docs` directory for more information.
 
 ## Module Structure
 
@@ -221,7 +221,7 @@ Run end-to-end profile test (throughput + latency summary):
 ./gradlew :kotlin-smtp-benchmarks:performanceTest
 ```
 
-Current local baseline example (details in `docs/PERFORMANCE.md`):
+Current local baseline example:
 - `~195 emails/s` at `4KB`, `8` concurrent clients
 - `~5.1s` per `1,000` messages
 - `p95 latency ~87.5ms`
@@ -237,16 +237,14 @@ Override workload for profile test (optional):
 
 ## Documentation
 
-- `docs/README.md`: Documentation index and learning paths
+- `docs/QUICKSTART.md`: 10-minute guide to initial setup and verification
 - `docs/ARCHITECTURE.md`: Runtime architecture and boundaries
 - `docs/CONFIGURATION.md`: Configuration reference
-- `docs/EXTENSION.md`: Extension strategy and bean override model
-- `docs/EXTENSION_MATRIX.md`: Goal-to-interface mapping
+- `docs/EXTENSION.md`: Extension strategy, override model, and goal-to-interface mapping
 - `docs/RECIPES.md`: Minimal extension recipes
 - `docs/LIFECYCLE.md`: Runtime lifecycle and hook timing
 - `docs/SECURITY_RELAY.md`: Relay security hardening guide
-- `docs/PERFORMANCE.md`: Performance methodology and reporting template
-- `docs/COMPLETE_SERVER_BLUEPRINT.md`: Complete server assembly roadmap and James-style migration path
+
 
 ## License
 
