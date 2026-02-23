@@ -12,7 +12,8 @@
 8. [Storage Configuration](#storage-configuration)
 9. [PROXY Protocol Configuration](#proxy-protocol-configuration)
 10. [Feature Flags](#feature-flags)
-11. [Validation](#validation)
+11. [Lifecycle Configuration](#lifecycle-configuration)
+12. [Validation](#validation)
 
 ## Basic Configuration
 
@@ -143,6 +144,11 @@ smtp:
 | `handshakeTimeoutMs` | 30000 | TLS handshake timeout (ms) |
 | `cipherSuites` | [] | Explicit cipher suite list |
 
+Validation notes:
+- `minTlsVersion` must be `TLSv1.2` or `TLSv1.3`.
+- `handshakeTimeoutMs` must be > 0.
+- `cipherSuites` must not contain blank values.
+
 ## Spool Configuration
 
 ### Basic Configuration
@@ -154,6 +160,7 @@ smtp:
     dir: ./data/spool
     maxRetries: 5
     retryDelaySeconds: 60
+    workerConcurrency: 1
 ```
 
 ### Redis Backend
@@ -183,6 +190,8 @@ smtp:
 | `dir` | - | Spool directory path (required) |
 | `maxRetries` | 5 | Maximum retry attempts |
 | `retryDelaySeconds` | 60 | Initial retry delay in seconds |
+| `workerConcurrency` | 1 | Concurrent spool workers per in-process run |
+| `triggerCooldownMillis` | 1000 | Cooldown for external spool triggers (ms) |
 | `redis.keyPrefix` | `kotlin-smtp:spool` | Redis key prefix |
 | `redis.maxRawBytes` | `26214400` | Max raw RFC822 bytes stored in Redis |
 | `redis.lockTtlSeconds` | `900` | Redis lock TTL in seconds |
@@ -202,6 +211,7 @@ smtp:
   auth:
     enabled: true
     required: false
+    allowPlaintextPasswords: true
     users:
       user1: password1
       user2: "$2a$10$..."  # BCrypt hash supported
@@ -213,21 +223,27 @@ smtp:
 smtp:
   auth:
     rateLimitEnabled: true
+    rateLimitBackend: local # local | redis
     rateLimitMaxFailures: 5
     rateLimitWindowSeconds: 300
     rateLimitLockoutSeconds: 600
+    rateLimitRedis:
+      keyPrefix: kotlin-smtp:auth-ratelimit
 ```
 
 ### Authentication Options
 
 | Option | Default | Description |
 |------|--------|------|
-| `enabled` | true | Enable SMTP AUTH |
+| `enabled` | false | Enable SMTP AUTH |
 | `required` | false | Require AUTH for all mail operations |
+| `allowPlaintextPasswords` | true | Allow plaintext values in `smtp.auth.users` (set false to require BCrypt only) |
 | `rateLimitEnabled` | true | Enable auth brute-force protection |
+| `rateLimitBackend` | local | AUTH limiter backend (`local`, `redis`) |
 | `rateLimitMaxFailures` | 5 | Max failures within window |
 | `rateLimitWindowSeconds` | 300 | Failure tracking window (seconds) |
 | `rateLimitLockoutSeconds` | 600 | Lockout duration (seconds) |
+| `rateLimitRedis.keyPrefix` | `kotlin-smtp:auth-ratelimit` | Redis key prefix for AUTH limiter state |
 
 ## Relay Configuration
 
@@ -285,10 +301,14 @@ smtp:
       startTlsRequired: false
       checkServerIdentity: true
       trustAll: false  # true only for local/dev testing
+      failOnTrustAll: false # true blocks startup when trustAll is enabled
       trustHosts: []
       connectTimeoutMs: 15000
       readTimeoutMs: 15000
 ```
+
+Security note:
+- `failOnTrustAll=true` is recommended for production to prevent accidental insecure TLS trust configuration.
 
 ### Outbound Policy (MTA-STS / DANE)
 
@@ -334,8 +354,12 @@ For more advanced rules (DB lookups, IP reputation, policy engine), provide a cu
 ```yaml
 smtp:
   rateLimit:
+    backend: local # local | redis
     maxConnectionsPerIp: 10
     maxMessagesPerIpPerHour: 100
+    redis:
+      keyPrefix: kotlin-smtp:conn-ratelimit
+      connectionCounterTtlSeconds: 900
 ```
 
 ### Rate Limit Options
@@ -344,6 +368,9 @@ smtp:
 |------|--------|------|
 | `maxConnectionsPerIp` | 10 | Maximum concurrent connections per IP |
 | `maxMessagesPerIpPerHour` | 100 | Maximum accepted messages per IP per hour |
+| `backend` | local | Connection/message limiter backend (`local`, `redis`) |
+| `redis.keyPrefix` | `kotlin-smtp:conn-ratelimit` | Redis key prefix for distributed limiter state |
+| `redis.connectionCounterTtlSeconds` | 900 | Redis TTL for distributed connection counters |
 
 ## Storage Configuration
 
@@ -392,6 +419,18 @@ smtp:
     etrnEnabled: false  # ETRN command (admin use-case)
     expnEnabled: false  # EXPN command (off by default)
 ```
+
+## Lifecycle Configuration
+
+```yaml
+smtp:
+  lifecycle:
+    gracefulShutdownTimeoutMs: 30000
+```
+
+| Option | Default | Description |
+|------|--------|------|
+| `gracefulShutdownTimeoutMs` | 30000 | Graceful stop timeout for SMTP server shutdown (ms) |
 
 ## Validation
 

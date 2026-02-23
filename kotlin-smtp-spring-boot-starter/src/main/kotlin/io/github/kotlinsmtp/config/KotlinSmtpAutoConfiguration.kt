@@ -11,6 +11,9 @@ import io.github.kotlinsmtp.protocol.handler.*
 import io.github.kotlinsmtp.relay.api.*
 import io.github.kotlinsmtp.routing.InboundRoutingPolicy
 import io.github.kotlinsmtp.routing.MultiDomainRoutingPolicy
+import io.github.kotlinsmtp.ratelimit.RedisSmtpAuthRateLimiter
+import io.github.kotlinsmtp.ratelimit.RedisSmtpRateLimiter
+import io.github.kotlinsmtp.server.SmtpRateLimiter
 import io.github.kotlinsmtp.server.SmtpServer
 import io.github.kotlinsmtp.server.SmtpServerRunner
 import io.github.kotlinsmtp.spi.SmtpEventHook
@@ -36,6 +39,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.data.redis.core.StringRedisTemplate
+import io.github.kotlinsmtp.auth.SmtpAuthRateLimiter
 import java.util.stream.Collectors
 
 @AutoConfiguration
@@ -47,7 +51,8 @@ class KotlinSmtpAutoConfiguration {
     fun authService(props: SmtpServerProperties): AuthService = InMemoryAuthService(
         enabled = props.auth.enabled,
         required = props.auth.required,
-        users = props.auth.users
+        users = props.auth.users,
+        allowPlaintextPasswords = props.auth.allowPlaintextPasswords,
     )
 
     /**
@@ -191,6 +196,8 @@ class KotlinSmtpAutoConfiguration {
             spoolDir = props.spool.path,
             maxRetries = props.spool.maxRetries,
             retryDelaySeconds = props.spool.retryDelaySeconds,
+            workerConcurrency = props.spool.workerConcurrency,
+            triggerCooldownMillis = props.spool.triggerCooldownMillis,
             deliveryService = deliveryService,
             dsnSenderProvider = { dsnSenderProvider.getIfAvailable() },
             spoolMetrics = spoolMetrics,
@@ -291,6 +298,8 @@ class KotlinSmtpAutoConfiguration {
         messageStore: MessageStore,
         sentMessageStore: SentMessageStore,
         authService: AuthService,
+        smtpRateLimiterProvider: ObjectProvider<SmtpRateLimiter>,
+        smtpAuthRateLimiterProvider: ObjectProvider<SmtpAuthRateLimiter>,
         eventHooksProvider: ObjectProvider<SmtpEventHook>,
     ): List<SmtpServer> {
         // Validate all configuration properties (throws on invalid config)
@@ -374,12 +383,74 @@ class KotlinSmtpAutoConfiguration {
                 authRateLimit.maxFailuresPerWindow = props.auth.rateLimitMaxFailures
                 authRateLimit.windowSeconds = props.auth.rateLimitWindowSeconds
                 authRateLimit.lockoutDurationSeconds = props.auth.rateLimitLockoutSeconds
+
+                smtpRateLimiterProvider.getIfAvailable()?.let { limiter ->
+                    useRateLimiter(limiter)
+                }
+                if (props.auth.rateLimitEnabled) {
+                    smtpAuthRateLimiterProvider.getIfAvailable()?.let { limiter ->
+                        useAuthRateLimiter(limiter)
+                    }
+                }
             }
         }
     }
 
+    /**
+     * Creates a distributed connection/message rate limiter when Redis backend is selected.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "smtp.rateLimit", name = ["backend"], havingValue = "redis")
+    @ConditionalOnMissingBean(SmtpRateLimiter::class)
+    fun smtpRateLimiter(
+        props: SmtpServerProperties,
+        redisTemplateProvider: ObjectProvider<StringRedisTemplate>,
+    ): SmtpRateLimiter {
+        val redisTemplate = redisTemplateProvider.getIfAvailable()
+            ?: error("smtp.rateLimit.backend=redis requires StringRedisTemplate bean")
+        return RedisSmtpRateLimiter(
+            redisTemplate = redisTemplate,
+            keyPrefix = props.rateLimit.redis.keyPrefix,
+            maxConnectionsPerIp = props.rateLimit.maxConnectionsPerIp,
+            maxMessagesPerIpPerHour = props.rateLimit.maxMessagesPerIpPerHour,
+            connectionCounterTtl = java.time.Duration.ofSeconds(props.rateLimit.redis.connectionCounterTtlSeconds),
+        )
+    }
+
+    /**
+     * Creates a distributed AUTH rate limiter when Redis backend is selected.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "smtp.auth", name = ["rateLimitBackend"], havingValue = "redis")
+    @ConditionalOnMissingBean(SmtpAuthRateLimiter::class)
+    fun smtpAuthRateLimiter(
+        props: SmtpServerProperties,
+        redisTemplateProvider: ObjectProvider<StringRedisTemplate>,
+    ): SmtpAuthRateLimiter {
+        if (!props.auth.rateLimitEnabled) {
+            return object : SmtpAuthRateLimiter {
+                override fun checkLock(clientIp: String?, username: String): Long? = null
+                override fun recordFailure(clientIp: String?, username: String): Boolean = false
+                override fun recordSuccess(clientIp: String?, username: String) = Unit
+                override fun cleanup() = Unit
+            }
+        }
+        val redisTemplate = redisTemplateProvider.getIfAvailable()
+            ?: error("smtp.auth.rateLimitBackend=redis requires StringRedisTemplate bean")
+        return RedisSmtpAuthRateLimiter(
+            redisTemplate = redisTemplate,
+            keyPrefix = props.auth.rateLimitRedis.keyPrefix,
+            maxFailuresPerWindow = props.auth.rateLimitMaxFailures,
+            windowSeconds = props.auth.rateLimitWindowSeconds,
+            lockoutDurationSeconds = props.auth.rateLimitLockoutSeconds,
+        )
+    }
+
     @Bean
     @ConditionalOnMissingBean
-    fun smtpServerRunner(smtpServers: List<SmtpServer>): SmtpServerRunner =
-        SmtpServerRunner(smtpServers)
+    fun smtpServerRunner(props: SmtpServerProperties, smtpServers: List<SmtpServer>): SmtpServerRunner =
+        SmtpServerRunner(
+            smtpServers = smtpServers,
+            gracefulShutdownTimeoutMs = props.lifecycle.gracefulShutdownTimeoutMs,
+        )
 }

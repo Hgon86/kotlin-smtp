@@ -187,6 +187,14 @@ class KotlinSmtpRelayAutoConfiguration {
                 }
             }
             val routesWithTrustAll = props.routes.filter { it.trustAll == true }
+            if (props.outboundTls.failOnTrustAll) {
+                require(!props.outboundTls.trustAll) {
+                    "smtp.relay.outboundTls.failOnTrustAll=true blocks smtp.relay.outboundTls.trustAll=true"
+                }
+                require(routesWithTrustAll.isEmpty()) {
+                    "smtp.relay.outboundTls.failOnTrustAll=true blocks smtp.relay.routes[].trustAll=true"
+                }
+            }
             if (routesWithTrustAll.isNotEmpty()) {
                 log.warn {
                     "Some relay routes enable trustAll=true: ${routesWithTrustAll.joinToString { it.domain.ifBlank { "<blank-domain>" } }}"

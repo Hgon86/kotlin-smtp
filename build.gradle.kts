@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm") version "1.9.25"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.18.1"
+    jacoco
     // New Central Portal support plugin
     id("com.vanniktech.maven.publish") version "0.29.0" apply false
 }
@@ -61,6 +62,16 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+val coverageMinimums = mapOf(
+    "kotlin-smtp-core" to "0.08".toBigDecimal(),
+    "kotlin-smtp-spring-boot-starter" to "0.05".toBigDecimal(),
+    "kotlin-smtp-relay-spring-boot-starter" to "0.05".toBigDecimal(),
+)
+
 apiValidation {
     // At this stage, only fix the core/relay "API boundary", excluding Spring wiring/impl modules.
     ignoredProjects.addAll(
@@ -77,6 +88,41 @@ apiValidation {
 }
 
 subprojects {
+    apply(plugin = "jacoco")
+
+    tasks.withType<Test>().configureEach {
+        finalizedBy(tasks.matching { it.name == "jacocoTestReport" })
+    }
+
+    tasks.matching { it.name == "jacocoTestReport" }.configureEach {
+        dependsOn(tasks.named("test"))
+    }
+
+    tasks.matching { it.name == "jacocoTestCoverageVerification" }.configureEach {
+        dependsOn(tasks.named("test"))
+    }
+
+    tasks.withType<org.gradle.testing.jacoco.tasks.JacocoReport>().configureEach {
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
+        }
+    }
+
+    tasks.withType<org.gradle.testing.jacoco.tasks.JacocoCoverageVerification>().configureEach {
+        val minimum = coverageMinimums[project.name] ?: return@configureEach
+        violationRules {
+            rule {
+                element = "BUNDLE"
+                limit {
+                    counter = "LINE"
+                    value = "COVEREDRATIO"
+                    this.minimum = minimum
+                }
+            }
+        }
+    }
+
     if (name in publishableModules) {
         apply(plugin = "com.vanniktech.maven.publish")
 

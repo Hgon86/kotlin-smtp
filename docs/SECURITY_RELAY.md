@@ -61,10 +61,12 @@ smtp:
       startTlsRequired: false
       checkServerIdentity: true
       trustAll: false
+      failOnTrustAll: true
 ```
 
 Notes:
 - `trustAll=true` is only for local/dev testing.
+- `failOnTrustAll=true` prevents accidental startup with insecure trust-all TLS.
 - Keep `checkServerIdentity=true` in production.
 
 ## 5) Operational checks

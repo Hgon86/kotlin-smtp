@@ -36,6 +36,93 @@ class SmtpServerPropertiesRedisValidationTest {
     }
 
     /**
+     * Validation must fail when `triggerCooldownMillis < 0`.
+     */
+    @Test
+    fun `spool triggerCooldownMillis must be non-negative`() {
+        val props = baseProps().apply {
+            spool.triggerCooldownMillis = -1
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            props.validate()
+        }
+    }
+
+    /**
+     * Validation must fail when spool worker concurrency is not positive.
+     */
+    @Test
+    fun `spool workerConcurrency must be positive`() {
+        val props = baseProps().apply {
+            spool.workerConcurrency = 0
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            props.validate()
+        }
+    }
+
+    /**
+     * Validation must fail when graceful shutdown timeout is not positive.
+     */
+    @Test
+    fun `lifecycle graceful shutdown timeout must be positive`() {
+        val props = baseProps().apply {
+            lifecycle.gracefulShutdownTimeoutMs = 0
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            props.validate()
+        }
+    }
+
+    /**
+     * Validation must fail when plaintext credentials are configured while disallowed.
+     */
+    @Test
+    fun `auth plaintext credentials must be rejected when disallowed`() {
+        val props = baseProps().apply {
+            auth.allowPlaintextPasswords = false
+            auth.users = mapOf("user" to "password")
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            props.validate()
+        }
+    }
+
+    /**
+     * Validation must fail when Redis auth limiter prefix is blank.
+     */
+    @Test
+    fun `auth redis rate limit prefix must not be blank`() {
+        val props = baseProps().apply {
+            auth.rateLimitBackend = SmtpServerProperties.RateLimitBackend.REDIS
+            auth.rateLimitRedis.keyPrefix = "  "
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            props.validate()
+        }
+    }
+
+    /**
+     * Validation must fail when Redis connection counter TTL is not positive.
+     */
+    @Test
+    fun `redis connection counter ttl must be positive`() {
+        val props = baseProps().apply {
+            rateLimit.backend = SmtpServerProperties.RateLimitBackend.REDIS
+            rateLimit.redis.connectionCounterTtlSeconds = 0
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            props.validate()
+        }
+    }
+
+    /**
      * Builds minimum valid properties for test setup.
      *
      * @return valid SMTP properties

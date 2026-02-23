@@ -17,7 +17,6 @@ import io.github.kotlinsmtp.protocol.command.RsetCommand
 import io.github.kotlinsmtp.protocol.command.StartTlsCommand
 import io.github.kotlinsmtp.protocol.command.VrfyCommand
 import io.github.kotlinsmtp.server.SmtpSession
-import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
 import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import io.github.kotlinsmtp.utils.SmtpStatusCode.COMMAND_REJECTED
@@ -89,20 +88,12 @@ internal enum class SmtpCommands(
                             else -> null
                         }
                         if (transferMode != null && session.server.hasEventHooks()) {
-                            val context = session.buildSessionContext()
-                            val envelope = session.buildMessageEnvelopeSnapshot()
-                            session.server.notifyHooks { hook ->
-                                hook.onMessageRejected(
-                                    SmtpMessageRejectedEvent(
-                                        context = context,
-                                        envelope = envelope,
-                                        transferMode = transferMode,
-                                        stage = SmtpMessageStage.PROCESSING,
-                                        responseCode = response.statusCode,
-                                        responseMessage = response.message,
-                                    )
-                                )
-                            }
+                            session.notifyMessageRejected(
+                                transferMode = transferMode,
+                                stage = SmtpMessageStage.PROCESSING,
+                                responseCode = response.statusCode,
+                                responseMessage = response.message,
+                            )
                         }
                     }
                 } else {

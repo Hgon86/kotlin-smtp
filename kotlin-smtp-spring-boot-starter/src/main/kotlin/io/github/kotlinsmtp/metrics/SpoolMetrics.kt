@@ -32,7 +32,24 @@ interface SpoolMetrics {
     fun onDeliveryResults(deliveredCount: Int, transientFailureCount: Int, permanentFailureCount: Int)
 
     /** Record that retry scheduling occurred. */
-    fun onRetryScheduled()
+    fun onRetryScheduled(delaySeconds: Long = 0)
+
+    /**
+     * Record queue residence time when a message leaves spool.
+     *
+     * @param outcome final status (`completed` or `dropped`)
+     * @param queueAgeSeconds message age in spool queue
+     */
+    fun onFinalized(outcome: String, queueAgeSeconds: Long)
+
+    /**
+     * Record recipient-level failures with coarse reason taxonomy.
+     *
+     * @param domain recipient domain
+     * @param permanent permanent/transient flag
+     * @param reasonClass coarse reason class
+     */
+    fun onRecipientFailure(domain: String, permanent: Boolean, reasonClass: String)
 
     companion object {
         /**
@@ -46,7 +63,9 @@ interface SpoolMetrics {
             override fun onCompleted(): Unit = Unit
             override fun onDropped(): Unit = Unit
             override fun onDeliveryResults(deliveredCount: Int, transientFailureCount: Int, permanentFailureCount: Int): Unit = Unit
-            override fun onRetryScheduled(): Unit = Unit
+            override fun onRetryScheduled(delaySeconds: Long): Unit = Unit
+            override fun onFinalized(outcome: String, queueAgeSeconds: Long): Unit = Unit
+            override fun onRecipientFailure(domain: String, permanent: Boolean, reasonClass: String): Unit = Unit
         }
     }
 }

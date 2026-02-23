@@ -6,7 +6,6 @@ import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.CoroutineInputStream
 import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.server.SmtpStreamingHandlerRunner
-import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
 import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import io.github.kotlinsmtp.utils.SmtpStatusCode.ERROR_IN_PROCESSING
@@ -143,22 +142,12 @@ internal class DataCommand : SmtpCommand(
             }
 
             session.sendResponse(code, message)
-            if (session.server.hasEventHooks()) {
-                val context = session.buildSessionContext()
-                val envelope = session.buildMessageEnvelopeSnapshot()
-                session.server.notifyHooks { hook ->
-                    hook.onMessageRejected(
-                        SmtpMessageRejectedEvent(
-                            context = context,
-                            envelope = envelope,
-                            transferMode = SmtpMessageTransferMode.DATA,
-                            stage = SmtpMessageStage.RECEIVING,
-                            responseCode = code,
-                            responseMessage = message,
-                        )
-                    )
-                }
-            }
+            session.notifyMessageRejected(
+                transferMode = SmtpMessageTransferMode.DATA,
+                stage = SmtpMessageStage.RECEIVING,
+                responseCode = code,
+                responseMessage = message,
+            )
             session.shouldQuit = true
             session.close()
             return

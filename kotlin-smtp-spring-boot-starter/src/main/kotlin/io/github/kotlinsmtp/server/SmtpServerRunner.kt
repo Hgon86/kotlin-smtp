@@ -18,7 +18,8 @@ import java.util.concurrent.Executors
 private val log = KotlinLogging.logger {}
 
 class SmtpServerRunner(
-    private val smtpServers: List<SmtpServer>
+    private val smtpServers: List<SmtpServer>,
+    private val gracefulShutdownTimeoutMs: Long,
 ) {
     private val dispatcher: ExecutorCoroutineDispatcher =
         Executors.newCachedThreadPool { runnable ->
@@ -39,14 +40,17 @@ class SmtpServerRunner(
     fun onContextClosed(@Suppress("UNUSED_PARAMETER") event: ContextClosedEvent) = runBlocking {
         if (!stopped.compareAndSet(false, true)) return@runBlocking
         log.info { "Stopping SMTP server" }
-        smtpServers.forEach { it.stop() }
-        scope.cancel()
-        dispatcher.close()
+        stopAllServers()
     }
 
     @PreDestroy
-    fun destroy() {
-        if (!stopped.compareAndSet(false, true)) return
+    fun destroy() = runBlocking {
+        if (!stopped.compareAndSet(false, true)) return@runBlocking
+        stopAllServers()
+    }
+
+    private suspend fun stopAllServers() {
+        smtpServers.forEach { it.stop(gracefulTimeoutMs = gracefulShutdownTimeoutMs) }
         scope.cancel()
         dispatcher.close()
     }

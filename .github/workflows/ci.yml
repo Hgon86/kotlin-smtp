@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -32,10 +34,46 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Run tests
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: wrapper
 
-      - name: ./gradlew test
-        run: ./gradlew test
+      - name: Run tests and coverage verification
+        run: ./gradlew test apiCheck jacocoTestReport jacocoTestCoverageVerification
+
+      - name: Enforce API change docs
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            CHANGED_FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          else
+            BEFORE_SHA="${{ github.event.before }}"
+            if [[ "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+              exit 0
+            fi
+            CHANGED_FILES=$(git diff --name-only "$BEFORE_SHA...HEAD")
+          fi
+
+          if echo "$CHANGED_FILES" | grep -qE '^kotlin-smtp-(core|relay)/api/'; then
+            if ! echo "$CHANGED_FILES" | grep -qF 'CHANGELOG.md'; then
+              echo "API baseline changed but CHANGELOG.md was not updated."
+              exit 1
+            fi
+
+            if ! echo "$CHANGED_FILES" | grep -qF 'docs/MIGRATION.md'; then
+              echo "API baseline changed but docs/MIGRATION.md was not updated."
+              exit 1
+            fi
+          fi
+
+      - name: Upload coverage reports
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-reports-${{ matrix.os }}
+          path: |
+            **/build/reports/jacoco/test/jacocoTestReport.xml
+            **/build/reports/jacoco/test/html/**

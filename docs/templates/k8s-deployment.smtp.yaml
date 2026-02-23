@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kotlin-smtp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kotlin-smtp
+  template:
+    metadata:
+      labels:
+        app: kotlin-smtp
+    spec:
+      containers:
+        - name: smtp
+          image: your-org/kotlin-smtp-app:latest
+          ports:
+            - containerPort: 2525
+            - containerPort: 8081
+          env:
+            - name: SMTP_SPOOL_DIR
+              value: /data/spool
+            - name: SMTP_MAILBOX_DIR
+              value: /data/mailboxes
+            - name: SMTP_TEMP_DIR
+              value: /data/temp
+            - name: SMTP_LISTS_DIR
+              value: /data/lists
+            - name: SPRING_REDIS_HOST
+              value: redis
+            - name: SPRING_REDIS_PORT
+              value: "6379"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3

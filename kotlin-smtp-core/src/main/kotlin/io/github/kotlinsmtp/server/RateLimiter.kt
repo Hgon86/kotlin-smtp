@@ -14,7 +14,7 @@ private val log = KotlinLogging.logger {}
 internal class RateLimiter(
     private val maxConnectionsPerIp: Int = 10,
     private val maxMessagesPerIpPerHour: Int = 100
-) {
+) : SmtpRateLimiter {
     // Current connection count per IP
     private val connectionCounts = ConcurrentHashMap<String, AtomicInteger>()
     
@@ -25,7 +25,7 @@ internal class RateLimiter(
      * Check whether connection is allowed for IP
      * @return true if allowed, false if rejected
      */
-    fun allowConnection(ipAddress: String): Boolean {
+    override fun allowConnection(ipAddress: String): Boolean {
         val count = connectionCounts.computeIfAbsent(ipAddress) { AtomicInteger(0) }
         val currentCount = count.incrementAndGet()
         
@@ -42,7 +42,7 @@ internal class RateLimiter(
     /**
      * Decrease count on connection close
      */
-    fun releaseConnection(ipAddress: String) {
+    override fun releaseConnection(ipAddress: String) {
         connectionCounts[ipAddress]?.decrementAndGet()?.let { newCount ->
             log.debug { "Rate limit: IP $ipAddress connection released (remaining: $newCount)" }
             // Remove from map when count reaches 0 (prevent memory leak)
@@ -56,7 +56,7 @@ internal class RateLimiter(
      * Check whether message sending is allowed
      * @return true if allowed, false if rejected
      */
-    fun allowMessage(ipAddress: String): Boolean {
+    override fun allowMessage(ipAddress: String): Boolean {
         val now = Instant.now().epochSecond
         val oneHourAgo = now - 3600
         
@@ -83,7 +83,7 @@ internal class RateLimiter(
      * Periodic cleanup (prevent memory leaks)
      * Remove IPs with no activity for over one hour
      */
-    fun cleanup() {
+    override fun cleanup() {
         val now = Instant.now().epochSecond
         val oneHourAgo = now - 3600
         

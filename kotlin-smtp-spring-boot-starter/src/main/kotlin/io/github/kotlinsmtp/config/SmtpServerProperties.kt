@@ -1,5 +1,6 @@
 package io.github.kotlinsmtp.config
 
+import io.github.kotlinsmtp.auth.isBcryptHash
 import io.github.kotlinsmtp.storage.SentArchiveMode
 import org.springframework.boot.context.properties.ConfigurationProperties
 import java.nio.file.Path
@@ -78,6 +79,11 @@ class SmtpServerProperties {
      * Multi-listener definitions. When non-empty, this overrides single-port mode.
      */
     var listeners: List<ListenerConfig> = emptyList()
+
+    /**
+     * Server lifecycle settings.
+     */
+    var lifecycle: LifecycleConfig = LifecycleConfig()
 
     /**
      * Storage path configuration.
@@ -190,6 +196,19 @@ class SmtpServerProperties {
         var retryDelaySeconds: Long = 60,
 
         /**
+         * Number of concurrent spool workers inside a single process run.
+         *
+         * This controls message-level parallelism within one run cycle.
+         * Run cycles themselves are still serialized to avoid duplicate processing.
+         */
+        var workerConcurrency: Int = 1,
+
+        /**
+         * Cooldown window in milliseconds for external spool trigger calls (for example, ETRN).
+         */
+        var triggerCooldownMillis: Long = 1000,
+
+        /**
          * Redis-specific spool settings.
          */
         var redis: RedisConfig = RedisConfig(),
@@ -228,6 +247,12 @@ class SmtpServerProperties {
             }
             require(retryDelaySeconds > 0) {
                 "smtp.spool.retryDelaySeconds must be > 0"
+            }
+            require(workerConcurrency > 0) {
+                "smtp.spool.workerConcurrency must be > 0"
+            }
+            require(triggerCooldownMillis >= 0) {
+                "smtp.spool.triggerCooldownMillis must be >= 0"
             }
             if (type == SpoolType.REDIS) {
                 require(redis.keyPrefix.isNotBlank()) {
@@ -275,9 +300,21 @@ class SmtpServerProperties {
         var users: Map<String, String> = emptyMap(),
 
         /**
+         * Whether plaintext password entries are allowed in `smtp.auth.users`.
+         *
+         * When set to false, all configured values must be BCrypt hashes.
+         */
+        var allowPlaintextPasswords: Boolean = true,
+
+        /**
          * Enables AUTH failure rate limiting.
          */
         var rateLimitEnabled: Boolean = true,
+
+        /**
+         * Backend implementation for AUTH rate limiting.
+         */
+        var rateLimitBackend: RateLimitBackend = RateLimitBackend.LOCAL,
 
         /**
          * Maximum failed AUTH attempts allowed within the tracking window.
@@ -293,12 +330,37 @@ class SmtpServerProperties {
          * AUTH lockout duration in seconds after threshold is exceeded.
          */
         var rateLimitLockoutSeconds: Long = 600,
-    )
+
+        /**
+         * Redis settings used when `rateLimitBackend=REDIS`.
+         */
+        var rateLimitRedis: RateLimitRedisConfig = RateLimitRedisConfig(),
+    ) {
+        data class RateLimitRedisConfig(
+            /**
+             * Redis key prefix for AUTH rate-limit data.
+             */
+            var keyPrefix: String = "kotlin-smtp:auth-ratelimit",
+        )
+    }
+
+    /**
+     * Shared rate-limit backend type.
+     */
+    enum class RateLimitBackend {
+        LOCAL,
+        REDIS,
+    }
 
     /**
      * Generic connection and message throughput limits.
      */
     data class RateLimitConfig(
+        /**
+         * Backend implementation for connection/message rate limiting.
+         */
+        var backend: RateLimitBackend = RateLimitBackend.LOCAL,
+
         /**
          * Maximum concurrent connections allowed per client IP.
          */
@@ -308,7 +370,24 @@ class SmtpServerProperties {
          * Maximum accepted messages per client IP per hour.
          */
         var maxMessagesPerIpPerHour: Int = 100,
-    )
+
+        /**
+         * Redis settings used when `backend=REDIS`.
+         */
+        var redis: RedisConfig = RedisConfig(),
+    ) {
+        data class RedisConfig(
+            /**
+             * Redis key prefix for rate-limit data.
+             */
+            var keyPrefix: String = "kotlin-smtp:conn-ratelimit",
+
+            /**
+             * TTL in seconds for distributed connection counters.
+             */
+            var connectionCounterTtlSeconds: Long = 900,
+        )
+    }
 
     /**
      * Trusted proxy ranges when PROXY protocol(v1) is enabled.
@@ -348,6 +427,18 @@ class SmtpServerProperties {
          * Enables EXPN command support.
          */
         var expnEnabled: Boolean = false,
+    )
+
+    /**
+     * Graceful shutdown settings for SMTP server lifecycle.
+     *
+     * @property gracefulShutdownTimeoutMs timeout used when stopping SMTP servers
+     */
+    data class LifecycleConfig(
+        /**
+         * Graceful shutdown timeout in milliseconds.
+         */
+        var gracefulShutdownTimeoutMs: Long = 30_000,
     )
 
     /**
@@ -469,6 +560,31 @@ class SmtpServerProperties {
             require(auth.rateLimitLockoutSeconds > 0) {
                 "smtp.auth.rateLimitLockoutSeconds must be > 0"
             }
+            if (auth.rateLimitBackend == RateLimitBackend.REDIS) {
+                require(auth.rateLimitRedis.keyPrefix.isNotBlank()) {
+                    "smtp.auth.rateLimitRedis.keyPrefix must not be blank when smtp.auth.rateLimitBackend=redis"
+                }
+            }
+        }
+
+        if (rateLimit.backend == RateLimitBackend.REDIS) {
+            require(rateLimit.redis.keyPrefix.isNotBlank()) {
+                "smtp.rateLimit.redis.keyPrefix must not be blank when smtp.rateLimit.backend=redis"
+            }
+            require(rateLimit.redis.connectionCounterTtlSeconds > 0) {
+                "smtp.rateLimit.redis.connectionCounterTtlSeconds must be > 0 when smtp.rateLimit.backend=redis"
+            }
+        }
+
+        if (!auth.allowPlaintextPasswords) {
+            val hasPlaintext = auth.users.values.any { !it.isBcryptHash() }
+            require(!hasPlaintext) {
+                "smtp.auth.allowPlaintextPasswords=false requires BCrypt hashes in smtp.auth.users"
+            }
+        }
+
+        require(lifecycle.gracefulShutdownTimeoutMs > 0) {
+            "smtp.lifecycle.gracefulShutdownTimeoutMs must be > 0"
         }
     }
 }

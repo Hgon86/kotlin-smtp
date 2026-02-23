@@ -88,6 +88,11 @@ class RelayProperties {
         var trustAll: Boolean = false
 
         /**
+         * If true, fail startup when any relay path uses `trustAll=true`.
+         */
+        var failOnTrustAll: Boolean = false
+
+        /**
          * Explicit trusted hostnames for outbound TLS.
          */
         var trustHosts: List<String> = emptyList()

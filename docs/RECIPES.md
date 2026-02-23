@@ -174,6 +174,59 @@ Tip:
 - Keep lock semantics strict and idempotent.
 - Preserve retry metadata integrity.
 
+## Recipe 9: Add anti-spam decision gate
+
+```kotlin
+@Configuration
+class AntiSpamPolicyConfig {
+
+    @Bean
+    fun relayAccessPolicy(spamGateway: SpamGateway): RelayAccessPolicy {
+        return RelayAccessPolicy { ctx ->
+            val score = spamGateway.score(
+                sender = ctx.sender,
+                recipient = ctx.recipient,
+                peerAddress = ctx.peerAddress,
+            )
+            if (score >= 0.9) {
+                RelayAccessDecision.Denied(
+                    RelayDeniedReason.POLICY,
+                    "Rejected by anti-spam policy"
+                )
+            } else {
+                RelayAccessDecision.Allowed
+            }
+        }
+    }
+}
+```
+
+Guideline:
+- Keep the decision path deterministic and fast.
+- Cache external score lookups when possible.
+
+## Recipe 10: Publish message events for AV/quarantine workflow
+
+```kotlin
+@Component
+class MalwareScanHook(
+    private val queue: ScanQueue,
+) : SmtpEventHook {
+
+    override suspend fun onMessageAccepted(event: SmtpMessageAcceptedEvent) {
+        queue.enqueue(
+            messageId = event.messageId,
+            sender = event.envelope.mailFrom,
+            recipients = event.envelope.rcptTo,
+        )
+    }
+}
+```
+
+Guideline:
+- Trigger scan asynchronously from hooks; avoid blocking SMTP command processing.
+- Make scanner outcomes idempotent (same message may be retried/replayed operationally).
+
 ## Verification checklist after customization
 
 1. SMTP accepts and processes a basic message.

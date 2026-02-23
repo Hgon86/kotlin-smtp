@@ -1,6 +1,7 @@
 package io.github.kotlinsmtp.server
 
 import io.github.kotlinsmtp.auth.AuthService
+import io.github.kotlinsmtp.auth.SmtpAuthRateLimiter
 import io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
@@ -22,6 +23,8 @@ public class SmtpServerBuilder internal constructor(
     private var protocolHandlerFactory: (() -> SmtpProtocolHandler)? = null
 
     private var authService: AuthService? = null
+    private var authRateLimiterOverride: SmtpAuthRateLimiter? = null
+    private var rateLimiterOverride: SmtpRateLimiter? = null
     private var userHandler: SmtpUserHandler? = null
     private var mailingListHandler: SmtpMailingListHandler? = null
     private var spooler: SmtpSpooler? = null
@@ -34,6 +37,20 @@ public class SmtpServerBuilder internal constructor(
 
     public fun useAuthService(service: AuthService?): Unit {
         this.authService = service
+    }
+
+    /**
+     * Overrides the default AUTH rate limiter implementation.
+     */
+    public fun useAuthRateLimiter(rateLimiter: SmtpAuthRateLimiter?): Unit {
+        this.authRateLimiterOverride = rateLimiter
+    }
+
+    /**
+     * Overrides the default connection/message rate limiter implementation.
+     */
+    public fun useRateLimiter(rateLimiter: SmtpRateLimiter): Unit {
+        this.rateLimiterOverride = rateLimiter
     }
 
     public fun useUserHandler(handler: SmtpUserHandler?): Unit {
@@ -70,7 +87,7 @@ public class SmtpServerBuilder internal constructor(
         val handlerFactory = protocolHandlerFactory
             ?: error("protocolHandlerFactory is required. Call useProtocolHandlerFactory { }.")
 
-        val authLimiter = if (authRateLimit.enabled) {
+        val authLimiter = authRateLimiterOverride ?: if (authRateLimit.enabled) {
             io.github.kotlinsmtp.auth.AuthRateLimiter(
                 maxFailuresPerWindow = authRateLimit.maxFailuresPerWindow,
                 windowSeconds = authRateLimit.windowSeconds,
@@ -107,6 +124,7 @@ public class SmtpServerBuilder internal constructor(
             tlsCipherSuites = tls.cipherSuites,
             maxConnectionsPerIp = rateLimit.maxConnectionsPerIp,
             maxMessagesPerIpPerHour = rateLimit.maxMessagesPerIpPerHour,
+            injectedRateLimiter = rateLimiterOverride,
             idleTimeoutSeconds = listener.idleTimeoutSeconds,
         )
     }

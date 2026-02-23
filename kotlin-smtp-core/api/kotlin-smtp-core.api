@@ -4,6 +4,13 @@ public abstract interface class io/github/kotlinsmtp/auth/AuthService {
 	public abstract fun verify (Ljava/lang/String;Ljava/lang/String;)Z
 }
 
+public abstract interface class io/github/kotlinsmtp/auth/SmtpAuthRateLimiter {
+	public abstract fun checkLock (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Long;
+	public abstract fun cleanup ()V
+	public abstract fun recordFailure (Ljava/lang/String;Ljava/lang/String;)Z
+	public abstract fun recordSuccess (Ljava/lang/String;Ljava/lang/String;)V
+}
+
 public final class io/github/kotlinsmtp/exception/SmtpSendResponse : java/lang/Exception {
 	public fun <init> (ILjava/lang/String;)V
 	public fun getMessage ()Ljava/lang/String;
@@ -29,6 +36,7 @@ public final class io/github/kotlinsmtp/model/SessionData {
 	public fun <init> ()V
 	public final fun getAuthFailedAttempts ()Ljava/lang/Integer;
 	public final fun getAuthLockedUntilEpochMs ()Ljava/lang/Long;
+	public final fun getAuthenticatedUsername ()Ljava/lang/String;
 	public final fun getDeclaredSize ()Ljava/lang/Long;
 	public final fun getDsnEnvid ()Ljava/lang/String;
 	public final fun getDsnRet ()Ljava/lang/String;
@@ -74,24 +82,29 @@ public abstract class io/github/kotlinsmtp/protocol/handler/SmtpUserHandler {
 	public abstract fun verify (Ljava/lang/String;)Ljava/util/Collection;
 }
 
-public abstract interface class io/github/kotlinsmtp/server/SmtpDomainSpooler : io/github/kotlinsmtp/server/SmtpSpooler {
-	public abstract fun triggerOnce (Ljava/lang/String;)V
+public abstract interface class io/github/kotlinsmtp/routing/InboundRoutingPolicy {
+	public abstract fun isLocalDomain (Ljava/lang/String;)Z
+	public abstract fun localDomains ()Ljava/util/Set;
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer {
-	public static final field Companion Lio/github/kotlinsmtp/server/SmtpServer$Companion;
-	public static final fun builder (ILjava/lang/String;)Lio/github/kotlinsmtp/server/SmtpServer$Builder;
-	public static final fun create (ILjava/lang/String;Lkotlin/jvm/functions/Function1;)Lio/github/kotlinsmtp/server/SmtpServer;
-	public final fun getHostname ()Ljava/lang/String;
-	public final fun getPort ()I
-	public final fun getServiceName ()Ljava/lang/String;
-	public final fun start (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun start$default (Lio/github/kotlinsmtp/server/SmtpServer;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public final fun stop (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun stop$default (Lio/github/kotlinsmtp/server/SmtpServer;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+public final class io/github/kotlinsmtp/routing/InboundRoutingPolicy$DefaultImpls {
+	public static fun localDomains (Lio/github/kotlinsmtp/routing/InboundRoutingPolicy;)Ljava/util/Set;
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer$AuthRateLimitPolicy {
+public final class io/github/kotlinsmtp/routing/MultiDomainRoutingPolicy : io/github/kotlinsmtp/routing/InboundRoutingPolicy {
+	public fun <init> (Ljava/util/Set;)V
+	public fun isLocalDomain (Ljava/lang/String;)Z
+	public fun localDomains ()Ljava/util/Set;
+}
+
+public final class io/github/kotlinsmtp/routing/SingleDomainRoutingPolicy : io/github/kotlinsmtp/routing/InboundRoutingPolicy {
+	public fun <init> (Ljava/lang/String;)V
+	public fun isLocalDomain (Ljava/lang/String;)Z
+	public fun localDomains ()Ljava/util/Set;
+}
+
+public final class io/github/kotlinsmtp/server/SmtpAuthRateLimitPolicy {
+	public fun <init> ()V
 	public final fun getEnabled ()Z
 	public final fun getLockoutDurationSeconds ()J
 	public final fun getMaxFailuresPerWindow ()I
@@ -102,30 +115,18 @@ public final class io/github/kotlinsmtp/server/SmtpServer$AuthRateLimitPolicy {
 	public final fun setWindowSeconds (J)V
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer$Builder {
-	public final fun addEventHook (Lio/github/kotlinsmtp/spi/SmtpEventHook;)V
-	public final fun build ()Lio/github/kotlinsmtp/server/SmtpServer;
-	public final fun getAuthRateLimit ()Lio/github/kotlinsmtp/server/SmtpServer$AuthRateLimitPolicy;
-	public final fun getFeatures ()Lio/github/kotlinsmtp/server/SmtpServer$FeatureFlags;
-	public final fun getListener ()Lio/github/kotlinsmtp/server/SmtpServer$ListenerPolicy;
-	public final fun getProxyProtocol ()Lio/github/kotlinsmtp/server/SmtpServer$ProxyProtocolPolicy;
-	public final fun getRateLimit ()Lio/github/kotlinsmtp/server/SmtpServer$RateLimitPolicy;
-	public final fun getServiceName ()Ljava/lang/String;
-	public final fun getTls ()Lio/github/kotlinsmtp/server/SmtpServer$TlsPolicy;
-	public final fun setServiceName (Ljava/lang/String;)V
-	public final fun useAuthService (Lio/github/kotlinsmtp/auth/AuthService;)V
-	public final fun useMailingListHandler (Lio/github/kotlinsmtp/protocol/handler/SmtpMailingListHandler;)V
-	public final fun useProtocolHandlerFactory (Lkotlin/jvm/functions/Function0;)V
-	public final fun useSpooler (Lio/github/kotlinsmtp/server/SmtpSpooler;)V
-	public final fun useUserHandler (Lio/github/kotlinsmtp/protocol/handler/SmtpUserHandler;)V
+public abstract interface class io/github/kotlinsmtp/server/SmtpDomainSpooler : io/github/kotlinsmtp/server/SmtpSpooler {
+	public abstract fun triggerOnce (Ljava/lang/String;)V
+	public abstract fun tryTriggerOnce (Ljava/lang/String;)Lio/github/kotlinsmtp/server/SpoolTriggerResult;
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer$Companion {
-	public final fun builder (ILjava/lang/String;)Lio/github/kotlinsmtp/server/SmtpServer$Builder;
-	public final fun create (ILjava/lang/String;Lkotlin/jvm/functions/Function1;)Lio/github/kotlinsmtp/server/SmtpServer;
+public final class io/github/kotlinsmtp/server/SmtpDomainSpooler$DefaultImpls {
+	public static fun tryTriggerOnce (Lio/github/kotlinsmtp/server/SmtpDomainSpooler;)Lio/github/kotlinsmtp/server/SpoolTriggerResult;
+	public static fun tryTriggerOnce (Lio/github/kotlinsmtp/server/SmtpDomainSpooler;Ljava/lang/String;)Lio/github/kotlinsmtp/server/SpoolTriggerResult;
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer$FeatureFlags {
+public final class io/github/kotlinsmtp/server/SmtpFeatureFlags {
+	public fun <init> ()V
 	public final fun getEnableEtrn ()Z
 	public final fun getEnableExpn ()Z
 	public final fun getEnableVrfy ()Z
@@ -134,32 +135,92 @@ public final class io/github/kotlinsmtp/server/SmtpServer$FeatureFlags {
 	public final fun setEnableVrfy (Z)V
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer$ListenerPolicy {
+public final class io/github/kotlinsmtp/server/SmtpListenerPolicy {
+	public fun <init> ()V
 	public final fun getEnableAuth ()Z
 	public final fun getEnableStartTls ()Z
+	public final fun getIdleTimeoutSeconds ()I
 	public final fun getImplicitTls ()Z
 	public final fun getRequireAuthForMail ()Z
 	public final fun setEnableAuth (Z)V
 	public final fun setEnableStartTls (Z)V
+	public final fun setIdleTimeoutSeconds (I)V
 	public final fun setImplicitTls (Z)V
 	public final fun setRequireAuthForMail (Z)V
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer$ProxyProtocolPolicy {
+public final class io/github/kotlinsmtp/server/SmtpProxyProtocolPolicy {
+	public fun <init> ()V
 	public final fun getEnabled ()Z
 	public final fun getTrustedProxyCidrs ()Ljava/util/List;
 	public final fun setEnabled (Z)V
 	public final fun setTrustedProxyCidrs (Ljava/util/List;)V
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer$RateLimitPolicy {
+public final class io/github/kotlinsmtp/server/SmtpRateLimitPolicy {
+	public fun <init> ()V
 	public final fun getMaxConnectionsPerIp ()I
 	public final fun getMaxMessagesPerIpPerHour ()I
 	public final fun setMaxConnectionsPerIp (I)V
 	public final fun setMaxMessagesPerIpPerHour (I)V
 }
 
-public final class io/github/kotlinsmtp/server/SmtpServer$TlsPolicy {
+public abstract interface class io/github/kotlinsmtp/server/SmtpRateLimiter {
+	public abstract fun allowConnection (Ljava/lang/String;)Z
+	public abstract fun allowMessage (Ljava/lang/String;)Z
+	public abstract fun cleanup ()V
+	public abstract fun releaseConnection (Ljava/lang/String;)V
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer {
+	public static final field Companion Lio/github/kotlinsmtp/server/SmtpServer$Companion;
+	public static final fun builder (ILjava/lang/String;)Lio/github/kotlinsmtp/server/SmtpServerBuilder;
+	public static final fun create (ILjava/lang/String;Lkotlin/jvm/functions/Function1;)Lio/github/kotlinsmtp/server/SmtpServer;
+	public final fun getHostname ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun getServiceName ()Ljava/lang/String;
+	public final fun start (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun start$default (Lio/github/kotlinsmtp/server/SmtpServer;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun stop (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun stop$default (Lio/github/kotlinsmtp/server/SmtpServer;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServer$Companion {
+	public final fun builder (ILjava/lang/String;)Lio/github/kotlinsmtp/server/SmtpServerBuilder;
+	public final fun create (ILjava/lang/String;Lkotlin/jvm/functions/Function1;)Lio/github/kotlinsmtp/server/SmtpServer;
+}
+
+public final class io/github/kotlinsmtp/server/SmtpServerBuilder {
+	public final fun addEventHook (Lio/github/kotlinsmtp/spi/SmtpEventHook;)V
+	public final fun build ()Lio/github/kotlinsmtp/server/SmtpServer;
+	public final fun getAuthRateLimit ()Lio/github/kotlinsmtp/server/SmtpAuthRateLimitPolicy;
+	public final fun getFeatures ()Lio/github/kotlinsmtp/server/SmtpFeatureFlags;
+	public final fun getListener ()Lio/github/kotlinsmtp/server/SmtpListenerPolicy;
+	public final fun getProxyProtocol ()Lio/github/kotlinsmtp/server/SmtpProxyProtocolPolicy;
+	public final fun getRateLimit ()Lio/github/kotlinsmtp/server/SmtpRateLimitPolicy;
+	public final fun getServiceName ()Ljava/lang/String;
+	public final fun getTls ()Lio/github/kotlinsmtp/server/SmtpTlsPolicy;
+	public final fun setServiceName (Ljava/lang/String;)V
+	public final fun useAuthRateLimiter (Lio/github/kotlinsmtp/auth/SmtpAuthRateLimiter;)V
+	public final fun useAuthService (Lio/github/kotlinsmtp/auth/AuthService;)V
+	public final fun useMailingListHandler (Lio/github/kotlinsmtp/protocol/handler/SmtpMailingListHandler;)V
+	public final fun useProtocolHandlerFactory (Lkotlin/jvm/functions/Function0;)V
+	public final fun useRateLimiter (Lio/github/kotlinsmtp/server/SmtpRateLimiter;)V
+	public final fun useSpooler (Lio/github/kotlinsmtp/server/SmtpSpooler;)V
+	public final fun useUserHandler (Lio/github/kotlinsmtp/protocol/handler/SmtpUserHandler;)V
+}
+
+public abstract interface class io/github/kotlinsmtp/server/SmtpSpooler {
+	public abstract fun triggerOnce ()V
+	public abstract fun tryTriggerOnce ()Lio/github/kotlinsmtp/server/SpoolTriggerResult;
+}
+
+public final class io/github/kotlinsmtp/server/SmtpSpooler$DefaultImpls {
+	public static fun tryTriggerOnce (Lio/github/kotlinsmtp/server/SmtpSpooler;)Lio/github/kotlinsmtp/server/SpoolTriggerResult;
+}
+
+public final class io/github/kotlinsmtp/server/SmtpTlsPolicy {
+	public fun <init> ()V
 	public final fun getCertChainPath ()Ljava/nio/file/Path;
 	public final fun getCipherSuites ()Ljava/util/List;
 	public final fun getHandshakeTimeoutMs ()I
@@ -172,8 +233,13 @@ public final class io/github/kotlinsmtp/server/SmtpServer$TlsPolicy {
 	public final fun setPrivateKeyPath (Ljava/nio/file/Path;)V
 }
 
-public abstract interface class io/github/kotlinsmtp/server/SmtpSpooler {
-	public abstract fun triggerOnce ()V
+public final class io/github/kotlinsmtp/server/SpoolTriggerResult : java/lang/Enum {
+	public static final field ACCEPTED Lio/github/kotlinsmtp/server/SpoolTriggerResult;
+	public static final field INVALID_ARGUMENT Lio/github/kotlinsmtp/server/SpoolTriggerResult;
+	public static final field UNAVAILABLE Lio/github/kotlinsmtp/server/SpoolTriggerResult;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/kotlinsmtp/server/SpoolTriggerResult;
+	public static fun values ()[Lio/github/kotlinsmtp/server/SpoolTriggerResult;
 }
 
 public abstract interface class io/github/kotlinsmtp/spi/SmtpEventHook {

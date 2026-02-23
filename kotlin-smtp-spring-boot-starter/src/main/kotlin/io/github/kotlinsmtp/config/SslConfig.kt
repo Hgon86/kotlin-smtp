@@ -49,6 +49,18 @@ data class SslConfig(
     fun validate() {
         if (!enabled) return
 
+        val normalizedMinTls = minTlsVersion.trim()
+        require(normalizedMinTls in setOf("TLSv1.2", "TLSv1.3")) {
+            "smtp.ssl.minTlsVersion must be TLSv1.2 or TLSv1.3"
+        }
+        minTlsVersion = normalizedMinTls
+        require(handshakeTimeoutMs > 0) {
+            "smtp.ssl.handshakeTimeoutMs must be > 0"
+        }
+        require(cipherSuites.none { it.isBlank() }) {
+            "smtp.ssl.cipherSuites must not contain blank values"
+        }
+
         require(!certChainFile.isNullOrBlank()) {
             "smtp.ssl.certChainFile must be configured when smtp.ssl.enabled=true"
         }

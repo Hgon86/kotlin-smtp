@@ -8,7 +8,6 @@ import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.server.SmtpStreamingHandlerRunner
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.kotlinsmtp.utils.Values
-import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
 import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import kotlinx.coroutines.Dispatchers
@@ -161,22 +160,12 @@ internal class BdatCommand : SmtpCommand(
             val message = "Error receiving BDAT"
             session.sendResponse(code, message)
 
-            if (session.server.hasEventHooks()) {
-                val context = session.buildSessionContext()
-                val envelope = session.buildMessageEnvelopeSnapshot()
-                session.server.notifyHooks { hook ->
-                    hook.onMessageRejected(
-                        SmtpMessageRejectedEvent(
-                            context = context,
-                            envelope = envelope,
-                            transferMode = SmtpMessageTransferMode.BDAT,
-                            stage = SmtpMessageStage.RECEIVING,
-                            responseCode = code,
-                            responseMessage = message,
-                        )
-                    )
-                }
-            }
+            session.notifyMessageRejected(
+                transferMode = SmtpMessageTransferMode.BDAT,
+                stage = SmtpMessageStage.RECEIVING,
+                responseCode = code,
+                responseMessage = message,
+            )
 
             session.shouldQuit = true
             session.close()

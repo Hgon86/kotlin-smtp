@@ -119,7 +119,7 @@ internal class AuthCommand : SmtpCommand(
         }
 
         // Check shared Rate Limiter (prevent reconnection bypass)
-        val clientIp = extractClientIp(session.sessionData.peerAddress)
+        val clientIp = session.clientIpAddress()
         session.server.authRateLimiter?.let { limiter ->
             val sharedLockSec = limiter.checkLock(clientIp, username)
             if (sharedLockSec != null) {
@@ -157,20 +157,4 @@ internal class AuthCommand : SmtpCommand(
         String(decoded, Charsets.UTF_8)
     }.getOrNull()
 
-    /**
-     * Extract client IP from peerAddress
-     * Format: "hostname [1.2.3.4]:port" or "1.2.3.4:port"
-     */
-    private fun extractClientIp(peerAddress: String?): String? {
-        if (peerAddress == null) return null
-
-        // Extract IP inside brackets
-        val bracketMatch = Regex("\\[([^\\]]+)\\]").find(peerAddress)
-        if (bracketMatch != null) {
-            return bracketMatch.groupValues[1]
-        }
-
-        // Extract IP before colon
-        return peerAddress.substringBefore(':').trim()
-    }
 }

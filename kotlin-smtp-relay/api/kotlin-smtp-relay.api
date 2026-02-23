@@ -14,16 +14,41 @@ public abstract interface class io/github/kotlinsmtp/relay/api/MailRelay {
 	public abstract fun relay (Lio/github/kotlinsmtp/relay/api/RelayRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class io/github/kotlinsmtp/relay/api/OutboundRelayPolicy {
+	public fun <init> ()V
+	public fun <init> (ZZLjava/lang/String;)V
+	public synthetic fun <init> (ZZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (ZZLjava/lang/String;)Lio/github/kotlinsmtp/relay/api/OutboundRelayPolicy;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/relay/api/OutboundRelayPolicy;ZZLjava/lang/String;ILjava/lang/Object;)Lio/github/kotlinsmtp/relay/api/OutboundRelayPolicy;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRequireTls ()Z
+	public final fun getRequireValidCertificate ()Z
+	public final fun getSource ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class io/github/kotlinsmtp/relay/api/OutboundRelayPolicyResolver {
+	public abstract fun resolve (Ljava/lang/String;)Lio/github/kotlinsmtp/relay/api/OutboundRelayPolicy;
+}
+
 public final class io/github/kotlinsmtp/relay/api/RelayAccessContext {
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;Z)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Z
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Z)Lio/github/kotlinsmtp/relay/api/RelayAccessContext;
-	public static synthetic fun copy$default (Lio/github/kotlinsmtp/relay/api/RelayAccessContext;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lio/github/kotlinsmtp/relay/api/RelayAccessContext;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;)Lio/github/kotlinsmtp/relay/api/RelayAccessContext;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/relay/api/RelayAccessContext;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;ILjava/lang/Object;)Lio/github/kotlinsmtp/relay/api/RelayAccessContext;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAuthenticated ()Z
 	public final fun getEnvelopeSender ()Ljava/lang/String;
+	public final fun getPeerAddress ()Ljava/lang/String;
 	public final fun getRecipient ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -80,8 +105,10 @@ public abstract class io/github/kotlinsmtp/relay/api/RelayException : java/lang/
 }
 
 public final class io/github/kotlinsmtp/relay/api/RelayPermanentException : io/github/kotlinsmtp/relay/api/RelayException {
-	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getEnhancedStatusCode ()Ljava/lang/String;
+	public fun getRemoteReply ()Ljava/lang/String;
 	public fun isTransient ()Z
 }
 
@@ -121,9 +148,53 @@ public final class io/github/kotlinsmtp/relay/api/RelayResult {
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract interface class io/github/kotlinsmtp/relay/api/RelayRoute {
+}
+
+public final class io/github/kotlinsmtp/relay/api/RelayRoute$DirectMx : io/github/kotlinsmtp/relay/api/RelayRoute {
+	public static final field INSTANCE Lio/github/kotlinsmtp/relay/api/RelayRoute$DirectMx;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/kotlinsmtp/relay/api/RelayRoute$SmartHost : io/github/kotlinsmtp/relay/api/RelayRoute {
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/Boolean;
+	public final fun component6 ()Ljava/lang/Boolean;
+	public final fun component7 ()Ljava/lang/Boolean;
+	public final fun component8 ()Ljava/lang/Boolean;
+	public final fun component9 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/util/List;)Lio/github/kotlinsmtp/relay/api/RelayRoute$SmartHost;
+	public static synthetic fun copy$default (Lio/github/kotlinsmtp/relay/api/RelayRoute$SmartHost;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/util/List;ILjava/lang/Object;)Lio/github/kotlinsmtp/relay/api/RelayRoute$SmartHost;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCheckServerIdentity ()Ljava/lang/Boolean;
+	public final fun getHost ()Ljava/lang/String;
+	public final fun getPassword ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun getStartTlsEnabled ()Ljava/lang/Boolean;
+	public final fun getStartTlsRequired ()Ljava/lang/Boolean;
+	public final fun getTrustAll ()Ljava/lang/Boolean;
+	public final fun getTrustHosts ()Ljava/util/List;
+	public final fun getUsername ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class io/github/kotlinsmtp/relay/api/RelayRouteResolver {
+	public abstract fun resolve (Lio/github/kotlinsmtp/relay/api/RelayRequest;)Lio/github/kotlinsmtp/relay/api/RelayRoute;
+}
+
 public final class io/github/kotlinsmtp/relay/api/RelayTransientException : io/github/kotlinsmtp/relay/api/RelayException {
-	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getEnhancedStatusCode ()Ljava/lang/String;
+	public fun getRemoteReply ()Ljava/lang/String;
 	public fun isTransient ()Z
 }
 

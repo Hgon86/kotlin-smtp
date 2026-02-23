@@ -4,6 +4,7 @@ import jakarta.annotation.PreDestroy
 import io.github.kotlinsmtp.model.RcptDsn
 import io.github.kotlinsmtp.metrics.SpoolMetrics
 import io.github.kotlinsmtp.relay.api.DsnSender
+import io.github.kotlinsmtp.relay.api.RelayException
 import io.github.kotlinsmtp.server.SpoolTriggerResult
 import io.github.kotlinsmtp.server.SmtpDomainSpooler
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -12,6 +13,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -19,11 +22,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import java.nio.file.Path
+import java.net.ConnectException
 import java.time.Duration
 import java.time.Instant
 import java.net.IDN
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.atomic.AtomicLong
+import javax.net.ssl.SSLException
 import kotlin.math.min
 import kotlin.random.Random
 
@@ -51,23 +61,27 @@ private data class DeliveryAttemptResult(
  * @param spoolDir spool directory path
  * @param maxRetries maximum retry count
  * @param retryDelaySeconds initial retry delay in seconds
+ * @param workerConcurrency maximum concurrent message workers per spool run (run cycles stay serialized)
  * @param dispatcher coroutine dispatcher
  * @param deliveryService mail delivery service
  * @param dsnSenderProvider DSN sender provider
  * @param spoolMetrics spool metrics collector
  * @param metadataStore spool metadata store implementation
  * @param lockManager spool lock manager implementation
+ * @param triggerCooldownMillis minimum interval between external trigger acceptances
  */
 class MailSpooler(
     private val spoolDir: Path,
     private val maxRetries: Int = 5,
     private val retryDelaySeconds: Long = 60,
+    private val workerConcurrency: Int = 1,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val deliveryService: MailDeliveryService,
     private val dsnSenderProvider: () -> DsnSender?,
     private val spoolMetrics: SpoolMetrics = SpoolMetrics.NOOP,
     injectedMetadataStore: SpoolMetadataStore? = null,
     injectedLockManager: SpoolLockManager? = null,
+    private val triggerCooldownMillis: Long = 1000L,
 ) : SmtpDomainSpooler {
     private val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + dispatcher)
     private var worker: Job? = null
@@ -78,8 +92,12 @@ class MailSpooler(
     private val metadataStore = injectedMetadataStore ?: FileSpoolMetadataStore(spoolDir)
     private val triggerDispatcher = SpoolTriggerDispatcher(scope) { domain -> runOnce(domain) }
     private val lockRefreshIntervalMillis = 30_000L
+    private val lastAcceptedTriggerAtMillis = AtomicLong(0L)
 
     init {
+        require(workerConcurrency > 0) {
+            "workerConcurrency must be > 0"
+        }
         metadataStore.initializeDirectory()
         spoolMetrics.initializePending(metadataStore.scanPendingMessageCount())
         start()
@@ -90,11 +108,14 @@ class MailSpooler(
      *
      * - Feature-first: useful for ops/admin scenarios (for example, ETRN).
      * - Concurrency control: serialize in-process runs with a mutex.
-     * - TODO: add rate-limiting to prevent admin feature abuse.
+     * - Applies minimal cooldown to prevent excessive admin-trigger abuse.
      *
      * @return trigger acceptance result
      */
     override fun tryTriggerOnce(): SpoolTriggerResult {
+        if (!acquireTriggerQuota()) {
+            return SpoolTriggerResult.UNAVAILABLE
+        }
         triggerDispatcher.submit(targetDomain = null)
         return SpoolTriggerResult.ACCEPTED
     }
@@ -114,6 +135,11 @@ class MailSpooler(
         if (normalized == null) {
             log.warn { "Spooler triggerOnce(domain) skipped: invalid domain=$domain" }
             return SpoolTriggerResult.INVALID_ARGUMENT
+        }
+
+        if (!acquireTriggerQuota()) {
+            log.warn { "Spooler triggerOnce(domain) throttled: domain=$normalized" }
+            return SpoolTriggerResult.UNAVAILABLE
         }
 
         triggerDispatcher.submit(targetDomain = normalized)
@@ -236,14 +262,37 @@ class MailSpooler(
      * @param targetDomain specific domain to process; null for full queue
      */
     private suspend fun processQueueOnce(targetDomain: String? = null) {
-        val files = metadataStore.listMessages()
-        for (file in files) {
-            if (!lockManager.tryLock(file)) continue
-            try {
-                processSingleMessage(file, targetDomain)
-            } finally {
-                lockManager.unlock(file)
+        val now = Instant.now()
+        val files = metadataStore.listDueMessages(now)
+        if (files.isEmpty()) return
+
+        val parallelism = workerConcurrency.coerceAtLeast(1)
+        if (parallelism == 1 || files.size == 1) {
+            for (file in files) {
+                if (!lockManager.tryLock(file)) continue
+                try {
+                    processSingleMessage(file, targetDomain)
+                } finally {
+                    lockManager.unlock(file)
+                }
             }
+            return
+        }
+
+        val semaphore = Semaphore(parallelism)
+        coroutineScope {
+            files.map { file ->
+                async {
+                    semaphore.withPermit {
+                        if (!lockManager.tryLock(file)) return@withPermit
+                        try {
+                            processSingleMessage(file, targetDomain)
+                        } finally {
+                            lockManager.unlock(file)
+                        }
+                    }
+                }
+            }.awaitAll()
         }
     }
 
@@ -257,6 +306,7 @@ class MailSpooler(
      */
     private suspend fun processSingleMessage(file: Path, targetDomain: String?) {
         val meta = metadataStore.readMeta(file) ?: return
+        // Keep this guard for race safety (clock skew/stale queue state/manual writes).
         if (meta.nextAttemptAt.isAfter(Instant.now())) return
 
         val deliveryRawPath = runCatching { metadataStore.prepareRawMessageForDelivery(file) }
@@ -353,6 +403,7 @@ class MailSpooler(
     private fun completeMessage(spoolReferencePath: Path, meta: SpoolMetadata) {
         metadataStore.removeMessage(spoolReferencePath)
         spoolMetrics.onCompleted()
+        spoolMetrics.onFinalized(outcome = "completed", queueAgeSeconds = queueAgeSeconds(meta))
         log.info { "Spool completed and removed: $spoolReferencePath (id=${meta.id})" }
     }
 
@@ -394,6 +445,11 @@ class MailSpooler(
                 val reason = t.message ?: t::class.simpleName.orEmpty()
                 val permanent = failurePolicy.isPermanentFailure(t)
                 if (permanent) permanentFailures[rcpt] = reason else transientFailures[rcpt] = reason
+                spoolMetrics.onRecipientFailure(
+                    domain = normalizeDomain(rcpt.substringAfterLast('@', "")) ?: "unknown",
+                    permanent = permanent,
+                    reasonClass = classifyFailureReason(t, reason),
+                )
                 log.warn(t) { "Spool delivery failed for rcpt=$rcpt (id=${meta.id}) permanent=$permanent" }
             }
         }
@@ -500,6 +556,7 @@ class MailSpooler(
             log.warn { "Spool drop after max retries: $spoolReferencePath (id=${meta.id})" }
             metadataStore.removeMessage(spoolReferencePath)
             spoolMetrics.onDropped()
+            spoolMetrics.onFinalized(outcome = "dropped", queueAgeSeconds = queueAgeSeconds(meta))
             val dsnTargets = failurePolicy.selectFailureDsnTargets(transientFailures, meta.rcptDsn)
             val details = dsnTargets.entries.map { it.key to it.value }
             if (details.isNotEmpty()) {
@@ -519,10 +576,41 @@ class MailSpooler(
         val backoff = nextBackoffSeconds(meta.attempt)
         meta.nextAttemptAt = Instant.now().plusSeconds(backoff)
         metadataStore.writeMeta(meta)
-        spoolMetrics.onRetryScheduled()
+        spoolMetrics.onRetryScheduled(backoff)
         log.info {
             "Spool retry scheduled: id=${meta.id} attempt=${meta.attempt} remainingRcpt=${meta.recipients.size} next=${meta.nextAttemptAt} (backoff=${backoff}s)"
         }
+    }
+
+    /**
+     * Classifies delivery failure reason into coarse operational categories.
+     */
+    private fun classifyFailureReason(throwable: Throwable, reason: String): String {
+        when (throwable) {
+            is UnknownHostException -> return "dns"
+            is SocketTimeoutException -> return "timeout"
+            is ConnectException -> return "network"
+            is SSLException -> return "tls"
+            is RelayException -> if (!throwable.isTransient) return "policy"
+        }
+
+        val value = reason.lowercase()
+        return when {
+            "dns" in value || "mx" in value || "host" in value -> "dns"
+            "tls" in value || "ssl" in value || "certificate" in value -> "tls"
+            "timeout" in value || "timed out" in value -> "timeout"
+            "relay" in value || "policy" in value || "denied" in value || "auth" in value -> "policy"
+            "connect" in value || "socket" in value || "network" in value -> "network"
+            else -> "other"
+        }
+    }
+
+    /**
+     * Computes queue residence time in seconds.
+     */
+    private fun queueAgeSeconds(meta: SpoolMetadata): Long {
+        val seconds = Duration.between(meta.queuedAt, Instant.now()).seconds
+        return seconds.coerceAtLeast(0)
     }
 
     /**
@@ -536,6 +624,17 @@ class MailSpooler(
         if (trimmed.isEmpty()) return null
         IDN.toASCII(trimmed, IDN.ALLOW_UNASSIGNED).lowercase()
     }.getOrNull()
+
+    /**
+     * Applies a simple wall-clock cooldown for external spool triggers.
+     */
+    private fun acquireTriggerQuota(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        while (true) {
+            val last = lastAcceptedTriggerAtMillis.get()
+            if (nowMillis - last < triggerCooldownMillis) return false
+            if (lastAcceptedTriggerAtMillis.compareAndSet(last, nowMillis)) return true
+        }
+    }
 
     /**
      * Returns only recipients in target domain when domain is specified.

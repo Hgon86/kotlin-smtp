@@ -4,6 +4,9 @@ import io.github.kotlinsmtp.model.SessionData
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommands
 import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
 import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
+import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
+import io.github.kotlinsmtp.spi.SmtpMessageStage
+import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import io.github.kotlinsmtp.spi.SmtpSessionContext
 import io.github.kotlinsmtp.spi.SmtpSessionEndedEvent
 import io.github.kotlinsmtp.spi.SmtpSessionEndReason
@@ -199,6 +202,32 @@ internal class SmtpSession(
         dsnRet = sessionData.dsnRet,
         rcptDsn = sessionData.rcptDsnView.toMap(),
     )
+
+    /**
+     * Emit per-message rejection hook event with a single normalized path.
+     */
+    internal suspend fun notifyMessageRejected(
+        transferMode: SmtpMessageTransferMode,
+        stage: SmtpMessageStage,
+        responseCode: Int,
+        responseMessage: String,
+    ) {
+        if (!server.hasEventHooks()) return
+        val context = buildSessionContext()
+        val envelope = buildMessageEnvelopeSnapshot()
+        server.notifyHooks { hook ->
+            hook.onMessageRejected(
+                SmtpMessageRejectedEvent(
+                    context = context,
+                    envelope = envelope,
+                    transferMode = transferMode,
+                    stage = stage,
+                    responseCode = responseCode,
+                    responseMessage = responseMessage,
+                )
+            )
+        }
+    }
 
     internal suspend fun readLine(): String? {
         return frameProcessor.readLine()

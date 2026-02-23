@@ -34,6 +34,10 @@ dependencies {
 
     implementation("org.slf4j:slf4j-api")
     implementation("io.github.oshai:kotlin-logging-jvm:7.0.4")
+
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 kotlin {

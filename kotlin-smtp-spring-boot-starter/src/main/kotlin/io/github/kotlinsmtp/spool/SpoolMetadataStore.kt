@@ -38,6 +38,17 @@ interface SpoolMetadataStore {
     fun listMessages(): List<Path>
 
     /**
+     * Lists spool messages due for delivery at the given instant.
+     *
+     * Default behavior falls back to full scan for compatibility.
+     * Storage implementations can override with indexed lookup.
+     *
+     * @param now delivery due-time cutoff
+     * @return due message path list
+     */
+    fun listDueMessages(now: Instant): List<Path> = listMessages()
+
+    /**
      * Creates a new spool message.
      *
      * @param rawMessagePath source RFC822 file path

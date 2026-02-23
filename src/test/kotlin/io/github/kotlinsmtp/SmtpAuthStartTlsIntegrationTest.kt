@@ -290,6 +290,94 @@ class SmtpAuthStartTlsIntegrationTest {
     }
 
     @Test
+    fun `AUTH LOGIN success returns 250`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            val userB64 = Base64.getEncoder().encodeToString("user".toByteArray(Charsets.UTF_8))
+            val passB64 = Base64.getEncoder().encodeToString("password".toByteArray(Charsets.UTF_8))
+
+            writer.write("AUTH LOGIN\r\n")
+            writer.flush()
+            val userPrompt = reader.readLine()
+            assertTrue(userPrompt.startsWith("334"), "Expected username challenge, got: $userPrompt")
+
+            writer.write("$userB64\r\n")
+            writer.flush()
+            val passPrompt = reader.readLine()
+            assertTrue(passPrompt.startsWith("334"), "Expected password challenge, got: $passPrompt")
+
+            writer.write("$passB64\r\n")
+            writer.flush()
+            val authResp = reader.readLine()
+            assertTrue(authResp.startsWith("250"), "Expected 250 Authentication successful, got: $authResp")
+
+            tlsSocket.close()
+        }
+    }
+
+    @Test
+    fun `AUTH LOGIN invalid username returns 501`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("AUTH LOGIN\r\n")
+            writer.flush()
+            val userPrompt = reader.readLine()
+            assertTrue(userPrompt.startsWith("334"), "Expected username challenge, got: $userPrompt")
+
+            writer.write("***NOT_BASE64***\r\n")
+            writer.flush()
+            val authResp = reader.readLine()
+            assertTrue(authResp.startsWith("501"), "Expected 501 invalid username response, got: $authResp")
+
+            tlsSocket.close()
+        }
+    }
+
+    @Test
     fun `ETRN with empty argument returns syntax error`() {
         Socket("localhost", testPort).use { socket ->
             socket.soTimeout = 5_000

@@ -19,5 +19,6 @@ data class SpoolMetadata(
     val dsnEnvid: String? = null,
     var rcptDsn: MutableMap<String, RcptDsn> = mutableMapOf(),
     var attempt: Int = 0,
+    var queuedAt: Instant = Instant.now(),
     var nextAttemptAt: Instant = Instant.now(),
 )

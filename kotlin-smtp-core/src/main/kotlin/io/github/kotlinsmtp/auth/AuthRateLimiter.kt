@@ -1,7 +1,6 @@
 package io.github.kotlinsmtp.auth
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
@@ -18,7 +17,7 @@ internal class AuthRateLimiter(
     private val maxFailuresPerWindow: Int = 5,
     private val windowSeconds: Long = 300, // 5 minutes
     private val lockoutDurationSeconds: Long = 600, // 10 minutes
-) {
+) : SmtpAuthRateLimiter {
     private data class FailureRecord(
         val failures: MutableList<Long> = mutableListOf(),
         var lockedUntil: Long? = null,
@@ -26,37 +25,32 @@ internal class AuthRateLimiter(
 
     private val records = ConcurrentHashMap<String, FailureRecord>()
 
-    private fun makeKey(clientIp: String?, username: String): String {
-        // Treat as "unknown" if IP is not present
-        val ip = clientIp ?: "unknown"
-        return "$ip:$username"
-    }
+    private fun makeKey(clientIp: String?, username: String): String = "${clientIp ?: "unknown"}:$username"
 
     /**
      * Check lock status before authentication attempt
      * @return Remaining seconds if locked, null otherwise
      */
-    fun checkLock(clientIp: String?, username: String): Long? {
+    override fun checkLock(clientIp: String?, username: String): Long? {
         val key = makeKey(clientIp, username)
         val record = records[key] ?: return null
-        val lockedUntil = record.lockedUntil
-        
-        if (lockedUntil != null) {
+        synchronized(record) {
+            val lockedUntil = record.lockedUntil ?: return null
             val now = Instant.now().epochSecond
             if (now < lockedUntil) {
                 return lockedUntil - now
             }
             // Lock expired
             record.lockedUntil = null
+            return null
         }
-        return null
     }
 
     /**
      * Record authentication failure
      * @return true if locked
      */
-    fun recordFailure(clientIp: String?, username: String): Boolean {
+    override fun recordFailure(clientIp: String?, username: String): Boolean {
         val key = makeKey(clientIp, username)
         val now = Instant.now().epochSecond
         val windowStart = now - windowSeconds
@@ -74,7 +68,9 @@ internal class AuthRateLimiter(
             // Check lock condition
             if (record.failures.size >= maxFailuresPerWindow) {
                 record.lockedUntil = now + lockoutDurationSeconds
-                log.warn { "Auth rate limit: Locked $username from $clientIp for ${lockoutDurationSeconds}s after ${record.failures.size} failures" }
+                log.warn {
+                    "Auth rate limit: Locked user='${maskIdentity(username)}' ip='${maskIp(clientIp)}' for ${lockoutDurationSeconds}s after ${record.failures.size} failures"
+                }
                 return true
             }
         }
@@ -85,16 +81,16 @@ internal class AuthRateLimiter(
     /**
      * Reset records on authentication success
      */
-    fun recordSuccess(clientIp: String?, username: String) {
+    override fun recordSuccess(clientIp: String?, username: String) {
         val key = makeKey(clientIp, username)
         records.remove(key)
-        log.debug { "Auth rate limit: Cleared failures for $username from $clientIp" }
+        log.debug { "Auth rate limit: Cleared failures for user='${maskIdentity(username)}' ip='${maskIp(clientIp)}'" }
     }
 
     /**
      * Periodic cleanup (prevent memory leaks)
      */
-    fun cleanup() {
+    override fun cleanup() {
         val now = Instant.now().epochSecond
         records.entries.removeIf { (_, record) ->
             synchronized(record) {
@@ -111,5 +107,27 @@ internal class AuthRateLimiter(
                 shouldRemove
             }
         }
+    }
+
+    /**
+     * Masks username for safer authentication logging.
+     */
+    private fun maskIdentity(value: String): String {
+        if (value.isBlank()) return "unknown"
+        if (value.length <= 2) return "**"
+        return "${value.take(2)}***"
+    }
+
+    /**
+     * Masks client IP for safer authentication logging.
+     */
+    private fun maskIp(value: String?): String {
+        val ip = value?.trim().orEmpty()
+        if (ip.isEmpty()) return "unknown"
+        val v4 = ip.split('.')
+        if (v4.size == 4) return "${v4[0]}.${v4[1]}.*.*"
+        val v6 = ip.split(':').filter { it.isNotEmpty() }
+        if (v6.size >= 2) return "${v6[0]}:${v6[1]}:*"
+        return "masked"
     }
 }

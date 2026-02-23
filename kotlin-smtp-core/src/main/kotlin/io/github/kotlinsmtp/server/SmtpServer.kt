@@ -1,7 +1,7 @@
 package io.github.kotlinsmtp.server
 
 import io.github.kotlinsmtp.auth.AuthService
-import io.github.kotlinsmtp.auth.AuthRateLimiter
+import io.github.kotlinsmtp.auth.SmtpAuthRateLimiter
 import io.github.kotlinsmtp.protocol.handler.SmtpChannelHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
@@ -41,7 +41,7 @@ public class SmtpServer internal constructor(
     internal val mailingListHandler: SmtpMailingListHandler? = null,
     internal val spooler: SmtpSpooler? = null,
     internal val eventHooks: List<SmtpEventHook> = emptyList(),
-    internal val authRateLimiter: AuthRateLimiter? = null,
+    internal val authRateLimiter: SmtpAuthRateLimiter? = null,
     internal val enableVrfy: Boolean = false,
     internal val enableEtrn: Boolean = false,
     internal val enableExpn: Boolean = false,
@@ -60,6 +60,7 @@ public class SmtpServer internal constructor(
     private val tlsCipherSuites: List<String> = emptyList(),
     maxConnectionsPerIp: Int = 10,
     maxMessagesPerIpPerHour: Int = 100,
+    injectedRateLimiter: SmtpRateLimiter? = null,
     internal val idleTimeoutSeconds: Int = 300, // 5 minutes (no timeout if 0)
 ) {
     internal var serverScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -70,7 +71,7 @@ public class SmtpServer internal constructor(
     private var maintenanceScheduler: SmtpServerMaintenanceScheduler? = null
 
     // Rate limiter (spam and DoS prevention)
-    internal val rateLimiter = RateLimiter(maxConnectionsPerIp, maxMessagesPerIpPerHour)
+    internal val rateLimiter: SmtpRateLimiter = injectedRateLimiter ?: RateLimiter(maxConnectionsPerIp, maxMessagesPerIpPerHour)
 
     // Active session tracking (for graceful shutdown)
     internal val sessionTracker = ActiveSessionTracker()

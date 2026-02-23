@@ -19,6 +19,7 @@ internal object SpoolMetadataJsonCodec {
         val json = JSONObject()
             .put("id", meta.id)
             .put("attempt", meta.attempt)
+            .put("queuedAt", meta.queuedAt.toEpochMilli())
             .put("next", meta.nextAttemptAt.toEpochMilli())
             .put("sender", meta.sender ?: "")
             .put("recipients", meta.recipients)
@@ -52,6 +53,7 @@ internal object SpoolMetadataJsonCodec {
         val json = JSONObject(rawJson)
         val id = json.getString("id")
         val attempt = json.optInt("attempt", 0)
+        val queuedAt = json.optLong("queuedAt", Instant.now().toEpochMilli())
         val next = json.optLong("next", Instant.now().toEpochMilli())
         val sender = json.optString("sender").ifBlank { null }
         val recipientsJson = json.optJSONArray("recipients")
@@ -89,6 +91,7 @@ internal object SpoolMetadataJsonCodec {
             dsnEnvid = dsnEnvid,
             rcptDsn = rcptDsn.toMutableMap(),
             attempt = attempt,
+            queuedAt = Instant.ofEpochMilli(queuedAt),
             nextAttemptAt = Instant.ofEpochMilli(next),
         )
     }

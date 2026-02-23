@@ -2,7 +2,6 @@ package io.github.kotlinsmtp.server
 
 import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.spi.SmtpMessageAcceptedEvent
-import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
 import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import io.github.kotlinsmtp.utils.SmtpStatusCode
@@ -67,20 +66,12 @@ internal object SmtpStreamingHandlerRunner {
 
             session.sendResponse(code, message)
             if (shouldNotify) {
-                val context = session.buildSessionContext()
-                val envelope = session.buildMessageEnvelopeSnapshot()
-                session.server.notifyHooks { hook ->
-                    hook.onMessageRejected(
-                        SmtpMessageRejectedEvent(
-                            context = context,
-                            envelope = envelope,
-                            transferMode = transferMode,
-                            stage = SmtpMessageStage.PROCESSING,
-                            responseCode = code,
-                            responseMessage = message,
-                        )
-                    )
-                }
+                session.notifyMessageRejected(
+                    transferMode = transferMode,
+                    stage = SmtpMessageStage.PROCESSING,
+                    responseCode = code,
+                    responseMessage = message,
+                )
             }
             session.resetTransaction(preserveGreeting = true)
             return false

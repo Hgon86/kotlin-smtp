@@ -232,6 +232,85 @@ class SmtpIntegrationTest {
         }
     }
 
+    @Test
+    fun `test MAIL FROM rejects invalid DSN RET value`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // Greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("MAIL FROM:<sender@test.com> RET=INVALID\r\n")
+            writer.flush()
+            val response = reader.readLine()
+            assertTrue(response.startsWith("555"), "Expected 555 for invalid RET value, got: $response")
+        }
+    }
+
+    @Test
+    fun `test RCPT TO rejects invalid DSN NOTIFY combination`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // Greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("MAIL FROM:<sender@test.com>\r\n")
+            writer.flush()
+            val mailResp = reader.readLine()
+            assertTrue(mailResp.startsWith("250"), "Expected 250 after MAIL FROM, got: $mailResp")
+
+            writer.write("RCPT TO:<recipient@test.com> NOTIFY=NEVER,SUCCESS\r\n")
+            writer.flush()
+            val rcptResp = reader.readLine()
+            assertTrue(rcptResp.startsWith("501"), "Expected 501 for invalid NOTIFY combination, got: $rcptResp")
+        }
+    }
+
+    @Test
+    fun `test DATA rejects body exceeding declared SIZE`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // Greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("MAIL FROM:<sender@test.com> SIZE=10\r\n")
+            writer.flush()
+            val mailResp = reader.readLine()
+            assertTrue(mailResp.startsWith("250"), "Expected 250 after MAIL FROM with SIZE, got: $mailResp")
+
+            writer.write("RCPT TO:<recipient@test.com>\r\n")
+            writer.flush()
+            val rcptResp = reader.readLine()
+            assertTrue(rcptResp.startsWith("250"), "Expected 250 after RCPT TO, got: $rcptResp")
+
+            writer.write("DATA\r\n")
+            writer.flush()
+            val dataResp = reader.readLine()
+            assertTrue(dataResp.startsWith("354"), "Expected 354 after DATA, got: $dataResp")
+
+            writer.write("12345678901\r\n") // 11 bytes + CRLF, larger than declared SIZE=10
+            writer.write(".\r\n")
+            writer.flush()
+
+            val finalResp = reader.readLine()
+            assertTrue(finalResp.startsWith("552"), "Expected 552 for declared SIZE overflow, got: $finalResp")
+        }
+    }
+
     /**
      * DATA framing must stay intact even when body arrives in a pipeline.
      *

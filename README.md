@@ -2,6 +2,21 @@
 
 A Netty-based Kotlin SMTP server library. The `core` module provides a Spring-free SMTP engine, while the `starter` modules offer Spring Boot auto-configuration for immediate use.
 
+## Product Positioning
+
+Kotlin SMTP is a **server engine framework**, not a monolithic complete mail product.
+
+- What it provides out of the box:
+  - SMTP receive path (protocol/session/TLS/auth)
+  - Spool/retry/relay boundary
+  - Extension SPI for policy, storage, relay, and hooks
+- What you assemble on top for a complete server:
+  - Anti-spam/anti-malware/policy engines
+  - User mailbox access protocols (IMAP/POP3/JMAP)
+  - Admin control plane (queue management/API/UI/ops automation)
+
+See `docs/COMPLETE_SERVER_BLUEPRINT.md` for a James-style assembly path and staged rollout guidance.
+
 ## Module Structure
 
 ```text
@@ -23,7 +38,7 @@ This modular structure is intentional:
 ## Key Features
 
 - RFC 5321 core commands: `EHLO/HELO`, `MAIL`, `RCPT`, `DATA`, `RSET`, `QUIT`
-- `BDAT` (Chunking), `STARTTLS`, `AUTH PLAIN`
+- `BDAT` (Chunking), `STARTTLS`, `AUTH PLAIN/LOGIN`
 - SMTPUTF8/IDN boundary handling
 - PROXY protocol (v1), rate limiting
 - ETRN/VRFY/EXPN (feature flags)
@@ -60,6 +75,7 @@ smtp:
     dir: ./data/spool
     maxRetries: 5
     retryDelaySeconds: 60
+    workerConcurrency: 1
   sentArchive:
     mode: TRUSTED_SUBMISSION # TRUSTED_SUBMISSION | AUTHENTICATED_ONLY | DISABLED
 ```
@@ -96,6 +112,26 @@ Sent mailbox archiving is controlled via `smtp.sentArchive.mode`:
 
 To restrict unauthenticated relay submissions by IP, use `smtp.relay.allowedClientCidrs`.
 For more complex rules (DB lookups, internal policy engines), implement a custom `RelayAccessPolicy` bean.
+
+To use distributed rate limiting across multiple instances (optional):
+
+```yaml
+smtp:
+  rateLimit:
+    backend: redis
+    redis:
+      keyPrefix: kotlin-smtp:conn-ratelimit
+      connectionCounterTtlSeconds: 900
+  auth:
+    rateLimitEnabled: true
+    rateLimitBackend: redis
+    rateLimitRedis:
+      keyPrefix: kotlin-smtp:auth-ratelimit
+```
+
+- `rateLimit.backend=redis` enables distributed connection/message limits.
+- `auth.rateLimitBackend=redis` enables distributed AUTH failure lockouts.
+- Both modes require a `StringRedisTemplate` bean.
 
 To enable outbound domain policy integration (optional):
 
@@ -210,6 +246,7 @@ Override workload for profile test (optional):
 - `docs/LIFECYCLE.md`: Runtime lifecycle and hook timing
 - `docs/SECURITY_RELAY.md`: Relay security hardening guide
 - `docs/PERFORMANCE.md`: Performance methodology and reporting template
+- `docs/COMPLETE_SERVER_BLUEPRINT.md`: Complete server assembly roadmap and James-style migration path
 
 ## License
 

@@ -5,6 +5,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.data.redis.core.RedisOperations
 import org.springframework.data.redis.core.SessionCallback
 import org.springframework.data.redis.core.StringRedisTemplate
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -63,6 +65,19 @@ internal class RedisSpoolMetadataStore(
     }
 
     /**
+     * Lists only due messages using Redis ZSET score (`nextAttemptAt` epoch millis).
+     */
+    override fun listDueMessages(now: Instant): List<Path> = runCatching {
+        val members = redisTemplate.opsForZSet()
+            .rangeByScore(queueKey(), 0.0, now.toEpochMilli().toDouble())
+            ?: emptySet()
+        members.map { Path.of(it) }
+    }.getOrElse { e ->
+        redisMetadataLog.warn(e) { "Failed to list due spool messages from Redis" }
+        emptyList()
+    }
+
+    /**
      * Creates a new spool message.
      *
      * @param rawMessagePath source RFC822 file path
@@ -94,7 +109,7 @@ internal class RedisSpoolMetadataStore(
             "Redis spool raw message size exceeds limit: size=$rawSize maxRawBytes=$maxRawBytes"
         }
 
-        val rawBase64 = Base64.getEncoder().encodeToString(Files.readAllBytes(rawMessagePath))
+        val rawBase64 = encodeRawBase64(rawMessagePath)
         val metadata = SpoolMetadata(
             id = id,
             rawPath = target,
@@ -173,9 +188,7 @@ internal class RedisSpoolMetadataStore(
         val tempDir = spoolDir.resolve(".redis-delivery")
         Files.createDirectories(tempDir)
         val tempFile = tempDir.resolve("delivery_${Instant.now().toEpochMilli()}_${UUID.randomUUID().toString().take(8)}.eml")
-        val bytes = runCatching { Base64.getDecoder().decode(encoded) }
-            .getOrElse { e -> throw SpoolCorruptedMessageException("Invalid Redis spool raw payload: $rawPath", e) }
-        Files.write(tempFile, bytes)
+        decodeRawBase64ToFileStreaming(encoded, tempFile, rawPath)
         return tempFile
     }
 
@@ -212,5 +225,36 @@ internal class RedisSpoolMetadataStore(
                 return stringOps.exec()
             }
         })
+    }
+
+    /**
+     * Encodes raw message to Base64 via streaming to avoid full raw-byte buffering.
+     */
+    private fun encodeRawBase64(rawMessagePath: Path): String {
+        val out = ByteArrayOutputStream()
+        Base64.getEncoder().wrap(out).use { encodedOut ->
+            Files.newInputStream(rawMessagePath).use { input ->
+                input.copyTo(encodedOut)
+            }
+        }
+        return out.toString(Charsets.ISO_8859_1)
+    }
+
+    /**
+     * Decodes Base64 payload directly into a file stream to avoid full decoded-byte buffering.
+     */
+    private fun decodeRawBase64ToFileStreaming(encoded: String, targetFile: Path, rawPath: Path) {
+        runCatching {
+            ByteArrayInputStream(encoded.toByteArray(Charsets.ISO_8859_1)).use { input ->
+                Base64.getDecoder().wrap(input).use { decoded ->
+                    Files.newOutputStream(targetFile).use { output ->
+                        decoded.copyTo(output)
+                    }
+                }
+            }
+        }.getOrElse { e ->
+            runCatching { Files.deleteIfExists(targetFile) }
+            throw SpoolCorruptedMessageException("Invalid Redis spool raw payload: $rawPath", e)
+        }
     }
 }

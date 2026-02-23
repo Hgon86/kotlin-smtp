@@ -119,6 +119,7 @@ smtp:
       startTlsRequired: false # true may fail delivery to peers without STARTTLS
       checkServerIdentity: true
       trustAll: false # true is for local/dev testing only
+      failOnTrustAll: false # set true in production to block insecure trustAll usage
       trustHosts: [] # Example: ["mx.example.com"]
       connectTimeoutMs: 15000
       readTimeoutMs: 15000
@@ -133,6 +134,7 @@ smtp:
     dir: ${SMTP_SPOOL_DIR:./data/spool}
     maxRetries: 5
     retryDelaySeconds: 60
+    triggerCooldownMillis: 1000
     # Redis backend example
     # redis:
     #   keyPrefix: ${SMTP_SPOOL_REDIS_KEY_PREFIX:kotlin-smtp:spool}
@@ -149,6 +151,7 @@ smtp:
   auth:
     enabled: true
     required: false
+    allowPlaintextPasswords: true
 
     # AUTH brute-force protection (enabled by default)
     rateLimitEnabled: true
@@ -170,6 +173,9 @@ smtp:
     vrfyEnabled: false
     etrnEnabled: false
     expnEnabled: false
+
+  lifecycle:
+    gracefulShutdownTimeoutMs: 30000
 
 logging:
   level:

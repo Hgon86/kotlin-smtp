@@ -83,6 +83,38 @@ class KotlinSmtpRelayAutoConfigurationTest {
     }
 
     @Test
+    fun `enabled should fail when failOnTrustAll and global trustAll are both true`() {
+        contextRunner
+            .withPropertyValues(
+                "smtp.relay.enabled=true",
+                "smtp.relay.outboundTls.failOnTrustAll=true",
+                "smtp.relay.outboundTls.trustAll=true",
+            )
+            .run { context ->
+                assertThat(context).hasFailed()
+                assertThat(context.startupFailure)
+                    .hasMessageContaining("failOnTrustAll=true blocks smtp.relay.outboundTls.trustAll=true")
+            }
+    }
+
+    @Test
+    fun `enabled should fail when failOnTrustAll and route trustAll are both true`() {
+        contextRunner
+            .withPropertyValues(
+                "smtp.relay.enabled=true",
+                "smtp.relay.outboundTls.failOnTrustAll=true",
+                "smtp.relay.routes[0].domain=example.com",
+                "smtp.relay.routes[0].host=smtp.example.com",
+                "smtp.relay.routes[0].trustAll=true",
+            )
+            .run { context ->
+                assertThat(context).hasFailed()
+                assertThat(context.startupFailure)
+                    .hasMessageContaining("failOnTrustAll=true blocks smtp.relay.routes[].trustAll=true")
+            }
+    }
+
+    @Test
     fun `custom route resolver bean should override default`() {
         contextRunner
             .withPropertyValues(

@@ -115,35 +115,41 @@ Core modules expose these extension interfaces:
 ```kotlin
 interface MessageStore {
     suspend fun storeRfc822(
-        sender: String,
-        recipients: List<String>,
-        data: InputStream,
-        size: Long
-    ): StoredMessage
+        messageId: String,
+        receivedHeaderValue: String,
+        rawInput: InputStream,
+    ): Path
 }
 ```
 
 2. `AuthService`: authentication
 ```kotlin
 interface AuthService {
-    suspend fun authenticate(credentials: Credentials): AuthResult
+    val enabled: Boolean
+    val required: Boolean
+    fun verify(username: String, password: String): Boolean
 }
 ```
 
 3. `SmtpProtocolHandler`: transaction handling
 ```kotlin
-interface SmtpProtocolHandler {
-    suspend fun from(sender: String)
-    suspend fun to(recipient: String)
-    suspend fun data(inputStream: InputStream, size: Long)
+abstract class SmtpProtocolHandler {
+    lateinit var sessionData: SessionData
+
+    open suspend fun from(sender: String) {}
+    open suspend fun to(recipient: String) {}
+    open suspend fun data(inputStream: InputStream, size: Long) {}
+    open suspend fun done() {}
 }
 ```
 
 4. `SmtpEventHook`: event hooks
 ```kotlin
 interface SmtpEventHook {
-    fun onSessionStarted(event: SmtpSessionStartedEvent)
-    fun onMessageAccepted(event: SmtpMessageAcceptedEvent)
+    suspend fun onSessionStarted(event: SmtpSessionStartedEvent) = Unit
+    suspend fun onSessionEnded(event: SmtpSessionEndedEvent) = Unit
+    suspend fun onMessageAccepted(event: SmtpMessageAcceptedEvent) = Unit
+    suspend fun onMessageRejected(event: SmtpMessageRejectedEvent) = Unit
 }
 ```
 
