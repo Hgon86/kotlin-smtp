@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.github.hgon86"
-version = "0.1.3"
+version = "0.1.4"
 
 java {
     toolchain {
@@ -20,8 +20,8 @@ repositories {
 
 dependencies {
     // Use library published to Maven Central
-    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:0.1.3")
-    implementation("io.github.hgon86:kotlin-smtp-relay-spring-boot-starter:0.1.3")
+    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:0.1.4")
+    implementation("io.github.hgon86:kotlin-smtp-relay-spring-boot-starter:0.1.4")
     implementation("org.springframework.boot:spring-boot-starter")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 

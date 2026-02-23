@@ -6,8 +6,8 @@ This quickstart helps you run Kotlin SMTP safely with minimal setup.
 
 ```kotlin
 dependencies {
-    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:0.1.3")
-    implementation("io.github.hgon86:kotlin-smtp-relay-spring-boot-starter:0.1.3")
+    implementation("io.github.hgon86:kotlin-smtp-spring-boot-starter:0.1.4")
+    implementation("io.github.hgon86:kotlin-smtp-relay-spring-boot-starter:0.1.4")
 }
 ```
 
