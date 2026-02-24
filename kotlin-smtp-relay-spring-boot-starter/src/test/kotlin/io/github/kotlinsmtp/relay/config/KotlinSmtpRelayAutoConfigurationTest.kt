@@ -34,6 +34,21 @@ class KotlinSmtpRelayAutoConfigurationTest {
     }
 
     @Test
+    fun `enabled should fail with open relay config when failOnOpenRelay is true`() {
+        contextRunner
+            .withPropertyValues(
+                "smtp.relay.enabled=true",
+                "smtp.relay.requireAuthForRelay=false",
+                "smtp.relay.failOnOpenRelay=true",
+            )
+            .run { context ->
+                assertThat(context).hasFailed()
+                assertThat(context.startupFailure)
+                    .hasMessageContaining("smtp.relay.failOnOpenRelay=true blocks open relay configuration")
+            }
+    }
+
+    @Test
     fun `enabled should provide MailRelay and RelayAccessPolicy`() {
         contextRunner
             .withPropertyValues(

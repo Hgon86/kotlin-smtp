@@ -2,10 +2,10 @@ package io.github.kotlinsmtp.relay.config
 
 import org.springframework.boot.context.properties.ConfigurationProperties
 
-@ConfigurationProperties(prefix = "smtp.relay")
 /**
  * Outbound relay configuration bound from the `smtp.relay.*` namespace.
  */
+@ConfigurationProperties(prefix = "smtp.relay")
 class RelayProperties {
     /**
      * Enables outbound relay support.
@@ -17,6 +17,12 @@ class RelayProperties {
      * Default is secure to reduce open-relay risk.
      */
     var requireAuthForRelay: Boolean = true
+
+    /**
+     * If true, fail startup when relay is effectively open
+     * (`requireAuthForRelay=false` and no sender/CIDR allowlists).
+     */
+    var failOnOpenRelay: Boolean = false
 
     /**
      * Sender-domain allowlist for unauthenticated relay exceptions.

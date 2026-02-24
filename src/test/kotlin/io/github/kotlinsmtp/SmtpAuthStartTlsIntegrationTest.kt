@@ -1,6 +1,9 @@
 package io.github.kotlinsmtp
 
 import io.github.kotlinsmtp.auth.AuthService
+import io.github.kotlinsmtp.model.SmtpUser
+import io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler
+import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
 import io.github.kotlinsmtp.server.SmtpDomainSpooler
 import io.github.kotlinsmtp.server.SmtpServer
 import io.netty.handler.ssl.util.SelfSignedCertificate
@@ -45,6 +48,18 @@ class SmtpAuthStartTlsIntegrationTest {
             serviceName = "test-smtp"
             useAuthService(this@SmtpAuthStartTlsIntegrationTest.authService)
             useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useUserHandler(object : SmtpUserHandler() {
+                override fun verify(searchTerm: String): Collection<SmtpUser> {
+                    if (!searchTerm.equals("user", ignoreCase = true)) return emptyList()
+                    return listOf(SmtpUser(localPart = "user", domain = "test-smtp.local", username = "Test User"))
+                }
+            })
+            useMailingListHandler(object : SmtpMailingListHandler {
+                override fun expand(listName: String): List<String> {
+                    if (!listName.equals("dev-team", ignoreCase = true)) return emptyList()
+                    return listOf("alice@test-smtp.local", "bob@test-smtp.local")
+                }
+            })
             useSpooler(object : SmtpDomainSpooler {
                 override fun triggerOnce() {
                     // no-op
@@ -59,6 +74,8 @@ class SmtpAuthStartTlsIntegrationTest {
             listener.enableAuth = true
             listener.requireAuthForMail = true
             listener.implicitTls = false
+            features.enableVrfy = true
+            features.enableExpn = true
             features.enableEtrn = true
 
             proxyProtocol.enabled = false
@@ -165,6 +182,27 @@ class SmtpAuthStartTlsIntegrationTest {
 
             // Conservatively verify connection close behavior (EOF/timeout, etc.).
             runCatching { reader.readLine() }
+        }
+    }
+
+    @Test
+    fun `STARTTLS with parameter returns syntax error`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 3_000
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS now\r\n")
+            writer.flush()
+
+            val resp = reader.readLine()
+            assertTrue(resp.startsWith("501"), "Expected 501 for STARTTLS with parameter, got: $resp")
         }
     }
 
@@ -372,6 +410,121 @@ class SmtpAuthStartTlsIntegrationTest {
             writer.flush()
             val authResp = reader.readLine()
             assertTrue(authResp.startsWith("501"), "Expected 501 invalid username response, got: $authResp")
+
+            tlsSocket.close()
+        }
+    }
+
+    /**
+     * VRFY should return matched user details when enabled and handler is configured.
+     */
+    @Test
+    fun `VRFY returns matched user`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 3_000
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("VRFY user\r\n")
+            writer.flush()
+            val resp = reader.readLine()
+            assertTrue(resp.startsWith("250"), "Expected 250 for VRFY user, got: $resp")
+            assertTrue(resp.contains("user@test-smtp.local"), "Expected matched user in VRFY response, got: $resp")
+        }
+    }
+
+    /**
+     * EXPN should require authentication even when the feature is enabled.
+     */
+    @Test
+    fun `EXPN requires authentication`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("EXPN dev-team\r\n")
+            writer.flush()
+            val expnResp = reader.readLine()
+            assertTrue(expnResp.startsWith("530"), "Expected 530 when EXPN is used without auth, got: $expnResp")
+
+            tlsSocket.close()
+        }
+    }
+
+    /**
+     * EXPN should return list members after successful STARTTLS + AUTH.
+     */
+    @Test
+    fun `EXPN returns members after auth`() {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 5_000
+            var reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            var writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("STARTTLS\r\n")
+            writer.flush()
+            val startTlsResp = reader.readLine()
+            assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
+
+            val tlsSocket = wrapToTls(socket)
+            reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
+            writer = OutputStreamWriter(tlsSocket.getOutputStream())
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write(buildAuthPlainLine("user", "password"))
+            writer.flush()
+            val authResp = reader.readLine()
+            assertTrue(authResp.startsWith("250"), "Expected 250 Authentication successful, got: $authResp")
+
+            writer.write("EXPN dev-team\r\n")
+            writer.flush()
+
+            val expnLines = mutableListOf<String>()
+            var line = reader.readLine()
+            while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
+                expnLines.add(line)
+                if (line.startsWith("250 ")) break
+                line = reader.readLine()
+            }
+
+            assertTrue(expnLines.isNotEmpty(), "Expected EXPN multiline response")
+            assertTrue(expnLines.any { it.contains("alice@test-smtp.local") }, "Expected alice member in EXPN response")
+            assertTrue(expnLines.any { it.contains("bob@test-smtp.local") }, "Expected bob member in EXPN response")
 
             tlsSocket.close()
         }

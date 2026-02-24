@@ -11,6 +11,11 @@ internal class StartTlsCommand : SmtpCommand(
     "Upgrade connection to TLS",
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
+        if (command.parts.size != 1) {
+            session.sendResponse(501, "5.5.1 STARTTLS takes no parameters")
+            return
+        }
+
         if (session.isTls) {
             // Return error if already in TLS connection state
             session.sendResponse(503, "5.5.1 TLS already active")

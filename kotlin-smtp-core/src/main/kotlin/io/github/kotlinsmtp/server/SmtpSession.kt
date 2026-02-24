@@ -276,6 +276,7 @@ internal class SmtpSession(
     suspend fun resetTransaction(preserveGreeting: Boolean = true, preserveAuth: Boolean = preserveGreeting) {
         // Clean up active BDAT stream if present (safe for RSET/transaction end).
         clearBdatState()
+        clearDataModeFramingHints()
 
         envelopeRecipients.clear()
         protocolHandlerHolder.doneAndClear()
@@ -298,6 +299,15 @@ internal class SmtpSession(
     }
 
     internal fun isBdatInProgress(): Boolean = bdatState.isActive
+
+    /**
+     * Clears DATA-mode framing hints used by session/decoder state.
+     */
+    internal fun clearDataModeFramingHints() {
+        dataModeFramingHint = false
+        channel.attr(SmtpInboundDecoder.DATA_FRAMING_HINT).set(false)
+        channel.attr(SmtpInboundDecoder.IN_DATA_MODE).set(false)
+    }
 
     fun close() {
         if (!closing.compareAndSet(false, true)) return

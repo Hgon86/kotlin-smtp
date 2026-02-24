@@ -13,6 +13,7 @@ import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.haproxy.HAProxyMessage
+import io.netty.handler.codec.haproxy.HAProxyProxiedProtocol
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateEvent
 import io.netty.util.ReferenceCountUtil
@@ -161,6 +162,16 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         val trusted = ProxyProtocolSupport.isTrustedProxy(proxyRemote, server.trustedProxyCidrsParsed)
         if (!trusted) {
             log.warn { "PROXY protocol header from untrusted proxy remote=${proxyRemote?.address?.hostAddress ?: proxyRemote}" }
+            ctx.close()
+            return
+        }
+
+        /**
+         * Accept only TCP4/TCP6 to preserve concrete client address semantics for audit and rate limit.
+         */
+        val proxiedProtocol = msg.proxiedProtocol()
+        if (proxiedProtocol != HAProxyProxiedProtocol.TCP4 && proxiedProtocol != HAProxyProxiedProtocol.TCP6) {
+            log.warn { "Unsupported PROXY protocol family: $proxiedProtocol; closing" }
             ctx.close()
             return
         }

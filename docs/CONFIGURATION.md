@@ -120,6 +120,10 @@ smtp:
     handshakeTimeoutMs: 30000
 ```
 
+Protocol notes:
+- `STARTTLS` must be sent without parameters (`STARTTLS` only).
+- Pipelining additional commands with `STARTTLS` is rejected for safe TLS upgrade.
+
 ### Implicit TLS (SMTPS/465)
 
 ```yaml
@@ -254,6 +258,7 @@ smtp:
   relay:
     enabled: true
     requireAuthForRelay: true
+    failOnOpenRelay: false # true blocks startup when relay becomes effectively open
     allowedClientCidrs:
       - 10.0.0.0/8
       - 192.168.0.0/16
@@ -309,6 +314,7 @@ smtp:
 
 Security note:
 - `failOnTrustAll=true` is recommended for production to prevent accidental insecure TLS trust configuration.
+- `failOnOpenRelay=true` is recommended for production to block accidental open-relay startup.
 
 ### Outbound Policy (MTA-STS / DANE)
 
@@ -336,6 +342,7 @@ Notes:
 |------|--------|------|
 | `enabled` | false | Enable outbound relay |
 | `requireAuthForRelay` | true | Require AUTH before external relay |
+| `failOnOpenRelay` | false | Fail startup when relay is open (no auth and no allowlists) |
 | `allowedSenderDomains` | [] | Sender-domain allowlist for unauthenticated relay |
 | `allowedClientCidrs` | [] | Client CIDR allowlist for unauthenticated relay |
 | `outboundPolicy.mtaSts.enabled` | false | Enable MTA-STS policy resolution |
@@ -409,6 +416,10 @@ smtp:
       - 10.0.0.0/8
       - 172.16.0.0/12
 ```
+
+Protocol notes:
+- Only PROXY v1 `TCP4` and `TCP6` families are accepted.
+- `UNKNOWN` and unsupported families are rejected and the connection is closed.
 
 ## Feature Flags
 

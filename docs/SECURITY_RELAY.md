@@ -11,6 +11,7 @@ smtp:
   relay:
     enabled: true
     requireAuthForRelay: true
+    failOnOpenRelay: true
     allowedSenderDomains: []
     allowedClientCidrs: []
 ```
@@ -18,6 +19,7 @@ smtp:
 Why:
 - `requireAuthForRelay=true` is the primary safety control.
 - Empty allowlists avoid accidental unauthenticated exceptions.
+- `failOnOpenRelay=true` makes misconfiguration fail fast at startup.
 
 ## 2) Controlled unauthenticated relay (internal-only)
 

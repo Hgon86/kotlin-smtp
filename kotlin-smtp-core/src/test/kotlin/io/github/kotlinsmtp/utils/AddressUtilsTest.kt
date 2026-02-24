@@ -37,4 +37,11 @@ class AddressUtilsTest {
         assertFalse(AddressUtils.validateHost("example.com"))
         assertNotNull(AddressUtils.normalizeDomain("example.com"))
     }
+
+    @Test
+    fun extractFromBrackets_usesFirstClosingBracket() {
+        val extracted = AddressUtils.extractFromBrackets("MAIL FROM:<a@b.com> SIZE=<sneaky>")
+
+        assertEquals("a@b.com", extracted)
+    }
 }

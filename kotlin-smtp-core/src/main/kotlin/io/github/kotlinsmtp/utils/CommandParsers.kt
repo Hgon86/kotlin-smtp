@@ -88,7 +88,10 @@ internal fun parseRcptArguments(raw: String): RcptArguments {
  * @throws IllegalArgumentException When limits are exceeded
  */
 private fun extractParameters(segment: String): Map<String, String> {
-    val closingIndex = segment.lastIndexOf('>')
+    val openingIndex = segment.indexOf('<')
+    if (openingIndex < 0) return emptyMap()
+
+    val closingIndex = segment.indexOf('>', startIndex = openingIndex + 1)
     if (closingIndex < 0 || closingIndex + 1 >= segment.length) return emptyMap()
     
     val remainder = segment.substring(closingIndex + 1).trim()
@@ -102,24 +105,38 @@ private fun extractParameters(segment: String): Map<String, String> {
         throw IllegalArgumentException("Too many parameters (max 10)")
     }
     
-    return tokens.associate { token ->
+    val params = LinkedHashMap<String, String>(tokens.size)
+
+    for (token in tokens) {
         // Parameter length limit (DoS prevention)
         if (token.length > 1024) {
             throw IllegalArgumentException("Parameter too long (max 1024 bytes)")
         }
-        
+
         val equalsIndex = token.indexOf('=')
-        if (equalsIndex > 0) {
-            // KEY=VALUE format
-            val key = token.substring(0, equalsIndex).uppercase()
-            val value = token.substring(equalsIndex + 1)
-            key to value
-        } else {
-            // KEY-only format (no value)
-            token.uppercase() to ""
+
+        val keyRaw = if (equalsIndex >= 0) token.substring(0, equalsIndex) else token
+        if (keyRaw.isBlank()) {
+            throw IllegalArgumentException("Invalid parameter format")
         }
+
+        val key = keyRaw.uppercase()
+        if (!esmtpParameterNameRegex.matches(key)) {
+            throw IllegalArgumentException("Invalid parameter name: $key")
+        }
+        val value = if (equalsIndex >= 0) token.substring(equalsIndex + 1) else ""
+
+        if (params.containsKey(key)) {
+            throw IllegalArgumentException("Duplicate parameter: $key")
+        }
+
+        params[key] = value
     }
+
+    return params
 }
+
+private val esmtpParameterNameRegex = Regex("^[A-Z0-9][A-Z0-9-]*$")
 
 /**
  * Validate whether parameter map contains unsupported parameters.

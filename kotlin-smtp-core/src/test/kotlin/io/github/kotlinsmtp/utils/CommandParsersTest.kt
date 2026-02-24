@@ -45,6 +45,33 @@ class CommandParsersTest {
     }
 
     @Test
+    fun parseMailArguments_rejectsDuplicateParameter() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            parseMailArguments("MAIL FROM:<a@b.com> SIZE=100 SIZE=200")
+        }
+
+        assertEquals("Duplicate parameter: SIZE", ex.message)
+    }
+
+    @Test
+    fun parseMailArguments_rejectsInvalidParameterName() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            parseMailArguments("MAIL FROM:<a@b.com> BAD_NAME=1")
+        }
+
+        assertEquals("Invalid parameter name: BAD_NAME", ex.message)
+    }
+
+    @Test
+    fun parseMailArguments_rejectsEmptyParameterKey() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            parseMailArguments("MAIL FROM:<a@b.com> =badvalue")
+        }
+
+        assertEquals("Invalid parameter format", ex.message)
+    }
+
+    @Test
     fun ensureNoUnsupportedParams_throws555ForBlockedParameter() {
         val ex = assertFailsWith<SmtpSendResponse> {
             mapOf("BODY" to "8BITMIME").ensureNoUnsupportedParams(setOf("BODY"))

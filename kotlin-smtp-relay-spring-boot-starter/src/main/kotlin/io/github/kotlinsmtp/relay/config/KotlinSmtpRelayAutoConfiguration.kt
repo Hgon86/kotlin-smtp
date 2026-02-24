@@ -173,11 +173,19 @@ class KotlinSmtpRelayAutoConfiguration {
 
     class RelayGuardrails(props: RelayProperties) {
         init {
-            if (!props.requireAuthForRelay && props.allowedSenderDomains.isEmpty() && props.allowedClientCidrs.isEmpty()) {
+            val openRelay = !props.requireAuthForRelay && props.allowedSenderDomains.isEmpty() && props.allowedClientCidrs.isEmpty()
+            if (openRelay) {
+                if (props.failOnOpenRelay) {
+                    error(
+                        "smtp.relay.failOnOpenRelay=true blocks open relay configuration " +
+                            "(requireAuthForRelay=false with empty allowedSenderDomains and allowedClientCidrs)",
+                    )
+                }
                 log.warn {
                     "Outbound relay is configured as OPEN RELAY (requireAuthForRelay=false, no allowedSenderDomains, no allowedClientCidrs). " +
                     "This is insecure for internet-facing servers. " +
                     "Consider enabling requireAuthForRelay or specifying allowedSenderDomains/allowedClientCidrs, " +
+                    "set smtp.relay.failOnOpenRelay=true to fail fast, " +
                     "or provide a custom RelayAccessPolicy bean for fine-grained control."
                 }
             }

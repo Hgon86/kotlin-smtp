@@ -15,8 +15,9 @@ internal object AddressUtils {
      */
     fun extractFromBrackets(string: String, openingBracket: String = "<", closingBracket: String = ">"): String? =
         string.indexOf(openingBracket).takeIf { it >= 0 }?.let { fromIndex ->
-            string.lastIndexOf(closingBracket).takeIf { it > fromIndex }?.let { toIndex ->
-                string.slice(fromIndex + 1 until toIndex)
+            val start = fromIndex + openingBracket.length
+            string.indexOf(closingBracket, startIndex = start).takeIf { it >= start }?.let { toIndex ->
+                string.substring(start, toIndex)
             }
         }
 

@@ -79,6 +79,10 @@ internal enum class SmtpCommands(
                     try {
                         smtpCommand.instance.execute(parsedCommand, session)
                     } catch (response: SmtpSendResponse) {
+                        if (parsedCommand.commandName == "DATA") {
+                            session.clearDataModeFramingHints()
+                        }
+
                         session.sendResponse(response.statusCode, response.message)
 
                         // DATA/BDAT transaction rejection is also exposed as a per-message event.
@@ -102,6 +106,9 @@ internal enum class SmtpCommands(
             } catch (t: Throwable) {
                 // Defense: Respond with 451 to prevent the session from being silently dropped by unexpected exceptions.
                 log.error(t) { "Unhandled error while processing command='${parsedCommand.commandName}'" }
+                if (parsedCommand.commandName == "DATA") {
+                    session.clearDataModeFramingHints()
+                }
                 session.sendResponse(ERROR_IN_PROCESSING.code, "Local error in processing")
                 session.resetTransaction(preserveGreeting = true)
             }

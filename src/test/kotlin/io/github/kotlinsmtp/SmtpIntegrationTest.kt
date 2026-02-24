@@ -389,6 +389,43 @@ class SmtpIntegrationTest {
     }
 
     /**
+     * DATA sequence rejection must not break subsequent BDAT framing.
+     */
+    @Test
+    fun `test DATA rejection does not break next BDAT framing`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val out = socket.getOutputStream()
+
+            reader.readLine() // Greeting
+
+            out.write("EHLO test.client.local\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            skipEhloResponse(reader)
+
+            // Reject DATA first (no MAIL/RCPT yet)
+            out.write("DATA\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            val rejected = reader.readLine()
+            assertTrue(rejected.startsWith("503"), "Expected 503 for invalid DATA sequence, got: $rejected")
+
+            out.write("MAIL FROM:<sender@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            reader.readLine()
+
+            out.write("RCPT TO:<recipient@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            reader.readLine()
+
+            out.write("BDAT 4 LAST\r\nABCD".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+
+            val bdatResp = reader.readLine()
+            assertTrue(bdatResp.startsWith("250"), "Expected 250 after BDAT, got: $bdatResp")
+        }
+    }
+
+    /**
      * RSET test - transaction abort and restart.
      */
     @Test
@@ -483,6 +520,50 @@ class SmtpIntegrationTest {
 
             writer.write("QUIT\r\n")
             writer.flush()
+        }
+    }
+
+    /**
+     * VRFY should stay non-enumerating by default when feature is disabled.
+     */
+    @Test
+    fun `test VRFY returns 252 when feature is disabled`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // Greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("VRFY user\r\n")
+            writer.flush()
+            val response = reader.readLine()
+            assertTrue(response.startsWith("252"), "Expected 252 for VRFY when disabled, got: $response")
+        }
+    }
+
+    /**
+     * EXPN should return not-implemented by default when feature is disabled.
+     */
+    @Test
+    fun `test EXPN returns 502 when feature is disabled`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // Greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            skipEhloResponse(reader)
+
+            writer.write("EXPN dev-team\r\n")
+            writer.flush()
+            val response = reader.readLine()
+            assertTrue(response.startsWith("502"), "Expected 502 for EXPN when disabled, got: $response")
         }
     }
 

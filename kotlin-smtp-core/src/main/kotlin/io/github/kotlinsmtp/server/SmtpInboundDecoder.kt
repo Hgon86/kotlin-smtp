@@ -33,17 +33,16 @@ internal class SmtpInboundDecoder(
          */
         internal val IN_DATA_MODE: AttributeKey<Boolean> =
             AttributeKey.valueOf("smtp.inDataMode")
+
+        /**
+         * Decoder-side DATA framing hint used to prevent BDAT auto-detection
+         * before session state is fully switched to DATA mode.
+         */
+        internal val DATA_FRAMING_HINT: AttributeKey<Boolean> =
+            AttributeKey.valueOf("smtp.dataFramingHint")
     }
 
     private var pendingRawBytes: Int? = null
-
-    /**
-     * DATA body receiving mode tracked at decoder level.
-     *
-     * To avoid framing breaks even before session reflects `inDataMode=true` (pipelining/same packet),
-     * BDAT auto-detect is disabled immediately when DATA line is detected.
-     */
-    private var dataModeForFraming: Boolean = false
 
     override fun decode(ctx: io.netty.channel.ChannelHandlerContext, input: ByteBuf, out: MutableList<Any>) {
         while (true) {
@@ -105,7 +104,8 @@ internal class SmtpInboundDecoder(
             val line = String(lineBytes, CharsetUtil.ISO_8859_1)
 
             // While receiving DATA body, body lines may start with "BDAT ...", so disable auto-detect.
-            // Use decoder-local state as well to guard inputs before session reflects IN_DATA_MODE.
+            // Keep a decoder-side hint in channel attr to guard inputs before session reflects IN_DATA_MODE.
+            val dataModeForFraming = ctx.channel().attr(DATA_FRAMING_HINT).get() == true
             val inDataMode = dataModeForFraming || (ctx.channel().attr(IN_DATA_MODE).get() == true)
             if (!inDataMode) {
                 parseBdatSizeIfAny(line)?.let { size ->
@@ -121,9 +121,9 @@ internal class SmtpInboundDecoder(
             // - After processing body terminator ('.'), next command line must be parsed normally.
             val commandPart = line.trimStart()
             if (!dataModeForFraming && commandPart.equals("DATA", ignoreCase = true)) {
-                dataModeForFraming = true
+                ctx.channel().attr(DATA_FRAMING_HINT).set(true)
             } else if (dataModeForFraming && line == ".") {
-                dataModeForFraming = false
+                ctx.channel().attr(DATA_FRAMING_HINT).set(false)
             }
             out.add(SmtpInboundFrame.Line(line))
         }
