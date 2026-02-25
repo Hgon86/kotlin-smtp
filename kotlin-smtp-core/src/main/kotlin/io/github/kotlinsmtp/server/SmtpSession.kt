@@ -228,6 +228,8 @@ internal class SmtpSession(
                 rawCommand = command.rawCommand,
                 rawWithoutCommand = command.rawWithoutCommand,
                 attributes = interceptorAttributes,
+                requireEhloAfterTls = requireEhloAfterTls,
+                bdatInProgress = isBdatInProgress(),
             ),
         )
     }

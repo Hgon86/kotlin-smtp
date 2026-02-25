@@ -5,7 +5,6 @@ import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.protocol.command.api.ParsedCommand
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.SmtpSession
-import io.github.kotlinsmtp.utils.SmtpStatusCode.BAD_COMMAND_SEQUENCE
 import io.github.kotlinsmtp.utils.SmtpStatusCode.COMMAND_NOT_IMPLEMENTED
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 import java.time.Instant
@@ -26,22 +25,6 @@ internal class AuthCommand : SmtpCommand(
 
         if (!session.server.enableAuth) {
             throw SmtpSendResponse(COMMAND_NOT_IMPLEMENTED.code, "AUTH not supported on this service")
-        }
-
-        // Practical server convention: allow AUTH only after HELO/EHLO.
-        // (Some clients may try AUTH right after server banner, so explicitly reject with 503.)
-        if (!session.sessionData.greeted) {
-            throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "Send HELO/EHLO first")
-        }
-
-        // Do not allow re-authentication when already authenticated (session stability).
-        if (session.sessionData.isAuthenticated) {
-            throw SmtpSendResponse(503, "5.5.1 Already authenticated")
-        }
-
-        // Allow only after TLS
-        if (!session.isTls) {
-            throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "Must issue STARTTLS first")
         }
 
         // Check lock status (session scope)

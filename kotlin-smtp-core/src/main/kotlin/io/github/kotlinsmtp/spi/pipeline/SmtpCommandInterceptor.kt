@@ -4,6 +4,8 @@ package io.github.kotlinsmtp.spi.pipeline
  * SMTP command stages where interceptor decisions can be applied.
  */
 public enum class SmtpCommandStage {
+    PRE_COMMAND,
+    AUTH,
     MAIL_FROM,
     RCPT_TO,
     DATA_PRE,
@@ -56,6 +58,8 @@ public sealed interface SmtpCommandInterceptorAction {
  * @property rawCommand Raw command line.
  * @property rawWithoutCommand Command arguments part.
  * @property attributes Session-scoped read-only attributes view.
+ * @property requireEhloAfterTls Whether EHLO/HELO re-negotiation is required after STARTTLS.
+ * @property bdatInProgress Whether BDAT chunked transaction is currently active.
  */
 public data class SmtpCommandInterceptorContext(
     public val sessionId: String,
@@ -72,7 +76,46 @@ public data class SmtpCommandInterceptorContext(
     public val rawCommand: String,
     public val rawWithoutCommand: String,
     public val attributes: Map<String, Any?>,
-)
+    public val requireEhloAfterTls: Boolean,
+    public val bdatInProgress: Boolean,
+) {
+    /**
+     * Backward-compatible constructor kept for existing interceptor binaries.
+     */
+    public constructor(
+        sessionId: String,
+        peerAddress: String?,
+        serverHostname: String?,
+        helo: String?,
+        greeted: Boolean,
+        tlsActive: Boolean,
+        authenticated: Boolean,
+        requireAuthForMail: Boolean,
+        mailFrom: String?,
+        recipientCount: Int,
+        commandName: String,
+        rawCommand: String,
+        rawWithoutCommand: String,
+        attributes: Map<String, Any?>,
+    ) : this(
+        sessionId = sessionId,
+        peerAddress = peerAddress,
+        serverHostname = serverHostname,
+        helo = helo,
+        greeted = greeted,
+        tlsActive = tlsActive,
+        authenticated = authenticated,
+        requireAuthForMail = requireAuthForMail,
+        mailFrom = mailFrom,
+        recipientCount = recipientCount,
+        commandName = commandName,
+        rawCommand = rawCommand,
+        rawWithoutCommand = rawWithoutCommand,
+        attributes = attributes,
+        requireEhloAfterTls = false,
+        bdatInProgress = false,
+    )
+}
 
 /**
  * Command interceptor SPI for policy/extension chaining.

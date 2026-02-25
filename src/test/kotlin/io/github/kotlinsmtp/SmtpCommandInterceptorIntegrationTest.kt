@@ -134,5 +134,57 @@ class SmtpCommandInterceptorIntegrationTest {
             )
         }
     }
-}
 
+    @Test
+    fun `BDAT deny closes connection to prevent stream desync`() {
+        runBlocking {
+            server.stop(gracefulTimeoutMs = 5000)
+        }
+
+        startServerWith(
+            object : SmtpCommandInterceptor {
+                override suspend fun intercept(
+                    stage: SmtpCommandStage,
+                    context: SmtpCommandInterceptorContext,
+                ): SmtpCommandInterceptorAction {
+                    if (stage == SmtpCommandStage.DATA_PRE && context.commandName == "BDAT") {
+                        return SmtpCommandInterceptorAction.Deny(550, "5.7.1 BDAT blocked by interceptor")
+                    }
+                    return SmtpCommandInterceptorAction.Proceed
+                }
+            },
+        )
+
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 3_000
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val writer = OutputStreamWriter(socket.getOutputStream())
+
+            reader.readLine() // greeting
+
+            writer.write("EHLO test.client.local\r\n")
+            writer.flush()
+            reader.skipEhloResponse()
+
+            writer.write("MAIL FROM:<sender@test.com>\r\n")
+            writer.flush()
+            reader.readLine()
+
+            writer.write("RCPT TO:<recipient@test.com>\r\n")
+            writer.flush()
+            reader.readLine()
+
+            writer.write("BDAT 4 LAST\r\nABCD")
+            writer.flush()
+
+            val denied = reader.readLine()
+            assertTrue(denied.startsWith("550"), "Expected BDAT deny response, got: $denied")
+
+            val nextLine = runCatching { reader.readLine() }
+            assertTrue(
+                nextLine.isFailure || nextLine.getOrNull() == null,
+                "Expected connection close after BDAT deny",
+            )
+        }
+    }
+}

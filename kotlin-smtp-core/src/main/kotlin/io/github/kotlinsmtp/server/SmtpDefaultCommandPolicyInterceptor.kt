@@ -11,15 +11,56 @@ import io.github.kotlinsmtp.spi.pipeline.SmtpCommandStage
 internal class SmtpDefaultCommandPolicyInterceptor : SmtpCommandInterceptor {
     override val order: Int = -1000
 
+    private companion object {
+        val BDAT_ALLOWED_COMMANDS: Set<String> = setOf("BDAT", "RSET", "NOOP", "QUIT", "HELP")
+    }
+
     override suspend fun intercept(
         stage: SmtpCommandStage,
         context: SmtpCommandInterceptorContext,
     ): SmtpCommandInterceptorAction {
         return when (stage) {
+            SmtpCommandStage.PRE_COMMAND -> enforcePreCommandGuards(context)
+            SmtpCommandStage.AUTH -> enforceAuthPrerequisites(context)
             SmtpCommandStage.MAIL_FROM -> enforceMailFromPrerequisites(context)
             SmtpCommandStage.RCPT_TO -> enforceRcptPrerequisites(context)
             SmtpCommandStage.DATA_PRE -> enforceDataPrePrerequisites(context)
         }
+    }
+
+    private fun enforcePreCommandGuards(
+        context: SmtpCommandInterceptorContext,
+    ): SmtpCommandInterceptorAction {
+        if (context.bdatInProgress && context.commandName !in BDAT_ALLOWED_COMMANDS) {
+            return SmtpCommandInterceptorAction.Deny(
+                503,
+                "BDAT in progress; send BDAT <size> [LAST] or RSET",
+            )
+        }
+
+        if (context.requireEhloAfterTls) {
+            return SmtpCommandInterceptorAction.Deny(503, "Must issue HELO/EHLO after STARTTLS")
+        }
+
+        return SmtpCommandInterceptorAction.Proceed
+    }
+
+    private fun enforceAuthPrerequisites(
+        context: SmtpCommandInterceptorContext,
+    ): SmtpCommandInterceptorAction {
+        if (!context.greeted) {
+            return SmtpCommandInterceptorAction.Deny(503, "Send HELO/EHLO first")
+        }
+
+        if (context.authenticated) {
+            return SmtpCommandInterceptorAction.Deny(503, "5.5.1 Already authenticated")
+        }
+
+        if (!context.tlsActive) {
+            return SmtpCommandInterceptorAction.Deny(503, "Must issue STARTTLS first")
+        }
+
+        return SmtpCommandInterceptorAction.Proceed
     }
 
     private fun enforceMailFromPrerequisites(

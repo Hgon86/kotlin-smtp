@@ -38,7 +38,11 @@ internal class ActiveSessionTracker {
      * Request close for all sessions
      */
     fun closeAllSessions() {
-        val sessions = activeSessions.values.toList()
+        val sessions = mutableListOf<SmtpSession>()
+        val iterator = activeSessions.values.iterator()
+        while (iterator.hasNext()) {
+            sessions += iterator.next()
+        }
         log.info { "Requesting close for ${sessions.size} active sessions" }
         sessions.forEach { session ->
             try {

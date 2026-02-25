@@ -22,7 +22,6 @@ import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
 import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptorAction
 import io.github.kotlinsmtp.spi.pipeline.SmtpCommandStage
 import io.github.kotlinsmtp.utils.SmtpStatusCode.COMMAND_REJECTED
-import io.github.kotlinsmtp.utils.SmtpStatusCode.BAD_COMMAND_SEQUENCE
 import io.github.kotlinsmtp.utils.SmtpStatusCode.ERROR_IN_PROCESSING
 import io.github.oshai.kotlinlogging.KotlinLogging
 
@@ -52,27 +51,19 @@ internal enum class SmtpCommands(
             val parsedCommand = ParsedCommand(rawCommand)
 
             try {
-                // During CHUNKING (BDAT), BDAT consecutive chunk transmission is the protocol semantics,
-                // allowing other commands may break state (practical compatibility).
-                // - Allowed: BDAT / RSET / NOOP / QUIT / HELP
-                if (session.isBdatInProgress()) {
-                    val name = parsedCommand.commandName
-                    val allowed = name == "BDAT" || name == "RSET" || name == "NOOP" || name == "QUIT" || name == "HELP"
-                    if (!allowed) {
-                        session.sendResponse(BAD_COMMAND_SEQUENCE.code, "BDAT in progress; send BDAT <size> [LAST] or RSET")
-                        return
-                    }
-                }
-
-                // Only EHLO/HELO allowed after STARTTLS (RFC 3207 compliance)
+                // After STARTTLS, the next client command must be EHLO/HELO.
+                // Reset this gate exactly when EHLO/HELO is received.
                 if (session.requireEhloAfterTls) {
                     val name = parsedCommand.commandName
                     if (name == "EHLO" || name == "HELO") {
                         session.requireEhloAfterTls = false
-                    } else {
-                        session.sendResponse(BAD_COMMAND_SEQUENCE.code, "Must issue HELO/EHLO after STARTTLS")
-                        return
                     }
+                }
+
+                val preAction = session.runCommandInterceptors(SmtpCommandStage.PRE_COMMAND, parsedCommand)
+                val shouldContinueFromPre = applyInterceptorAction(preAction, parsedCommand.commandName, session)
+                if (!shouldContinueFromPre) {
+                    return
                 }
 
                 val smtpCommand = entries.find { it.name == parsedCommand.commandName }
@@ -126,6 +117,7 @@ internal enum class SmtpCommands(
         }
 
         private fun interceptorStageOf(commandName: String): SmtpCommandStage? = when (commandName) {
+            "AUTH" -> SmtpCommandStage.AUTH
             "MAIL" -> SmtpCommandStage.MAIL_FROM
             "RCPT" -> SmtpCommandStage.RCPT_TO
             "DATA", "BDAT" -> SmtpCommandStage.DATA_PRE
@@ -151,6 +143,13 @@ internal enum class SmtpCommands(
                         responseMessage = action.message,
                         session = session,
                     )
+
+                    // BDAT peers may pipeline chunk bytes immediately after command line.
+                    // Close on denied BDAT to avoid stream desynchronization.
+                    if (commandName == "BDAT") {
+                        session.clearBdatState()
+                        session.close()
+                    }
                     false
                 }
 

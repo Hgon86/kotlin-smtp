@@ -428,6 +428,49 @@ class SmtpIntegrationTest {
     }
 
     /**
+     * While BDAT transaction is active, non-BDAT-safe commands must be rejected.
+     */
+    @Test
+    fun `test BDAT in progress rejects MAIL command`() = runBlocking {
+        Socket("localhost", testPort).use { socket ->
+            socket.soTimeout = 3_000
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val out = socket.getOutputStream()
+
+            reader.readLine() // Greeting
+
+            out.write("EHLO test.client.local\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            reader.skipEhloResponse()
+
+            out.write("MAIL FROM:<sender@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            reader.readLine()
+
+            out.write("RCPT TO:<recipient@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            reader.readLine()
+
+            // Start chunking without LAST (transaction remains in progress).
+            out.write("BDAT 4\r\nABCD".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            val chunkAck = reader.readLine()
+            assertTrue(chunkAck.startsWith("250"), "Expected 250 after non-LAST BDAT chunk, got: $chunkAck")
+
+            out.write("MAIL FROM:<other@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            val rejected = reader.readLine()
+            assertTrue(rejected.startsWith("503"), "Expected 503 while BDAT is in progress, got: $rejected")
+
+            // Complete current BDAT transaction for clean session shutdown.
+            out.write("BDAT 0 LAST\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            val finalResponse = reader.readLine()
+            assertTrue(finalResponse.startsWith("250"), "Expected 250 after final BDAT chunk, got: $finalResponse")
+        }
+    }
+
+    /**
      * RSET test - transaction abort and restart.
      */
     @Test

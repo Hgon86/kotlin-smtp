@@ -93,5 +93,7 @@ class SmtpCommandInterceptorChainRunnerTest {
             rawCommand = "MAIL FROM:<user@test.local>",
             rawWithoutCommand = "FROM:<user@test.local>",
             attributes = mutableMapOf(),
+            requireEhloAfterTls = false,
+            bdatInProgress = false,
         )
 }

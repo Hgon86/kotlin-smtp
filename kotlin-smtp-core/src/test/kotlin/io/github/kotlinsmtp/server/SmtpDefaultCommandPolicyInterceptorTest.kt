@@ -12,6 +12,54 @@ class SmtpDefaultCommandPolicyInterceptorTest {
     private val interceptor = SmtpDefaultCommandPolicyInterceptor()
 
     @Test
+    fun `PRE_COMMAND blocks non-BDAT-safe commands while chunking`() = runBlocking {
+        val denied = interceptor.intercept(
+            stage = SmtpCommandStage.PRE_COMMAND,
+            context = baseContext(commandName = "MAIL", bdatInProgress = true),
+        )
+        val allowed = interceptor.intercept(
+            stage = SmtpCommandStage.PRE_COMMAND,
+            context = baseContext(commandName = "NOOP", bdatInProgress = true),
+        )
+
+        assertEquals(
+            SmtpCommandInterceptorAction.Deny(503, "BDAT in progress; send BDAT <size> [LAST] or RSET"),
+            denied,
+        )
+        assertEquals(SmtpCommandInterceptorAction.Proceed, allowed)
+    }
+
+    @Test
+    fun `PRE_COMMAND requires EHLO after STARTTLS`() = runBlocking {
+        val denied = interceptor.intercept(
+            stage = SmtpCommandStage.PRE_COMMAND,
+            context = baseContext(commandName = "MAIL", requireEhloAfterTls = true),
+        )
+
+        assertEquals(SmtpCommandInterceptorAction.Deny(503, "Must issue HELO/EHLO after STARTTLS"), denied)
+    }
+
+    @Test
+    fun `AUTH requires greeting and tls and no prior authentication`() = runBlocking {
+        val requireGreeting = interceptor.intercept(
+            stage = SmtpCommandStage.AUTH,
+            context = baseContext(greeted = false, commandName = "AUTH"),
+        )
+        val requireTls = interceptor.intercept(
+            stage = SmtpCommandStage.AUTH,
+            context = baseContext(greeted = true, tlsActive = false, commandName = "AUTH"),
+        )
+        val rejectReauth = interceptor.intercept(
+            stage = SmtpCommandStage.AUTH,
+            context = baseContext(greeted = true, tlsActive = true, authenticated = true, commandName = "AUTH"),
+        )
+
+        assertEquals(SmtpCommandInterceptorAction.Deny(503, "Send HELO/EHLO first"), requireGreeting)
+        assertEquals(SmtpCommandInterceptorAction.Deny(503, "Must issue STARTTLS first"), requireTls)
+        assertEquals(SmtpCommandInterceptorAction.Deny(503, "5.5.1 Already authenticated"), rejectReauth)
+    }
+
+    @Test
     fun `MAIL requires greeting`() = runBlocking {
         val action = interceptor.intercept(
             stage = SmtpCommandStage.MAIL_FROM,
@@ -66,6 +114,8 @@ class SmtpDefaultCommandPolicyInterceptorTest {
         tlsActive: Boolean = false,
         authenticated: Boolean = false,
         requireAuthForMail: Boolean = false,
+        requireEhloAfterTls: Boolean = false,
+        bdatInProgress: Boolean = false,
         mailFrom: String? = "sender@test.local",
         recipientCount: Int = 1,
         commandName: String = "MAIL",
@@ -85,5 +135,7 @@ class SmtpDefaultCommandPolicyInterceptorTest {
             rawCommand = commandName,
             rawWithoutCommand = "",
             attributes = mutableMapOf(),
+            requireEhloAfterTls = requireEhloAfterTls,
+            bdatInProgress = bdatInProgress,
         )
 }
