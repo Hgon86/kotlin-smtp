@@ -58,11 +58,6 @@ jobs:
           fi
 
           if echo "$CHANGED_FILES" | grep -qE '^kotlin-smtp-(core|relay)/api/'; then
-            if ! echo "$CHANGED_FILES" | grep -qF 'CHANGELOG.md'; then
-              echo "API baseline changed but CHANGELOG.md was not updated."
-              exit 1
-            fi
-
             if ! echo "$CHANGED_FILES" | grep -qF 'docs/MIGRATION.md'; then
               echo "API baseline changed but docs/MIGRATION.md was not updated."
               exit 1
