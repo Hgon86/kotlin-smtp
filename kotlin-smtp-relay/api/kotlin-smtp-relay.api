@@ -82,6 +82,10 @@ public abstract interface class io/github/kotlinsmtp/relay/api/RelayAccessPolicy
 	public abstract fun evaluate (Lio/github/kotlinsmtp/relay/api/RelayAccessContext;)Lio/github/kotlinsmtp/relay/api/RelayAccessDecision;
 }
 
+public abstract interface class io/github/kotlinsmtp/relay/api/RelayAccessPolicyRule {
+	public abstract fun evaluateOrNull (Lio/github/kotlinsmtp/relay/api/RelayAccessContext;)Lio/github/kotlinsmtp/relay/api/RelayAccessDecision;
+}
+
 public final class io/github/kotlinsmtp/relay/api/RelayDefaults {
 	public static final field INSTANCE Lio/github/kotlinsmtp/relay/api/RelayDefaults;
 	public final fun requireAuthPolicy ()Lio/github/kotlinsmtp/relay/api/RelayAccessPolicy;
@@ -188,6 +192,10 @@ public final class io/github/kotlinsmtp/relay/api/RelayRoute$SmartHost : io/gith
 
 public abstract interface class io/github/kotlinsmtp/relay/api/RelayRouteResolver {
 	public abstract fun resolve (Lio/github/kotlinsmtp/relay/api/RelayRequest;)Lio/github/kotlinsmtp/relay/api/RelayRoute;
+}
+
+public abstract interface class io/github/kotlinsmtp/relay/api/RelayRouteRule {
+	public abstract fun resolveOrNull (Lio/github/kotlinsmtp/relay/api/RelayRequest;)Lio/github/kotlinsmtp/relay/api/RelayRoute;
 }
 
 public final class io/github/kotlinsmtp/relay/api/RelayTransientException : io/github/kotlinsmtp/relay/api/RelayException {

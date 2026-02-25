@@ -6,12 +6,21 @@ import io.github.kotlinsmtp.relay.api.MailRelay
 import io.github.kotlinsmtp.relay.api.RelayAccessContext
 import io.github.kotlinsmtp.relay.api.RelayAccessDecision
 import io.github.kotlinsmtp.relay.api.RelayAccessPolicy
+import io.github.kotlinsmtp.relay.api.RelayAccessPolicyRule
+import io.github.kotlinsmtp.relay.api.RelayDeniedReason
 import io.github.kotlinsmtp.relay.api.RelayRoute
 import io.github.kotlinsmtp.relay.api.RelayRouteResolver
+import io.github.kotlinsmtp.relay.api.RelayRouteRule
+import io.github.kotlinsmtp.relay.api.RelayRequest
+import io.github.kotlinsmtp.relay.api.Rfc822Source
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.core.annotation.Order
+import java.io.ByteArrayInputStream
 
 class KotlinSmtpRelayAutoConfigurationTest {
 
@@ -144,6 +153,66 @@ class KotlinSmtpRelayAutoConfigurationTest {
     }
 
     @Test
+    fun `ordered RelayRouteRule should resolve before default route`() {
+        contextRunner
+            .withPropertyValues(
+                "smtp.relay.enabled=true",
+                "smtp.relay.defaultRoute.host=default.smtp.local",
+                "smtp.relay.defaultRoute.port=2525",
+            )
+            .withUserConfiguration(RouteRuleTestConfig::class.java)
+            .run { context ->
+                val resolver = context.getBean(RelayRouteResolver::class.java)
+
+                val specialRoute = resolver.resolve(
+                    relayRequest(recipient = "rcpt@priority.example"),
+                )
+                val fallbackRoute = resolver.resolve(
+                    relayRequest(recipient = "rcpt@other.example"),
+                )
+
+                assertThat(specialRoute)
+                    .isEqualTo(RelayRoute.SmartHost(host = "priority.smtp.local", port = 2526))
+                assertThat(fallbackRoute)
+                    .isEqualTo(RelayRoute.SmartHost(host = "default.smtp.local", port = 2525))
+            }
+    }
+
+    @Test
+    fun `ordered RelayAccessPolicyRule should be applied before default policy`() {
+        contextRunner
+            .withPropertyValues(
+                "smtp.relay.enabled=true",
+                "smtp.relay.requireAuthForRelay=false",
+            )
+            .withUserConfiguration(AccessRuleTestConfig::class.java)
+            .run { context ->
+                val policy = context.getBean(RelayAccessPolicy::class.java)
+
+                val denied = policy.evaluate(
+                    RelayAccessContext(
+                        envelopeSender = "sender@test.local",
+                        recipient = "user@blocked.example",
+                        authenticated = true,
+                        peerAddress = "127.0.0.1:2525",
+                    ),
+                )
+                val allowed = policy.evaluate(
+                    RelayAccessContext(
+                        envelopeSender = "sender@test.local",
+                        recipient = "user@ok.example",
+                        authenticated = true,
+                        peerAddress = "127.0.0.1:2525",
+                    ),
+                )
+
+                assertThat(denied)
+                    .isEqualTo(RelayAccessDecision.Denied(RelayDeniedReason.OTHER_POLICY, "Recipient blocked by rule"))
+                assertThat(allowed).isEqualTo(RelayAccessDecision.Allowed)
+            }
+    }
+
+    @Test
     fun `enabled should not create DsnSender without DsnStore`() {
         contextRunner
             .withPropertyValues(
@@ -168,4 +237,40 @@ class KotlinSmtpRelayAutoConfigurationTest {
                 assertThat(context).hasSingleBean(DsnSender::class.java)
             }
     }
+
+    @Configuration(proxyBeanMethods = false)
+    class RouteRuleTestConfig {
+        @Bean
+        @Order(100)
+        fun priorityRouteRule(): RelayRouteRule = RelayRouteRule { request ->
+            val domain = request.recipient.substringAfterLast('@', "").lowercase()
+            if (domain == "priority.example") {
+                RelayRoute.SmartHost(host = "priority.smtp.local", port = 2526)
+            } else {
+                null
+            }
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    class AccessRuleTestConfig {
+        @Bean
+        @Order(100)
+        fun blockRecipientRule(): RelayAccessPolicyRule = RelayAccessPolicyRule { context ->
+            val domain = context.recipient.substringAfterLast('@', "").lowercase()
+            if (domain == "blocked.example") {
+                RelayAccessDecision.Denied(RelayDeniedReason.OTHER_POLICY, "Recipient blocked by rule")
+            } else {
+                null
+            }
+        }
+    }
+
+    private fun relayRequest(recipient: String): RelayRequest = RelayRequest(
+        messageId = "test-message",
+        envelopeSender = "sender@test.local",
+        recipient = recipient,
+        authenticated = true,
+        rfc822 = Rfc822Source { ByteArrayInputStream("Subject: test\r\n\r\nbody".toByteArray(Charsets.US_ASCII)) },
+    )
 }

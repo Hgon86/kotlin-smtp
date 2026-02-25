@@ -4,12 +4,14 @@ import io.github.kotlinsmtp.relay.api.MailRelay
 import io.github.kotlinsmtp.relay.api.RelayAccessContext
 import io.github.kotlinsmtp.relay.api.RelayAccessDecision
 import io.github.kotlinsmtp.relay.api.RelayAccessPolicy
+import io.github.kotlinsmtp.relay.api.RelayAccessPolicyRule
 import io.github.kotlinsmtp.relay.api.RelayDeniedReason
 import io.github.kotlinsmtp.relay.api.DsnSender
 import io.github.kotlinsmtp.relay.api.DsnStore
 import io.github.kotlinsmtp.relay.api.RelayRequest
 import io.github.kotlinsmtp.relay.api.RelayRoute
 import io.github.kotlinsmtp.relay.api.RelayRouteResolver
+import io.github.kotlinsmtp.relay.api.RelayRouteRule
 import io.github.kotlinsmtp.relay.api.OutboundRelayPolicyResolver
 import io.github.kotlinsmtp.relay.jakarta.JakartaMailDsnSender
 import io.github.kotlinsmtp.relay.jakarta.JakartaMailMxMailRelay
@@ -26,6 +28,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.core.env.Environment
+import java.util.stream.Collectors
 
 private val log = KotlinLogging.logger {}
 
@@ -55,7 +58,10 @@ class KotlinSmtpRelayAutoConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "smtp.relay", name = ["enabled"], havingValue = "true")
     @ConditionalOnMissingBean
-    fun relayRouteResolver(props: RelayProperties): RelayRouteResolver {
+    fun relayRouteResolver(
+        props: RelayProperties,
+        routeRulesProvider: ObjectProvider<RelayRouteRule>,
+    ): RelayRouteResolver {
         val exactRoutes = linkedMapOf<String, RelayRoute.SmartHost>()
         var wildcardRoute: RelayRoute.SmartHost? = null
 
@@ -70,7 +76,16 @@ class KotlinSmtpRelayAutoConfiguration {
         }
         val defaultRoute = props.defaultRoute?.toSmartHost()
 
+        val routeRules = routeRulesProvider.orderedStream().collect(Collectors.toList())
+
         return RelayRouteResolver { request: RelayRequest ->
+            for (rule in routeRules) {
+                val matchedRoute = rule.resolveOrNull(request)
+                if (matchedRoute != null) {
+                    return@RelayRouteResolver matchedRoute
+                }
+            }
+
             val recipientDomain = request.recipient.substringAfterLast('@', "").trim().lowercase()
             exactRoutes[recipientDomain]
                 ?: wildcardRoute
@@ -136,9 +151,21 @@ class KotlinSmtpRelayAutoConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "smtp.relay", name = ["enabled"], havingValue = "true")
     @ConditionalOnMissingBean
-    fun relayAccessPolicy(props: RelayProperties): RelayAccessPolicy {
+    fun relayAccessPolicy(
+        props: RelayProperties,
+        accessPolicyRulesProvider: ObjectProvider<RelayAccessPolicyRule>,
+    ): RelayAccessPolicy {
         val cidrMatcher = RelayClientCidrMatcher(props.allowedClientCidrs)
+        val accessRules = accessPolicyRulesProvider.orderedStream().collect(Collectors.toList())
+
         return RelayAccessPolicy { ctx: RelayAccessContext ->
+            for (rule in accessRules) {
+                val decision = rule.evaluateOrNull(ctx)
+                if (decision != null) {
+                    return@RelayAccessPolicy decision
+                }
+            }
+
             if (props.requireAuthForRelay && !ctx.authenticated) {
                 return@RelayAccessPolicy RelayAccessDecision.Denied(RelayDeniedReason.AUTH_REQUIRED)
             }
