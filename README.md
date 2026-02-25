@@ -10,6 +10,7 @@ Kotlin SMTP is a **server engine framework**, not a monolithic complete mail pro
   - SMTP receive path (protocol/session/TLS/auth)
   - Spool/retry/relay boundary
   - Extension SPI for policy, storage, relay, and hooks
+  - Interceptor chain for extensible command validation
 - What you assemble on top for a complete server:
   - Anti-spam/anti-malware/policy engines
   - User mailbox access protocols (IMAP/POP3/JMAP)
@@ -39,6 +40,8 @@ This modular structure is intentional:
 
 - RFC 5321 core commands: `EHLO/HELO`, `MAIL`, `RCPT`, `DATA`, `RSET`, `QUIT`
 - `BDAT` (Chunking), `STARTTLS`, `AUTH PLAIN/LOGIN`
+- Order-based Command Interceptor Chain (Auth, Envelope, Data stages)
+- Rule-based Outbound Relay Chain (Routing and Policy decisions)
 - SMTPUTF8/IDN boundary handling
 - PROXY protocol (v1), rate limiting
 - ETRN/VRFY/EXPN (feature flags)

@@ -7,13 +7,14 @@
 3. [TLS Configuration](#tls-configuration)
 4. [Spool Configuration](#spool-configuration)
 5. [Authentication Configuration](#authentication-configuration)
-6. [Relay Configuration](#relay-configuration)
-7. [Rate Limit Configuration](#rate-limit-configuration)
-8. [Storage Configuration](#storage-configuration)
-9. [PROXY Protocol Configuration](#proxy-protocol-configuration)
-10. [Feature Flags](#feature-flags)
-11. [Lifecycle Configuration](#lifecycle-configuration)
-12. [Validation](#validation)
+6. [Command Interceptor Configuration](#command-interceptor-configuration)
+7. [Relay Configuration](#relay-configuration)
+8. [Rate Limit Configuration](#rate-limit-configuration)
+9. [Storage Configuration](#storage-configuration)
+10. [PROXY Protocol Configuration](#proxy-protocol-configuration)
+11. [Feature Flags](#feature-flags)
+12. [Lifecycle Configuration](#lifecycle-configuration)
+13. [Validation](#validation)
 
 ## Basic Configuration
 
@@ -249,6 +250,40 @@ smtp:
 | `rateLimitLockoutSeconds` | 600 | Lockout duration (seconds) |
 | `rateLimitRedis.keyPrefix` | `kotlin-smtp:auth-ratelimit` | Redis key prefix for AUTH limiter state |
 
+## Command Interceptor Configuration
+
+Command-stage policy extension is bean-driven (no dedicated `smtp.*` key).
+
+Register one or more `SmtpCommandInterceptor` beans:
+
+```kotlin
+@Configuration
+class CommandInterceptorConfig {
+    @Bean
+    @Order(100)
+    fun customPolicy(): SmtpCommandInterceptor = object : SmtpCommandInterceptor {
+        override suspend fun intercept(
+            stage: SmtpCommandStage,
+            context: SmtpCommandInterceptorContext,
+        ): SmtpCommandInterceptorAction {
+            return SmtpCommandInterceptorAction.Proceed
+        }
+    }
+}
+```
+
+Execution stages:
+- `PRE_COMMAND`
+- `AUTH`
+- `MAIL_FROM`
+- `RCPT_TO`
+- `DATA_PRE`
+
+Notes:
+- Interceptors are ordered by Spring (`@Order` / `Ordered`).
+- First non-`Proceed` action short-circuits command processing.
+- Practical examples are available in `docs/RECIPES.md`.
+
 ## Relay Configuration
 
 ### Basic Relay Configuration
@@ -353,6 +388,8 @@ Notes:
 `allowedSenderDomains` and `allowedClientCidrs` can be used together.
 An unauthenticated relay request must satisfy both conditions when both are configured.
 For more advanced rules (DB lookups, IP reputation, policy engine), provide a custom `RelayAccessPolicy` bean.
+If you only need additive rule chaining, register ordered beans of `RelayAccessPolicyRule` and/or `RelayRouteRule`.
+The first non-null decision/route from ordered rules is applied before default relay logic.
 
 ## Rate Limit Configuration
 

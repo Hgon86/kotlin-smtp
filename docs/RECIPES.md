@@ -71,6 +71,30 @@ class CustomRelayPolicyConfig {
 
 See `docs/SECURITY_RELAY.md` for production policy guidance.
 
+## Recipe 3.1: Add relay policy chain rule (`RelayAccessPolicyRule`)
+
+```kotlin
+@Configuration
+class RelayPolicyRuleConfig {
+
+    @Bean
+    @Order(100)
+    fun blockRecipientDomainRule(): RelayAccessPolicyRule {
+        return RelayAccessPolicyRule { ctx ->
+            val domain = ctx.recipient.substringAfterLast('@', "").lowercase()
+            if (domain == "blocked.example") {
+                RelayAccessDecision.Denied(
+                    RelayDeniedReason.OTHER_POLICY,
+                    "Recipient blocked by rule",
+                )
+            } else {
+                null
+            }
+        }
+    }
+}
+```
+
 ## Recipe 4: Add event publishing via `SmtpEventHook`
 
 ```kotlin
@@ -226,6 +250,93 @@ class MalwareScanHook(
 Guideline:
 - Trigger scan asynchronously from hooks; avoid blocking SMTP command processing.
 - Make scanner outcomes idempotent (same message may be retried/replayed operationally).
+
+## Recipe 11: Add command-stage policy gate (`SmtpCommandInterceptor`)
+
+```kotlin
+@Configuration
+class CommandPolicyConfig {
+
+    @Bean
+    @Order(100)
+    fun blockSenderDomain(): SmtpCommandInterceptor {
+        return object : SmtpCommandInterceptor {
+            override suspend fun intercept(
+                stage: SmtpCommandStage,
+                context: SmtpCommandInterceptorContext,
+            ): SmtpCommandInterceptorAction {
+                if (stage == SmtpCommandStage.MAIL_FROM) {
+                    val senderDomain = context.mailFrom
+                        ?.substringAfterLast('@', "")
+                        ?.lowercase()
+                    if (senderDomain == "blocked.example") {
+                        return SmtpCommandInterceptorAction.Deny(550, "5.7.1 Sender domain blocked")
+                    }
+                }
+                return SmtpCommandInterceptorAction.Proceed
+            }
+        }
+    }
+}
+```
+
+## Recipe 6.1: Add route chain rule (`RelayRouteRule`)
+
+```kotlin
+@Configuration
+class RelayRouteRuleConfig {
+
+    @Bean
+    @Order(100)
+    fun domainPriorityRouteRule(): RelayRouteRule {
+        return RelayRouteRule { request ->
+            val domain = request.recipient.substringAfterLast('@', "").lowercase()
+            if (domain == "priority.example") {
+                RelayRoute.SmartHost(host = "priority.smtp.local", port = 2526)
+            } else {
+                null
+            }
+        }
+    }
+}
+```
+
+Stage tips:
+- `PRE_COMMAND`: protocol gate before command-specific handlers (for example BDAT in-progress guard)
+- `AUTH`: enforce additional authentication policies
+- `MAIL_FROM` / `RCPT_TO`: envelope policy checks
+- `DATA_PRE`: pre-body checks before DATA handling
+
+Guideline:
+- Keep interceptors fast and deterministic.
+- Use `@Order` to control chain precedence.
+- Prefer `Deny(...)` over `Drop(...)` unless immediate connection close is required.
+
+## Recipe 12: Chain design checklist for command interceptors
+
+Use this checklist when multiple interceptors are composed.
+
+1. Stage selection
+- `PRE_COMMAND`: protocol gates and session-level safety checks
+- `AUTH`: authentication entry policy checks
+- `MAIL_FROM` / `RCPT_TO`: envelope policy checks
+- `DATA_PRE`: pre-body checks before DATA processing
+
+2. Ordering
+- Lower `@Order` runs first
+- Put cheap, high-rejection checks first
+- Put expensive checks later
+
+3. Action selection
+- Use `Proceed` for pass-through
+- Use `Deny(code, message)` for policy rejection
+- Use `Drop(...)` only when connection must be terminated immediately
+- Note: denied `BDAT` commands may be followed by immediate connection close to protect stream synchronization
+
+4. Reliability
+- Avoid long blocking I/O in interceptor code
+- Keep decisions deterministic and idempotent
+- Validate behavior with integration tests for your target stage
 
 ## Verification checklist after customization
 

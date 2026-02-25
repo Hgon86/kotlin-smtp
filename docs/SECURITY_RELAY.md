@@ -45,6 +45,9 @@ Guideline:
 
 Implement `RelayAccessPolicy` when static allowlists are insufficient.
 
+For additive policy composition, you can register ordered `RelayAccessPolicyRule` beans
+and keep the default baseline policy as fallback.
+
 Use cases:
 - IP reputation checks
 - tenant-specific sender rules

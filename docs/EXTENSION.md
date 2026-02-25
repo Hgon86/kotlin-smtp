@@ -38,7 +38,7 @@ Core SPI contracts:
 ## 2) Minimum mental model
 
 - **Inbound receive path**: SMTP command handling -> `SmtpTransactionProcessor` -> `MessageStore`
-- **Command-stage policy chain**: `SmtpCommandInterceptor` (MAIL/RCPT/DATA_PRE)
+- **Command-stage policy chain**: `SmtpCommandInterceptor` (PRE_COMMAND/AUTH/MAIL/RCPT/DATA_PRE)
 - **Local delivery decision**: `InboundRoutingPolicy`
 - **Outbound delivery**: relay + spool + retry (`MailRelay`, `MailSpooler`)
 - **Policy gate**: `RelayAccessPolicy`
@@ -81,6 +81,13 @@ For the exact order, see `docs/LIFECYCLE.md`.
 - Enabling unauthenticated relay in internet-facing environments
 - Keeping stale examples that do not match current interfaces
 
+## 5.1) Command interceptor chain tips
+
+- Keep interceptor logic focused on one decision concern
+- Use `@Order` to make evaluation order explicit
+- Place cheap checks earlier than expensive checks
+- Prefer `Deny(...)` for policy failures and reserve `Drop(...)` for immediate disconnect needs
+
 ## 6) Interface references (current contracts)
 
 Use these source files as the canonical contract definitions:
@@ -93,6 +100,8 @@ Use these source files as the canonical contract definitions:
 - `kotlin-smtp-core/src/main/kotlin/io/github/kotlinsmtp/routing/InboundRoutingPolicy.kt`
 - `kotlin-smtp-relay/src/main/kotlin/io/github/kotlinsmtp/relay/api/MailRelay.kt`
 - `kotlin-smtp-relay/src/main/kotlin/io/github/kotlinsmtp/relay/api/RelayAccessPolicy.kt`
+- `kotlin-smtp-relay/src/main/kotlin/io/github/kotlinsmtp/relay/api/RelayAccessPolicyRule.kt`
+- `kotlin-smtp-relay/src/main/kotlin/io/github/kotlinsmtp/relay/api/RelayRouteRule.kt`
 
 ## 7) Recommended reading order
 
@@ -119,10 +128,12 @@ Use this table to quickly decide which contract to implement.
 | Add user lookup logic (VRFY) | `SmtpUserHandler` | Bean of type `SmtpUserHandler` | VRFY command | Return empty list if not found |
 | Add EXPN list expansion logic | `SmtpMailingListHandler` | Bean of type `SmtpMailingListHandler` | EXPN command | Use policy controls in production |
 | Customize transaction behavior | `SmtpTransactionProcessor` factory | `SmtpServerBuilder.useTransactionProcessorFactory` (core usage) | MAIL/RCPT/DATA hooks | Advanced use-case |
-| Add command-stage policy chain | `SmtpCommandInterceptor` | Bean(s) of type `SmtpCommandInterceptor` | MAIL/RCPT/DATA pre-check | Ordered chain, can deny/drop before core handler |
+| Add command-stage policy chain | `SmtpCommandInterceptor` | Bean(s) of type `SmtpCommandInterceptor` | PRE_COMMAND/AUTH/MAIL/RCPT/DATA pre-check | Ordered chain, can deny/drop before core transaction processor |
 | Control relay allow/deny | `RelayAccessPolicy` | Bean of type `RelayAccessPolicy` | Before outbound relay | Primary open-relay defense point |
+| Add relay allow/deny chain rule | `RelayAccessPolicyRule` | Bean(s) of type `RelayAccessPolicyRule` | Before default relay access policy | First non-null decision wins |
 | Replace outbound relay transport | `MailRelay` | Bean of type `MailRelay` | External delivery path | Default uses Jakarta Mail relay stack |
 | Customize relay route resolution | `RelayRouteResolver` | Bean of type `RelayRouteResolver` | Per-recipient relay routing | Exact domain > wildcard > default route |
+| Add relay route chain rule | `RelayRouteRule` | Bean(s) of type `RelayRouteRule` | Before default route resolver | First non-null route wins |
 | Customize DSN generation/sending | `DsnSender` | Bean of type `DsnSender` | Failure notification flow | Use with `DsnStore` |
 | Customize spool metadata backend | `SpoolMetadataStore` | Bean of type `SpoolMetadataStore` | Spool queue processing | File/Redis defaults provided |
 | Customize spool locking backend | `SpoolLockManager` | Bean of type `SpoolLockManager` | Spool queue processing | File/Redis defaults provided |

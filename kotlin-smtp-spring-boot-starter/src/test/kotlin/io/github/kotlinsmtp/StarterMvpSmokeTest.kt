@@ -14,8 +14,16 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.core.annotation.Order
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import java.nio.file.Files
 import java.nio.file.Path
+import java.net.ServerSocket
+import java.net.Socket
 
 class StarterMvpSmokeTest {
 
@@ -117,6 +125,225 @@ class StarterMvpSmokeTest {
                 runBlocking {
                     assertTrue(server.start())
                     assertTrue(server.stop())
+                }
+            }
+    }
+
+    @Test
+    fun `command interceptors respect spring order`() {
+        val dirs = createTestDirectories("ordered-interceptor")
+        val fixedPort = ServerSocket(0).use { it.localPort }
+
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withUserConfiguration(OrderedInterceptorTestConfig::class.java)
+            .withPropertyValues(
+                "smtp.hostname=localhost",
+                "smtp.port=$fixedPort",
+                "smtp.routing.localDomain=local.test",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
+            )
+            .run { context ->
+                val servers = context.getBean("smtpServers") as List<*>
+                assertEquals(1, servers.size)
+
+                val server = servers.single() as SmtpServer
+
+                runBlocking {
+                    assertTrue(server.start())
+                }
+
+                try {
+                    Socket("localhost", fixedPort).use { socket ->
+                        socket.soTimeout = 3_000
+                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                        val writer = OutputStreamWriter(socket.getOutputStream())
+
+                        reader.readLine() // greeting
+                        writer.write("EHLO test.client.local\r\n")
+                        writer.flush()
+                        skipEhloResponse(reader)
+
+                        writer.write("MAIL FROM:<sender@test.com>\r\n")
+                        writer.flush()
+
+                        val denied = reader.readLine()
+                        assertTrue(
+                            denied.startsWith("553") && denied.contains("ordered-first"),
+                            "Expected first ordered interceptor denial, got: $denied",
+                        )
+                    }
+                } finally {
+                    runBlocking {
+                        assertTrue(server.stop())
+                    }
+                }
+            }
+    }
+
+    @Test
+    fun `command interceptor can deny recipient domain at RCPT stage`() {
+        val dirs = createTestDirectories("rcpt-policy")
+        val fixedPort = ServerSocket(0).use { it.localPort }
+
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withUserConfiguration(RecipientDomainPolicyTestConfig::class.java)
+            .withPropertyValues(
+                "smtp.hostname=localhost",
+                "smtp.port=$fixedPort",
+                "smtp.routing.localDomain=local.test",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
+            )
+            .run { context ->
+                val servers = context.getBean("smtpServers") as List<*>
+                assertEquals(1, servers.size)
+
+                val server = servers.single() as SmtpServer
+
+                runBlocking {
+                    assertTrue(server.start())
+                }
+
+                try {
+                    Socket("localhost", fixedPort).use { socket ->
+                        socket.soTimeout = 3_000
+                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                        val writer = OutputStreamWriter(socket.getOutputStream())
+
+                        reader.readLine() // greeting
+
+                        writer.write("EHLO test.client.local\r\n")
+                        writer.flush()
+                        skipEhloResponse(reader)
+
+                        writer.write("MAIL FROM:<sender@test.com>\r\n")
+                        writer.flush()
+                        val mailResp = reader.readLine()
+                        assertTrue(mailResp.startsWith("250"), "Expected 250 after MAIL FROM, got: $mailResp")
+
+                        writer.write("RCPT TO:<user@blocked.example>\r\n")
+                        writer.flush()
+                        val denied = reader.readLine()
+                        assertTrue(
+                            denied.startsWith("550") && denied.contains("Recipient domain blocked"),
+                            "Expected RCPT deny from interceptor, got: $denied",
+                        )
+                    }
+                } finally {
+                    runBlocking {
+                        assertTrue(server.stop())
+                    }
+                }
+            }
+    }
+
+    @Test
+    fun `command interceptor can deny command at PRE_COMMAND stage`() {
+        val dirs = createTestDirectories("pre-command-policy")
+        val fixedPort = ServerSocket(0).use { it.localPort }
+
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withUserConfiguration(PreCommandPolicyTestConfig::class.java)
+            .withPropertyValues(
+                "smtp.hostname=localhost",
+                "smtp.port=$fixedPort",
+                "smtp.routing.localDomain=local.test",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
+            )
+            .run { context ->
+                val server = (context.getBean("smtpServers") as List<*>).single() as SmtpServer
+
+                runBlocking {
+                    assertTrue(server.start())
+                }
+
+                try {
+                    Socket("localhost", fixedPort).use { socket ->
+                        socket.soTimeout = 3_000
+                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                        val writer = OutputStreamWriter(socket.getOutputStream())
+
+                        reader.readLine() // greeting
+
+                        writer.write("NOOP\r\n")
+                        writer.flush()
+
+                        val denied = reader.readLine()
+                        assertTrue(
+                            denied.startsWith("550") && denied.contains("NOOP disabled by policy"),
+                            "Expected PRE_COMMAND deny, got: $denied",
+                        )
+                    }
+                } finally {
+                    runBlocking {
+                        assertTrue(server.stop())
+                    }
+                }
+            }
+    }
+
+    @Test
+    fun `command interceptor can deny AUTH at AUTH stage`() {
+        val dirs = createTestDirectories("auth-stage-policy")
+        val fixedPort = ServerSocket(0).use { it.localPort }
+
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withUserConfiguration(AuthStagePolicyTestConfig::class.java)
+            .withPropertyValues(
+                "smtp.hostname=localhost",
+                "smtp.port=$fixedPort",
+                "smtp.routing.localDomain=local.test",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
+                "smtp.auth.enabled=true",
+                "smtp.auth.users.user=password",
+            )
+            .run { context ->
+                val server = (context.getBean("smtpServers") as List<*>).single() as SmtpServer
+
+                runBlocking {
+                    assertTrue(server.start())
+                }
+
+                try {
+                    Socket("localhost", fixedPort).use { socket ->
+                        socket.soTimeout = 3_000
+                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                        val writer = OutputStreamWriter(socket.getOutputStream())
+
+                        reader.readLine() // greeting
+
+                        writer.write("EHLO test.client.local\r\n")
+                        writer.flush()
+                        skipEhloResponse(reader)
+
+                        writer.write("AUTH PLAIN AHVzZXIAcGFzc3dvcmQ=\r\n")
+                        writer.flush()
+
+                        val denied = reader.readLine()
+                        assertTrue(
+                            denied.startsWith("535") && denied.contains("AUTH blocked by policy"),
+                            "Expected AUTH stage deny, got: $denied",
+                        )
+                    }
+                } finally {
+                    runBlocking {
+                        assertTrue(server.stop())
+                    }
                 }
             }
     }
@@ -329,6 +556,112 @@ class StarterMvpSmokeTest {
         listsDir = Files.createDirectories(tempDir.resolve("lists-$suffix")),
         spoolDir = Files.createDirectories(tempDir.resolve("spool-$suffix")),
     )
+
+    private fun skipEhloResponse(reader: BufferedReader) {
+        var line = reader.readLine()
+        while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
+            if (line.startsWith("250 ")) break
+            line = reader.readLine()
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    class OrderedInterceptorTestConfig {
+        @Bean
+        @Order(-100)
+        fun firstOrderedInterceptor(): SmtpCommandInterceptor = object : SmtpCommandInterceptor {
+
+            override suspend fun intercept(
+                stage: SmtpCommandStage,
+                context: SmtpCommandInterceptorContext,
+            ): SmtpCommandInterceptorAction {
+                if (stage == SmtpCommandStage.MAIL_FROM) {
+                    return SmtpCommandInterceptorAction.Deny(553, "5.7.1 ordered-first")
+                }
+                return SmtpCommandInterceptorAction.Proceed
+            }
+        }
+
+        @Bean
+        @Order(100)
+        fun secondOrderedInterceptor(): SmtpCommandInterceptor = object : SmtpCommandInterceptor {
+
+            override suspend fun intercept(
+                stage: SmtpCommandStage,
+                context: SmtpCommandInterceptorContext,
+            ): SmtpCommandInterceptorAction {
+                if (stage == SmtpCommandStage.MAIL_FROM) {
+                    return SmtpCommandInterceptorAction.Deny(554, "5.7.1 ordered-second")
+                }
+                return SmtpCommandInterceptorAction.Proceed
+            }
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    class RecipientDomainPolicyTestConfig {
+        @Bean
+        @Order(100)
+        fun recipientDomainPolicyInterceptor(): SmtpCommandInterceptor = object : SmtpCommandInterceptor {
+            override suspend fun intercept(
+                stage: SmtpCommandStage,
+                context: SmtpCommandInterceptorContext,
+            ): SmtpCommandInterceptorAction {
+                if (stage != SmtpCommandStage.RCPT_TO) {
+                    return SmtpCommandInterceptorAction.Proceed
+                }
+
+                val recipient = context.rawCommand
+                    .substringAfter('<', "")
+                    .substringBefore('>', "")
+                    .lowercase()
+
+                val domain = recipient.substringAfterLast('@', "")
+                return if (domain == "blocked.example") {
+                    SmtpCommandInterceptorAction.Deny(550, "5.7.1 Recipient domain blocked")
+                } else {
+                    SmtpCommandInterceptorAction.Proceed
+                }
+            }
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    class PreCommandPolicyTestConfig {
+        @Bean
+        @Order(100)
+        fun preCommandPolicyInterceptor(): SmtpCommandInterceptor = object : SmtpCommandInterceptor {
+            override suspend fun intercept(
+                stage: SmtpCommandStage,
+                context: SmtpCommandInterceptorContext,
+            ): SmtpCommandInterceptorAction {
+                return if (stage == SmtpCommandStage.PRE_COMMAND && context.commandName == "NOOP") {
+                    SmtpCommandInterceptorAction.Deny(550, "5.7.1 NOOP disabled by policy")
+                } else {
+                    SmtpCommandInterceptorAction.Proceed
+                }
+            }
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    class AuthStagePolicyTestConfig {
+        @Bean
+        fun authStagePolicyInterceptor(): SmtpCommandInterceptor = object : SmtpCommandInterceptor {
+            override val order: Int = -2000
+
+            override suspend fun intercept(
+                stage: SmtpCommandStage,
+                context: SmtpCommandInterceptorContext,
+            ): SmtpCommandInterceptorAction {
+                return if (stage == SmtpCommandStage.AUTH) {
+                    SmtpCommandInterceptorAction.Deny(535, "5.7.8 AUTH blocked by policy")
+                } else {
+                    SmtpCommandInterceptorAction.Proceed
+                }
+            }
+        }
+    }
 
     /**
      * Directory path bundle for smoke tests.
