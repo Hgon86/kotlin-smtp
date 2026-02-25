@@ -4,9 +4,10 @@ import io.github.kotlinsmtp.auth.AuthService
 import io.github.kotlinsmtp.auth.SmtpAuthRateLimiter
 import io.github.kotlinsmtp.protocol.handler.SmtpChannelHandler
 import io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler
-import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
+import io.github.kotlinsmtp.protocol.handler.SmtpTransactionProcessor
 import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
 import io.github.kotlinsmtp.spi.SmtpEventHook
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptor
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.channel.ChannelFuture
@@ -36,11 +37,12 @@ public class SmtpServer internal constructor(
     public val hostname: String,
     public val serviceName: String? = "kotlin-smtp",
     internal val authService: AuthService? = null,
-    internal val transactionHandlerCreator: (() -> SmtpProtocolHandler)? = null,
+    internal val transactionProcessorCreator: (() -> SmtpTransactionProcessor)? = null,
     internal val userHandler: SmtpUserHandler? = null,
     internal val mailingListHandler: SmtpMailingListHandler? = null,
     internal val spooler: SmtpSpooler? = null,
     internal val eventHooks: List<SmtpEventHook> = emptyList(),
+    internal val commandInterceptors: List<SmtpCommandInterceptor> = emptyList(),
     internal val authRateLimiter: SmtpAuthRateLimiter? = null,
     internal val enableVrfy: Boolean = false,
     internal val enableEtrn: Boolean = false,
@@ -75,6 +77,10 @@ public class SmtpServer internal constructor(
 
     // Active session tracking (for graceful shutdown)
     internal val sessionTracker = ActiveSessionTracker()
+
+    internal val commandInterceptorRunner = SmtpCommandInterceptorChainRunner(
+        listOf(SmtpDefaultCommandPolicyInterceptor()) + commandInterceptors,
+    )
 
     internal fun hasEventHooks(): Boolean = eventHooks.isNotEmpty()
 

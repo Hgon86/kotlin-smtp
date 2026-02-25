@@ -128,14 +128,14 @@ internal class BdatCommand : SmtpCommand(
         if (!session.bdatState.isActive) {
             val dataChannel = Channel<ByteArray>(Channel.BUFFERED)
             val dataStream = CoroutineInputStream(dataChannel)
-            val handlerResult = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
-            val handlerJob = SmtpStreamingHandlerRunner.launch(session, dataStream, handlerResult)
+            val processorResult = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+            val processorJob = SmtpStreamingHandlerRunner.launch(session, dataStream, processorResult)
 
             session.bdatState.start(
                 dataChannel = dataChannel,
                 stream = dataStream,
-                handlerJob = handlerJob,
-                handlerResult = handlerResult,
+                processorJob = processorJob,
+                processorResult = processorResult,
             )
         }
 
@@ -181,12 +181,12 @@ internal class BdatCommand : SmtpCommand(
         // LAST chunk: end input -> close stream -> final response by processing result
         runCatching { dataChannel.close() }
 
-        val handlerJob = session.bdatState.handlerJob
-        val handlerResult = session.bdatState.handlerResult
+        val processorJob = session.bdatState.processorJob
+        val processorResult = session.bdatState.processorResult
             ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "BDAT internal state error")
 
-        handlerJob?.join()
-        val processing = handlerResult.await()
+        processorJob?.join()
+        val processing = processorResult.await()
 
         // Cleanup state (common for success/failure)
         session.clearBdatState()

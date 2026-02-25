@@ -4,12 +4,12 @@ import io.github.kotlinsmtp.model.SessionData
 import java.io.InputStream
 
 /**
- * Handler that provides hooks for SMTP transaction processing.
+ * Processor that handles one SMTP transaction lifecycle.
  *
- * - Register via [io.github.kotlinsmtp.server.SmtpServerBuilder.useProtocolHandlerFactory].
+ * - Register via [io.github.kotlinsmtp.server.SmtpServerBuilder.useTransactionProcessorFactory].
  * - [sessionData] is initialized by engine and must not be accessed in constructor/init block.
  */
-public abstract class SmtpProtocolHandler {
+public abstract class SmtpTransactionProcessor {
     public lateinit var sessionData: SessionData
         internal set
 

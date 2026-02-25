@@ -16,7 +16,7 @@ import java.util.*
 
 private val log = KotlinLogging.logger {}
 
-class SimpleSmtpProtocolHandler(
+class SimpleSmtpTransactionProcessor(
     private val dispatcherIO: CoroutineDispatcher = Dispatchers.IO,
     private val messageStore: MessageStore,
     private val sentMessageStore: SentMessageStore,
@@ -24,7 +24,7 @@ class SimpleSmtpProtocolHandler(
     private val relayEnabled: Boolean,
     private val deliveryService: MailDeliveryService,
     private val spooler: MailSpooler?,
-) : SmtpProtocolHandler() {
+) : SmtpTransactionProcessor() {
 
     private var sender: String? = null
     private val recipients = mutableSetOf<String>()

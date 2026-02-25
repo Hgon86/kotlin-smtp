@@ -1,6 +1,6 @@
 package io.github.kotlinsmtp.benchmarks
 
-import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
+import io.github.kotlinsmtp.protocol.handler.SmtpTransactionProcessor
 import io.github.kotlinsmtp.server.SmtpServer
 import kotlinx.coroutines.runBlocking
 import java.io.BufferedReader
@@ -37,7 +37,7 @@ public object SmtpBenchmarkSupport {
 
         val server = SmtpServer.create(port, "benchmark-smtp.local") {
             serviceName = "benchmark-smtp"
-            useProtocolHandlerFactory { BenchmarkSmtpProtocolHandler() }
+            useTransactionProcessorFactory { BenchmarkSmtpTransactionProcessor() }
             listener.enableStartTls = false
             listener.enableAuth = false
             listener.implicitTls = false
@@ -149,9 +149,9 @@ public object SmtpBenchmarkSupport {
 }
 
 /**
- * Protocol handler used by benchmark SMTP server.
+ * Transaction processor used by benchmark SMTP server.
  */
-public class BenchmarkSmtpProtocolHandler : SmtpProtocolHandler() {
+public class BenchmarkSmtpTransactionProcessor : SmtpTransactionProcessor() {
 
     /**
      * Consumes incoming DATA stream without persistence overhead.

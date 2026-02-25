@@ -24,7 +24,7 @@ class SmtpLifecycleTest {
         val port = ServerSocket(0).use { it.localPort }
         val server = SmtpServer.create(port, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
             listener.enableStartTls = false
             listener.enableAuth = false
             proxyProtocol.enabled = false
@@ -57,7 +57,7 @@ class SmtpLifecycleTest {
         val port = ServerSocket(0).use { it.localPort }
         val server = SmtpServer.create(port, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
             listener.enableStartTls = false
             listener.enableAuth = false
             proxyProtocol.enabled = false
@@ -77,7 +77,7 @@ class SmtpLifecycleTest {
         val port = ServerSocket(0).use { it.localPort }
         val server = SmtpServer.create(port, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
             listener.enableStartTls = false
             listener.enableAuth = false
             proxyProtocol.enabled = false

@@ -131,9 +131,9 @@ interface AuthService {
 }
 ```
 
-3. `SmtpProtocolHandler`: transaction handling
+3. `SmtpTransactionProcessor`: transaction handling
 ```kotlin
-abstract class SmtpProtocolHandler {
+abstract class SmtpTransactionProcessor {
     lateinit var sessionData: SessionData
 
     open suspend fun from(sender: String) {}
@@ -143,7 +143,19 @@ abstract class SmtpProtocolHandler {
 }
 ```
 
-4. `SmtpEventHook`: event hooks
+4. `SmtpCommandInterceptor`: command-stage policy chain
+```kotlin
+interface SmtpCommandInterceptor {
+    val order: Int
+
+    suspend fun intercept(
+        stage: SmtpCommandStage,
+        context: SmtpCommandInterceptorContext,
+    ): SmtpCommandInterceptorAction
+}
+```
+
+5. `SmtpEventHook`: event hooks
 ```kotlin
 interface SmtpEventHook {
     suspend fun onSessionStarted(event: SmtpSessionStartedEvent) = Unit

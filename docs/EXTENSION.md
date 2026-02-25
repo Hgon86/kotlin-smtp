@@ -27,7 +27,8 @@ Main auto-configuration:
 Core SPI contracts:
 - `MessageStore`
 - `AuthService`
-- `SmtpProtocolHandler`
+- `SmtpTransactionProcessor`
+- `SmtpCommandInterceptor`
 - `SmtpEventHook`
 - `SmtpUserHandler`
 - `SmtpMailingListHandler`
@@ -36,7 +37,8 @@ Core SPI contracts:
 
 ## 2) Minimum mental model
 
-- **Inbound receive path**: SMTP command handling -> `SmtpProtocolHandler` -> `MessageStore`
+- **Inbound receive path**: SMTP command handling -> `SmtpTransactionProcessor` -> `MessageStore`
+- **Command-stage policy chain**: `SmtpCommandInterceptor` (MAIL/RCPT/DATA_PRE)
 - **Local delivery decision**: `InboundRoutingPolicy`
 - **Outbound delivery**: relay + spool + retry (`MailRelay`, `MailSpooler`)
 - **Policy gate**: `RelayAccessPolicy`
@@ -85,7 +87,8 @@ Use these source files as the canonical contract definitions:
 
 - `kotlin-smtp-core/src/main/kotlin/io/github/kotlinsmtp/storage/MessageStore.kt`
 - `kotlin-smtp-core/src/main/kotlin/io/github/kotlinsmtp/auth/AuthService.kt`
-- `kotlin-smtp-core/src/main/kotlin/io/github/kotlinsmtp/protocol/handler/SmtpProtocolHandler.kt`
+- `kotlin-smtp-core/src/main/kotlin/io/github/kotlinsmtp/protocol/handler/SmtpTransactionProcessor.kt`
+- `kotlin-smtp-core/src/main/kotlin/io/github/kotlinsmtp/spi/pipeline/SmtpCommandInterceptor.kt`
 - `kotlin-smtp-core/src/main/kotlin/io/github/kotlinsmtp/spi/SmtpEventHook.kt`
 - `kotlin-smtp-core/src/main/kotlin/io/github/kotlinsmtp/routing/InboundRoutingPolicy.kt`
 - `kotlin-smtp-relay/src/main/kotlin/io/github/kotlinsmtp/relay/api/MailRelay.kt`
@@ -109,13 +112,14 @@ Use this table to quickly decide which contract to implement.
 
 | Goal | Implement | Register As | Called In | Notes |
 |---|---|---|---|---|
-| Replace inbound message persistence | `MessageStore` | Bean of type `MessageStore` | Protocol handler after DATA/BDAT | Return stored path used by downstream flow |
+| Replace inbound message persistence | `MessageStore` | Bean of type `MessageStore` | Transaction processor after DATA/BDAT | Return stored path used by downstream flow |
 | Replace sent-mail archive backend | `SentMessageStore` | Bean of type `SentMessageStore` | Submission path when archive policy matches | Good place for S3/DB archive |
 | Replace auth backend | `AuthService` | Bean of type `AuthService` | AUTH command flow | Keep verification fast |
 | Change local vs external domain decision | `InboundRoutingPolicy` | Bean of type `InboundRoutingPolicy` | Delivery decision phase | Can be DB/service backed |
 | Add user lookup logic (VRFY) | `SmtpUserHandler` | Bean of type `SmtpUserHandler` | VRFY command | Return empty list if not found |
 | Add EXPN list expansion logic | `SmtpMailingListHandler` | Bean of type `SmtpMailingListHandler` | EXPN command | Use policy controls in production |
-| Customize transaction behavior | `SmtpProtocolHandler` factory | `SmtpServerBuilder.useProtocolHandlerFactory` (core usage) | MAIL/RCPT/DATA hooks | Advanced use-case |
+| Customize transaction behavior | `SmtpTransactionProcessor` factory | `SmtpServerBuilder.useTransactionProcessorFactory` (core usage) | MAIL/RCPT/DATA hooks | Advanced use-case |
+| Add command-stage policy chain | `SmtpCommandInterceptor` | Bean(s) of type `SmtpCommandInterceptor` | MAIL/RCPT/DATA pre-check | Ordered chain, can deny/drop before core handler |
 | Control relay allow/deny | `RelayAccessPolicy` | Bean of type `RelayAccessPolicy` | Before outbound relay | Primary open-relay defense point |
 | Replace outbound relay transport | `MailRelay` | Bean of type `MailRelay` | External delivery path | Default uses Jakarta Mail relay stack |
 | Customize relay route resolution | `RelayRouteResolver` | Bean of type `RelayRouteResolver` | Per-recipient relay routing | Exact domain > wildcard > default route |

@@ -10,7 +10,7 @@ This document explains where each extension point is executed.
 4. MAIL FROM
 5. RCPT TO (one or many)
 6. DATA/BDAT receives payload
-7. `SmtpProtocolHandler.data(...)`
+7. `SmtpTransactionProcessor.data(...)`
 8. Message persistence (`MessageStore.storeRfc822(...)`)
 9. Routing decision (`InboundRoutingPolicy.isLocalDomain(...)`)
 10. Local delivery or relay enqueue

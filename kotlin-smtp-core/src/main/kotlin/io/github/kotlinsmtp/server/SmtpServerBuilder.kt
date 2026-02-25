@@ -3,9 +3,10 @@ package io.github.kotlinsmtp.server
 import io.github.kotlinsmtp.auth.AuthService
 import io.github.kotlinsmtp.auth.SmtpAuthRateLimiter
 import io.github.kotlinsmtp.protocol.handler.SmtpMailingListHandler
-import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
+import io.github.kotlinsmtp.protocol.handler.SmtpTransactionProcessor
 import io.github.kotlinsmtp.protocol.handler.SmtpUserHandler
 import io.github.kotlinsmtp.spi.SmtpEventHook
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptor
 
 /**
  * SMTP server builder.
@@ -19,8 +20,8 @@ public class SmtpServerBuilder internal constructor(
 ) {
     public var serviceName: String? = "kotlin-smtp"
 
-    /** Required: provides the per-session protocol handler. */
-    private var protocolHandlerFactory: (() -> SmtpProtocolHandler)? = null
+    /** Required: provides the per-session transaction processor. */
+    private var transactionProcessorFactory: (() -> SmtpTransactionProcessor)? = null
 
     private var authService: AuthService? = null
     private var authRateLimiterOverride: SmtpAuthRateLimiter? = null
@@ -30,9 +31,10 @@ public class SmtpServerBuilder internal constructor(
     private var spooler: SmtpSpooler? = null
 
     private val eventHooks: MutableList<SmtpEventHook> = mutableListOf()
+    private val commandInterceptors: MutableList<SmtpCommandInterceptor> = mutableListOf()
 
-    public fun useProtocolHandlerFactory(factory: () -> SmtpProtocolHandler): Unit {
-        this.protocolHandlerFactory = factory
+    public fun useTransactionProcessorFactory(factory: () -> SmtpTransactionProcessor): Unit {
+        this.transactionProcessorFactory = factory
     }
 
     public fun useAuthService(service: AuthService?): Unit {
@@ -76,6 +78,15 @@ public class SmtpServerBuilder internal constructor(
         eventHooks.add(hook)
     }
 
+    /**
+     * Add command interceptor for command-stage policy chaining.
+     *
+     * @param interceptor Interceptor to register
+     */
+    public fun addCommandInterceptor(interceptor: SmtpCommandInterceptor): Unit {
+        commandInterceptors.add(interceptor)
+    }
+
     public val features: SmtpFeatureFlags = SmtpFeatureFlags()
     public val listener: SmtpListenerPolicy = SmtpListenerPolicy()
     public val proxyProtocol: SmtpProxyProtocolPolicy = SmtpProxyProtocolPolicy()
@@ -84,8 +95,8 @@ public class SmtpServerBuilder internal constructor(
     public val authRateLimit: SmtpAuthRateLimitPolicy = SmtpAuthRateLimitPolicy()
 
     public fun build(): SmtpServer {
-        val handlerFactory = protocolHandlerFactory
-            ?: error("protocolHandlerFactory is required. Call useProtocolHandlerFactory { }.")
+        val processorFactory = transactionProcessorFactory
+            ?: error("transactionProcessorFactory is required. Call useTransactionProcessorFactory { }.")
 
         val authLimiter = authRateLimiterOverride ?: if (authRateLimit.enabled) {
             io.github.kotlinsmtp.auth.AuthRateLimiter(
@@ -102,11 +113,12 @@ public class SmtpServerBuilder internal constructor(
             hostname = hostname,
             serviceName = serviceName,
             authService = authService,
-            transactionHandlerCreator = handlerFactory,
+            transactionProcessorCreator = processorFactory,
             userHandler = userHandler,
             mailingListHandler = mailingListHandler,
             spooler = spooler,
             eventHooks = eventHooks.toList(),
+            commandInterceptors = commandInterceptors.toList(),
             authRateLimiter = authLimiter,
             enableVrfy = features.enableVrfy,
             enableEtrn = features.enableEtrn,

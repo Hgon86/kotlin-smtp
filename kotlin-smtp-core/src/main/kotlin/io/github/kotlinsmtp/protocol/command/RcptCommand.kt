@@ -4,7 +4,6 @@ import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.protocol.command.api.ParsedCommand
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.SmtpSession
-import io.github.kotlinsmtp.utils.SmtpStatusCode.BAD_COMMAND_SEQUENCE
 import io.github.kotlinsmtp.utils.SmtpStatusCode.INVALID_MAILBOX
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 import io.github.kotlinsmtp.utils.SmtpStatusCode.INSUFFICIENT_STORAGE
@@ -22,11 +21,6 @@ internal class RcptCommand : SmtpCommand(
     "TO:<(path:)address> [parameters]"
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
-        // State/sequence validation: allow RCPT only after MAIL FROM.
-        if (session.sessionData.mailFrom == null) {
-            throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "Send MAIL FROM first")
-        }
-
         // Parse ESMTP parameters
         val esmtp = try {
             parseRcptArguments(command.rawCommand)
@@ -80,8 +74,8 @@ internal class RcptCommand : SmtpCommand(
             session.sessionData.rcptDsn[recipient] = RcptDsn(notify = notify, orcpt = orcpt)
         }
 
-        // Pass final recipient to transaction handler
-        session.transactionHandler?.to(recipient)
+        // Pass final recipient to transaction processor
+        session.transactionProcessor?.to(recipient)
         session.sendResponse(OKAY.code, "Ok")
     }
 

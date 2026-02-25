@@ -12,6 +12,8 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import kotlin.test.assertTrue
 
+// shared SMTP test helpers (skipEhloResponse, etc.)
+
 class SmtpProxyProtocolIntegrationTest {
 
     /**
@@ -24,7 +26,7 @@ class SmtpProxyProtocolIntegrationTest {
 
         val server = SmtpServer.create(testPort, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
             addEventHook(object : SmtpEventHook {
                 override suspend fun onSessionStarted(event: SmtpSessionStartedEvent) {
                     capturedPeerAddress = event.context.peerAddress
@@ -56,7 +58,7 @@ class SmtpProxyProtocolIntegrationTest {
 
                 out.write("EHLO test.client.local\r\n".toByteArray(Charsets.US_ASCII))
                 out.flush()
-                skipEhloResponse(reader)
+                reader.skipEhloResponse()
 
                 out.write("QUIT\r\n".toByteArray(Charsets.US_ASCII))
                 out.flush()
@@ -81,7 +83,7 @@ class SmtpProxyProtocolIntegrationTest {
 
         val server = SmtpServer.create(testPort, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
 
             listener.enableStartTls = false
             listener.enableAuth = false
@@ -128,7 +130,7 @@ class SmtpProxyProtocolIntegrationTest {
 
         val server = SmtpServer.create(testPort, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
 
             listener.enableStartTls = false
             listener.enableAuth = false
@@ -175,7 +177,7 @@ class SmtpProxyProtocolIntegrationTest {
 
         val server = SmtpServer.create(testPort, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
 
             listener.enableStartTls = false
             listener.enableAuth = false
@@ -212,12 +214,5 @@ class SmtpProxyProtocolIntegrationTest {
             server.stop(gracefulTimeoutMs = 5_000)
         }
     }
-
-    private fun skipEhloResponse(reader: BufferedReader) {
-        var line = reader.readLine()
-        while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
-            if (line.startsWith("250 ")) break
-            line = reader.readLine()
-        }
-    }
 }
+

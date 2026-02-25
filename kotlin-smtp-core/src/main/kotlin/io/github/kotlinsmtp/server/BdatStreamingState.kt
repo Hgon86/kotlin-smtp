@@ -15,9 +15,9 @@ internal class BdatStreamingState {
         private set
     var stream: CoroutineInputStream? = null
         private set
-    var handlerJob: Job? = null
+    var processorJob: Job? = null
         private set
-    var handlerResult: CompletableDeferred<Result<Unit>>? = null
+    var processorResult: CompletableDeferred<Result<Unit>>? = null
         private set
 
     val isActive: Boolean
@@ -26,25 +26,25 @@ internal class BdatStreamingState {
     fun start(
         dataChannel: Channel<ByteArray>,
         stream: CoroutineInputStream,
-        handlerJob: Job,
-        handlerResult: CompletableDeferred<Result<Unit>>,
+        processorJob: Job,
+        processorResult: CompletableDeferred<Result<Unit>>,
     ) {
         this.dataChannel = dataChannel
         this.stream = stream
-        this.handlerJob = handlerJob
-        this.handlerResult = handlerResult
+        this.processorJob = processorJob
+        this.processorResult = processorResult
     }
 
     suspend fun clear() {
-        handlerJob?.cancel()
-        runCatching { handlerJob?.join() }
+        processorJob?.cancel()
+        runCatching { processorJob?.join() }
 
         runCatching { stream?.close() }
         runCatching { dataChannel?.close() }
 
         dataChannel = null
         stream = null
-        handlerJob = null
-        handlerResult = null
+        processorJob = null
+        processorResult = null
     }
 }

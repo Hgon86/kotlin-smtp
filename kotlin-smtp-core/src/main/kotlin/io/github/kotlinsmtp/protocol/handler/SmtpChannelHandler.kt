@@ -269,7 +269,7 @@ internal class SmtpChannelHandler(private val server: SmtpServer) : ChannelInbou
         ctx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE)
     }
 
-    /// Timeout event handling
+    /** Handles idle-timeout and other user-triggered events. */
     override fun userEventTriggered(ctx: ChannelHandlerContext, evt: Any) {
         if (evt is IdleStateEvent) {
             scope.launch {

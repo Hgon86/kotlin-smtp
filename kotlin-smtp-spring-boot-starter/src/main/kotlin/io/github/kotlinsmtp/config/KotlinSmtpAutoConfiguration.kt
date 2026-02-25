@@ -17,6 +17,7 @@ import io.github.kotlinsmtp.server.SmtpRateLimiter
 import io.github.kotlinsmtp.server.SmtpServer
 import io.github.kotlinsmtp.server.SmtpServerRunner
 import io.github.kotlinsmtp.spi.SmtpEventHook
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptor
 import io.github.kotlinsmtp.spool.FileSpoolLockManager
 import io.github.kotlinsmtp.spool.FileSpoolMetadataStore
 import io.github.kotlinsmtp.spool.MailDeliveryService
@@ -301,6 +302,7 @@ class KotlinSmtpAutoConfiguration {
         smtpRateLimiterProvider: ObjectProvider<SmtpRateLimiter>,
         smtpAuthRateLimiterProvider: ObjectProvider<SmtpAuthRateLimiter>,
         eventHooksProvider: ObjectProvider<SmtpEventHook>,
+        commandInterceptorsProvider: ObjectProvider<SmtpCommandInterceptor>,
     ): List<SmtpServer> {
         // Validate all configuration properties (throws on invalid config)
         props.validate()
@@ -308,8 +310,8 @@ class KotlinSmtpAutoConfiguration {
         val cert = if (props.ssl.enabled) props.ssl.getCertChainFile() else null
         val key = if (props.ssl.enabled) props.ssl.getPrivateKeyFile() else null
 
-        val handlerCreator = {
-            SimpleSmtpProtocolHandler(
+        val processorCreator = {
+            SimpleSmtpTransactionProcessor(
                 messageStore = messageStore,
                 sentMessageStore = sentMessageStore,
                 sentArchiveMode = props.sentArchive.mode,
@@ -344,18 +346,20 @@ class KotlinSmtpAutoConfiguration {
         // - Use ObjectProvider so startup succeeds even with zero hook beans.
         // - Respect @Order / Ordered using orderedStream().
         val eventHooks = eventHooksProvider.orderedStream().collect(Collectors.toList())
+        val commandInterceptors = commandInterceptorsProvider.orderedStream().collect(Collectors.toList())
 
         return effectiveListeners.map { l ->
             SmtpServer.create(l.port, props.hostname) {
                 serviceName = l.serviceName ?: props.serviceName
                 useAuthService(authService)
-                useProtocolHandlerFactory(handlerCreator)
+                useTransactionProcessorFactory(processorCreator)
                 useUserHandler(userHandler)
                 useMailingListHandler(mailingListHandler)
                 useSpooler(spooler)
 
                 // SPI hooks: bridge core events to external infrastructure (S3/Kafka/DB, etc.).
                 eventHooks.forEach { hook -> addEventHook(hook) }
+                commandInterceptors.forEach { interceptor -> addCommandInterceptor(interceptor) }
 
                 features.enableVrfy = props.features.vrfyEnabled
                 features.enableEtrn = props.features.etrnEnabled

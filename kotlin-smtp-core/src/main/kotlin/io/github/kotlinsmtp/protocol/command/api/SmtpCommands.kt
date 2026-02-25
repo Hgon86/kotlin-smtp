@@ -19,6 +19,8 @@ import io.github.kotlinsmtp.protocol.command.VrfyCommand
 import io.github.kotlinsmtp.server.SmtpSession
 import io.github.kotlinsmtp.spi.SmtpMessageStage
 import io.github.kotlinsmtp.spi.SmtpMessageTransferMode
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptorAction
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandStage
 import io.github.kotlinsmtp.utils.SmtpStatusCode.COMMAND_REJECTED
 import io.github.kotlinsmtp.utils.SmtpStatusCode.BAD_COMMAND_SEQUENCE
 import io.github.kotlinsmtp.utils.SmtpStatusCode.ERROR_IN_PROCESSING
@@ -76,6 +78,15 @@ internal enum class SmtpCommands(
                 val smtpCommand = entries.find { it.name == parsedCommand.commandName }
 
                 if (smtpCommand != null) {
+                    val interceptorStage = interceptorStageOf(parsedCommand.commandName)
+                    if (interceptorStage != null) {
+                        val action = session.runCommandInterceptors(interceptorStage, parsedCommand)
+                        val shouldContinue = applyInterceptorAction(action, parsedCommand.commandName, session)
+                        if (!shouldContinue) {
+                            return
+                        }
+                    }
+
                     try {
                         smtpCommand.instance.execute(parsedCommand, session)
                     } catch (response: SmtpSendResponse) {
@@ -112,6 +123,78 @@ internal enum class SmtpCommands(
                 session.sendResponse(ERROR_IN_PROCESSING.code, "Local error in processing")
                 session.resetTransaction(preserveGreeting = true)
             }
+        }
+
+        private fun interceptorStageOf(commandName: String): SmtpCommandStage? = when (commandName) {
+            "MAIL" -> SmtpCommandStage.MAIL_FROM
+            "RCPT" -> SmtpCommandStage.RCPT_TO
+            "DATA", "BDAT" -> SmtpCommandStage.DATA_PRE
+            else -> null
+        }
+
+        private suspend fun applyInterceptorAction(
+            action: SmtpCommandInterceptorAction,
+            commandName: String,
+            session: SmtpSession,
+        ): Boolean {
+            return when (action) {
+                SmtpCommandInterceptorAction.Proceed -> true
+
+                is SmtpCommandInterceptorAction.Deny -> {
+                    if (commandName == "DATA") {
+                        session.clearDataModeFramingHints()
+                    }
+                    session.sendResponse(action.statusCode, action.message)
+                    notifyTransferRejectedIfNeeded(
+                        commandName = commandName,
+                        responseCode = action.statusCode,
+                        responseMessage = action.message,
+                        session = session,
+                    )
+                    false
+                }
+
+                is SmtpCommandInterceptorAction.Drop -> {
+                    if (commandName == "DATA") {
+                        session.clearDataModeFramingHints()
+                    }
+                    // Defensive cleanup for future interceptor stage expansion.
+                    session.clearBdatState()
+                    action.responseCode?.let { code ->
+                        session.sendResponse(code, action.responseMessage)
+                        notifyTransferRejectedIfNeeded(
+                            commandName = commandName,
+                            responseCode = code,
+                            responseMessage = action.responseMessage ?: "Connection dropped by interceptor",
+                            session = session,
+                        )
+                    }
+                    session.close()
+                    false
+                }
+            }
+        }
+
+        private suspend fun notifyTransferRejectedIfNeeded(
+            commandName: String,
+            responseCode: Int,
+            responseMessage: String,
+            session: SmtpSession,
+        ) {
+            val transferMode = when (commandName) {
+                "DATA" -> SmtpMessageTransferMode.DATA
+                "BDAT" -> SmtpMessageTransferMode.BDAT
+                else -> null
+            }
+            if (transferMode == null || !session.server.hasEventHooks()) {
+                return
+            }
+            session.notifyMessageRejected(
+                transferMode = transferMode,
+                stage = SmtpMessageStage.PROCESSING,
+                responseCode = responseCode,
+                responseMessage = responseMessage,
+            )
         }
     }
 }

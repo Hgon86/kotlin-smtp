@@ -1,8 +1,9 @@
 package io.github.kotlinsmtp.server
 
 import io.github.kotlinsmtp.model.SessionData
+import io.github.kotlinsmtp.protocol.command.api.ParsedCommand
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommands
-import io.github.kotlinsmtp.protocol.handler.SmtpProtocolHandler
+import io.github.kotlinsmtp.protocol.handler.SmtpTransactionProcessor
 import io.github.kotlinsmtp.spi.SmtpMessageEnvelope
 import io.github.kotlinsmtp.spi.SmtpMessageRejectedEvent
 import io.github.kotlinsmtp.spi.SmtpMessageStage
@@ -11,6 +12,9 @@ import io.github.kotlinsmtp.spi.SmtpSessionContext
 import io.github.kotlinsmtp.spi.SmtpSessionEndedEvent
 import io.github.kotlinsmtp.spi.SmtpSessionEndReason
 import io.github.kotlinsmtp.spi.SmtpSessionStartedEvent
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptorAction
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptorContext
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandStage
 import io.github.kotlinsmtp.utils.Values
 import io.github.kotlinsmtp.utils.SmtpStatusCode
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -63,7 +67,7 @@ internal class SmtpSession(
     )
     private val logSanitizer = SmtpSessionLogSanitizer()
     private val responseFormatter = SmtpResponseFormatter()
-    private val protocolHandlerHolder = SmtpProtocolHandlerHolder(server.transactionHandlerCreator)
+    private val transactionProcessorHolder = SmtpTransactionProcessorHolder(server.transactionProcessorCreator)
     private val frameProcessor = SmtpSessionFrameProcessor(
         sessionId = sessionId,
         incomingFrames = incomingFrames,
@@ -89,6 +93,7 @@ internal class SmtpSession(
     var shouldQuit = false
     var sessionData = SessionData(); internal set
     var currentMessageSize = 0; internal set // Track current message size
+    private val interceptorAttributes: MutableMap<String, Any?> = mutableMapOf()
 
     /**
      * Whether DATA is currently being received.
@@ -115,9 +120,9 @@ internal class SmtpSession(
     @Volatile
     private var dataModeFramingHint: Boolean = false
 
-    val transactionHandler: SmtpProtocolHandler?
+    val transactionProcessor: SmtpTransactionProcessor?
         get() {
-            return protocolHandlerHolder.getOrCreate(sessionData)
+            return transactionProcessorHolder.getOrCreate(sessionData)
         }
 
     /**
@@ -194,6 +199,38 @@ internal class SmtpSession(
         tlsActive = sessionData.tlsActive,
         authenticated = sessionData.isAuthenticated,
     )
+
+    /**
+     * Runs registered command interceptors for a command stage.
+     *
+     * @param stage Command stage.
+     * @param command Parsed SMTP command.
+     * @return Interceptor action.
+     */
+    internal suspend fun runCommandInterceptors(
+        stage: SmtpCommandStage,
+        command: ParsedCommand,
+    ): SmtpCommandInterceptorAction {
+        return server.commandInterceptorRunner.run(
+            stage = stage,
+            context = SmtpCommandInterceptorContext(
+                sessionId = sessionId,
+                peerAddress = sessionData.peerAddress,
+                serverHostname = sessionData.serverHostname,
+                helo = sessionData.helo,
+                greeted = sessionData.greeted,
+                tlsActive = sessionData.tlsActive,
+                authenticated = sessionData.isAuthenticated,
+                requireAuthForMail = server.requireAuthForMail,
+                mailFrom = sessionData.mailFrom,
+                recipientCount = sessionData.recipientCount,
+                commandName = command.commandName,
+                rawCommand = command.rawCommand,
+                rawWithoutCommand = command.rawWithoutCommand,
+                attributes = interceptorAttributes,
+            ),
+        )
+    }
 
     internal fun buildMessageEnvelopeSnapshot(): SmtpMessageEnvelope = SmtpMessageEnvelope(
         mailFrom = sessionData.mailFrom ?: "",
@@ -277,9 +314,10 @@ internal class SmtpSession(
         // Clean up active BDAT stream if present (safe for RSET/transaction end).
         clearBdatState()
         clearDataModeFramingHints()
+        interceptorAttributes.clear()
 
         envelopeRecipients.clear()
-        protocolHandlerHolder.doneAndClear()
+        transactionProcessorHolder.doneAndClear()
         sessionData = SmtpSessionDataResetter.reset(
             current = sessionData,
             preserveGreeting = preserveGreeting,
@@ -316,7 +354,7 @@ internal class SmtpSession(
         // close() is not suspend, so cleanup is done asynchronously in server scope.
         server.serverScope.launch {
             runCatching { clearBdatState() }
-            runCatching { protocolHandlerHolder.doneAndClear() }
+            runCatching { transactionProcessorHolder.doneAndClear() }
         }
         channel.close()
     }

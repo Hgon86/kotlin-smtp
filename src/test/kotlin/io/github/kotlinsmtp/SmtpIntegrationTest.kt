@@ -17,6 +17,8 @@ import java.nio.file.Path
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
+// shared SMTP test helpers (skipEhloResponse, wrapToTls, etc.)
+
 /**
  * SMTP protocol integration tests.
  *
@@ -40,7 +42,7 @@ class SmtpIntegrationTest {
 
         server = SmtpServer.create(0, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
 
             // Run tests without TLS/AUTH.
             listener.enableStartTls = false
@@ -120,7 +122,7 @@ class SmtpIntegrationTest {
             // EHLO
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             // MAIL FROM
             writer.write("MAIL FROM:<sender@test.com>\r\n")
@@ -173,7 +175,7 @@ class SmtpIntegrationTest {
 
             out.write("EHLO test.client.local\r\n".toByteArray(Charsets.US_ASCII))
             out.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             out.write("MAIL FROM:<\uC0AC\uC6A9\uC790@example.com>\r\n".toByteArray(Charsets.UTF_8))
             out.flush()
@@ -196,7 +198,7 @@ class SmtpIntegrationTest {
 
             out.write("EHLO test.client.local\r\n".toByteArray(Charsets.US_ASCII))
             out.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             out.write("MAIL FROM:<sender@example.com> SMTPUTF8\r\n".toByteArray(Charsets.US_ASCII))
             out.flush()
@@ -223,7 +225,7 @@ class SmtpIntegrationTest {
 
             out.write("EHLO test.client.local\r\n".toByteArray(Charsets.US_ASCII))
             out.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             out.write("MAIL FROM:<sender@xn--9t4b11yi5a.xn--3e0b707e>\r\n".toByteArray(Charsets.US_ASCII))
             out.flush()
@@ -242,7 +244,7 @@ class SmtpIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("MAIL FROM:<sender@test.com> RET=INVALID\r\n")
             writer.flush()
@@ -261,7 +263,7 @@ class SmtpIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("MAIL FROM:<sender@test.com>\r\n")
             writer.flush()
@@ -285,7 +287,7 @@ class SmtpIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("MAIL FROM:<sender@test.com> SIZE=10\r\n")
             writer.flush()
@@ -326,7 +328,7 @@ class SmtpIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("MAIL FROM:<sender@test.com>\r\n")
             writer.flush()
@@ -367,7 +369,7 @@ class SmtpIntegrationTest {
 
             out.write("EHLO test.client.local\r\n".toByteArray(Charsets.ISO_8859_1))
             out.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             out.write("MAIL FROM:<sender@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
             out.flush()
@@ -401,7 +403,7 @@ class SmtpIntegrationTest {
 
             out.write("EHLO test.client.local\r\n".toByteArray(Charsets.ISO_8859_1))
             out.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             // Reject DATA first (no MAIL/RCPT yet)
             out.write("DATA\r\n".toByteArray(Charsets.ISO_8859_1))
@@ -439,7 +441,7 @@ class SmtpIntegrationTest {
             // EHLO
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             // MAIL FROM
             writer.write("MAIL FROM:<sender@test.com>\r\n")
@@ -505,7 +507,7 @@ class SmtpIntegrationTest {
             // EHLO
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             // RSET (greeting state preserved)
             writer.write("RSET\r\n")
@@ -536,7 +538,7 @@ class SmtpIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("VRFY user\r\n")
             writer.flush()
@@ -558,7 +560,7 @@ class SmtpIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("EXPN dev-team\r\n")
             writer.flush()
@@ -582,7 +584,7 @@ class SmtpIntegrationTest {
         // EHLO
         writer.write("EHLO test.client.local\r\n")
         writer.flush()
-        skipEhloResponse(reader)
+        reader.skipEhloResponse()
 
             // internal implementation details (session tracker) are intentionally hidden from the public API.
             // This test only verifies that graceful shutdown completes without hanging.
@@ -600,29 +602,18 @@ class SmtpIntegrationTest {
             writer.write("QUIT\r\n")
             writer.flush()
             // Server may be shutting down; wait for response but ignore exceptions.
-            kotlin.runCatching { reader.readLine() }
+            runCatching { reader.readLine() }
         } catch (e: Exception) {
             // Exception can occur if server is already closed.
         }
-        
-        kotlin.runCatching { clientSocket.close() }
+
+        runCatching { clientSocket.close() }
 
         // Wait for shutdown completion.
         withTimeout(10.seconds) {
             shutdownJob.join()
         }
-
-        // Verify shutdown completion (session may be force-closed by graceful timeout).
-        assertTrue(true, "Shutdown completed successfully")
-    }
-
-    // Helper method
-    private fun skipEhloResponse(reader: BufferedReader) {
-        var line = reader.readLine()
-        while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
-            if (line.startsWith("250 ")) break
-            line = reader.readLine()
-        }
+        // Test passes when shutdownJob.join() returns without timeout.
     }
 
     /**

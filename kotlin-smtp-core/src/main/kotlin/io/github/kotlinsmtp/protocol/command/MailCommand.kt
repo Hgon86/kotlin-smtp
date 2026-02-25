@@ -4,7 +4,6 @@ import io.github.kotlinsmtp.exception.SmtpSendResponse
 import io.github.kotlinsmtp.protocol.command.api.ParsedCommand
 import io.github.kotlinsmtp.protocol.command.api.SmtpCommand
 import io.github.kotlinsmtp.server.SmtpSession
-import io.github.kotlinsmtp.utils.SmtpStatusCode.BAD_COMMAND_SEQUENCE
 import io.github.kotlinsmtp.utils.SmtpStatusCode.INVALID_MAILBOX
 import io.github.kotlinsmtp.utils.SmtpStatusCode.OKAY
 import io.github.kotlinsmtp.utils.SmtpStatusCode.EXCEEDED_STORAGE_ALLOCATION
@@ -21,24 +20,6 @@ internal class MailCommand : SmtpCommand(
     "FROM:<senderAddress> [SIZE=<size>] [BODY=7BIT]"
 ) {
     override suspend fun execute(command: ParsedCommand, session: SmtpSession) {
-        // State/sequence validation: MAIL is not allowed before HELO/EHLO.
-        if (!session.sessionData.greeted) {
-            throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "Send HELO/EHLO first")
-        }
-
-        // If authentication is required by config, allow MAIL transaction only after STARTTLS + AUTH.
-        // - In operations (MTA receiving), required=false is typical.
-        // - required=true is recommended only for submission use.
-        if (session.server.requireAuthForMail) {
-            if (!session.isTls) {
-                // Enforcing auth without TLS is not meaningful for security, so require STARTTLS first.
-                throw SmtpSendResponse(530, "5.7.0 Must issue STARTTLS first")
-            }
-            if (!session.sessionData.isAuthenticated) {
-                throw SmtpSendResponse(530, "5.7.0 Authentication required")
-            }
-        }
-
         // Pass full raw command string to parser
         val esmtp = try {
             parseMailArguments(command.rawCommand)
@@ -73,16 +54,17 @@ internal class MailCommand : SmtpCommand(
         session.sessionData.dsnRet = esmtp.parameters["RET"]?.uppercase()
         session.sessionData.dsnEnvid = esmtp.parameters["ENVID"]?.trim()
 
-        // Pass sender to transaction handler
-        session.transactionHandler?.from(from ?: "")
+        // Pass sender to transaction processor
+        session.transactionProcessor?.from(from ?: "")
 
         session.sendResponse(OKAY.code, "Ok")
     }
 
     /**
-     * Validate MAIL FROM parameters.
-     * Supported: SIZE, BODY=7BIT | BODY=8BITMIME
-     * Unsupported parameters are rejected with 555
+     * Validates MAIL FROM ESMTP parameters.
+     *
+     * Supported: SIZE, BODY (7BIT|8BITMIME|BINARYMIME), RET, ENVID, SMTPUTF8.
+     * Invalid values and unrecognised parameters are rejected with 555.
      */
     private fun validateMailParameters(esmtp: MailArguments) {
         esmtp.parameters.forEach { (key, value) ->

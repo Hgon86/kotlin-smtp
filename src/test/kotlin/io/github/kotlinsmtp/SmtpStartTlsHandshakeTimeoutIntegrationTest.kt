@@ -13,6 +13,8 @@ import java.net.SocketTimeoutException
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
+// shared SMTP test helpers (skipEhloResponse, etc.)
+
 class SmtpStartTlsHandshakeTimeoutIntegrationTest {
 
     @Test
@@ -22,7 +24,7 @@ class SmtpStartTlsHandshakeTimeoutIntegrationTest {
 
         val server = SmtpServer.create(testPort, "test-smtp.local") {
             serviceName = "test-smtp"
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
 
             listener.enableStartTls = true
             listener.enableAuth = false
@@ -51,7 +53,7 @@ class SmtpStartTlsHandshakeTimeoutIntegrationTest {
 
                 writer.write("EHLO test.client.local\r\n")
                 writer.flush()
-                skipEhloResponse(reader)
+                reader.skipEhloResponse()
 
                 writer.write("STARTTLS\r\n")
                 writer.flush()
@@ -77,12 +79,5 @@ class SmtpStartTlsHandshakeTimeoutIntegrationTest {
             runCatching { ssc.delete() }
         }
     }
-
-    private fun skipEhloResponse(reader: BufferedReader) {
-        var line = reader.readLine()
-        while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
-            if (line.startsWith("250 ")) break
-            line = reader.readLine()
-        }
-    }
 }
+

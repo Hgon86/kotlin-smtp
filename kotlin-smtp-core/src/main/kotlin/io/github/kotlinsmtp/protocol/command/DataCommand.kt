@@ -41,11 +41,6 @@ internal class DataCommand : SmtpCommand(
             throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "BINARYMIME requires BDAT (CHUNKING)")
         }
 
-        // State/sequence validation: allow DATA only after at least one RCPT.
-        if (session.sessionData.mailFrom == null || session.sessionData.recipientCount <= 0) {
-            throw SmtpSendResponse(BAD_COMMAND_SEQUENCE.code, "Send MAIL FROM and RCPT TO first")
-        }
-
         // Rate limiting: check message send limit.
         val clientIp = session.clientIpAddress()
         if (clientIp != null && !session.server.rateLimiter.allowMessage(clientIp)) {
@@ -57,16 +52,16 @@ internal class DataCommand : SmtpCommand(
 
         val dataChannel = Channel<ByteArray>(Channel.BUFFERED) // Create coroutine channel
         val dataStream = CoroutineInputStream(dataChannel) // Create data stream
-        val handlerResult = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+        val processorResult = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
 
-        // Run transaction handler in a separate coroutine.
+        // Run transaction processor in a separate coroutine.
         // Important: do not send SMTP response here (return as Result only); execute() sends the final DATA response exactly once.
-        val handlerJob = SmtpStreamingHandlerRunner.launch(session, dataStream, handlerResult)
+        val processorJob = SmtpStreamingHandlerRunner.launch(session, dataStream, processorResult)
 
         // Enable session flag so DATA body is not logged.
         session.inDataMode = true
 
-        // Receive message data (line-based) -> convert to byte stream -> pass to handler.
+        // Receive message data (line-based) -> convert to byte stream -> pass to transaction processor.
         val receiveResult = try {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -82,7 +77,7 @@ internal class DataCommand : SmtpCommand(
 
                         // Convert line to bytes (including CRLF)
                         // Preserve bytes 1:1 with ISO-8859-1 for 8BITMIME support.
-                    val lineBytes = "$processedLine\r\n".toByteArray(Charsets.ISO_8859_1)
+                        val lineBytes = "$processedLine\r\n".toByteArray(Charsets.ISO_8859_1)
 
                         // Check size limit
                         session.currentMessageSize += lineBytes.size
@@ -129,10 +124,10 @@ internal class DataCommand : SmtpCommand(
 
         // If receiving failed: close connection for protocol synchronization (conservative)
         if (receiveResult.isFailure) {
-            handlerJob.cancel()
+            processorJob.cancel()
             runCatching { dataStream.close() }
             runCatching { dataChannel.close() }
-            runCatching { handlerJob.join() }
+            runCatching { processorJob.join() }
 
             val e = receiveResult.exceptionOrNull()!!
 
@@ -153,9 +148,9 @@ internal class DataCommand : SmtpCommand(
             return
         }
 
-        // Check handler result (250 only on success)
-        handlerJob.join()
-        val processing = handlerResult.await()
+        // Check processor result (250 only on success)
+        processorJob.join()
+        val processing = processorResult.await()
         SmtpStreamingHandlerRunner.finalizeTransaction(
             session = session,
             processing = processing,

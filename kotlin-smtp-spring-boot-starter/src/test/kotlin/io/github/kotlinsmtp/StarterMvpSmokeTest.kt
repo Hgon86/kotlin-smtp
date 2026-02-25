@@ -3,6 +3,10 @@ package io.github.kotlinsmtp
 import io.github.kotlinsmtp.config.KotlinSmtpAutoConfiguration
 import io.github.kotlinsmtp.server.SmtpServer
 import io.github.kotlinsmtp.spi.SmtpEventHook
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptor
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptorAction
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandInterceptorContext
+import io.github.kotlinsmtp.spi.pipeline.SmtpCommandStage
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -55,6 +59,44 @@ class StarterMvpSmokeTest {
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
             .withBean(SmtpEventHook::class.java, { object : SmtpEventHook {} })
+            .withPropertyValues(
+                "smtp.hostname=localhost",
+                "smtp.port=0",
+                "smtp.routing.localDomain=local.test",
+                "smtp.storage.mailboxDir=${dirs.mailboxDir}",
+                "smtp.storage.tempDir=${dirs.messageTempDir}",
+                "smtp.storage.listsDir=${dirs.listsDir}",
+                "smtp.spool.dir=${dirs.spoolDir}",
+            )
+            .run { context ->
+                val servers = context.getBean("smtpServers") as List<*>
+                assertEquals(1, servers.size)
+
+                val server = servers.single() as SmtpServer
+                assertEquals(0, server.port)
+                assertEquals("localhost", server.hostname)
+
+                runBlocking {
+                    assertTrue(server.start())
+                    assertTrue(server.stop())
+                }
+            }
+    }
+
+    @Test
+    fun `minimal properties start and stop server with command interceptor bean`() {
+        val dirs = createTestDirectories("interceptor")
+
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(KotlinSmtpAutoConfiguration::class.java))
+            .withBean(SmtpCommandInterceptor::class.java, {
+                object : SmtpCommandInterceptor {
+                    override suspend fun intercept(
+                        stage: SmtpCommandStage,
+                        context: SmtpCommandInterceptorContext,
+                    ): SmtpCommandInterceptorAction = SmtpCommandInterceptorAction.Proceed
+                }
+            })
             .withPropertyValues(
                 "smtp.hostname=localhost",
                 "smtp.port=0",

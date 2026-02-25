@@ -13,35 +13,35 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * Utility for shared handler execution/result response used in DATA/BDAT body streaming.
+ * Utility for shared transaction-processor execution/result response used in DATA/BDAT body streaming.
  */
 internal object SmtpStreamingHandlerRunner {
 
     /**
-     * Run transaction handler data() in a separate coroutine and record result into deferred.
+     * Run transaction processor data() in a separate coroutine and record result into deferred.
      *
      * @param timeout Maximum body processing time
      */
     fun launch(
         session: SmtpSession,
         dataStream: CoroutineInputStream,
-        handlerResult: CompletableDeferred<Result<Unit>>,
+        processorResult: CompletableDeferred<Result<Unit>>,
         timeout: Duration = 5.minutes,
     ) = session.server.serverScope.launch {
         val result = runCatching {
             withTimeout(timeout) {
-                val handler = session.transactionHandler
-                    ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "No transaction handler configured")
-                handler.data(dataStream, 0)
+                val processor = session.transactionProcessor
+                    ?: throw SmtpSendResponse(SmtpStatusCode.ERROR_IN_PROCESSING.code, "No transaction processor configured")
+                processor.data(dataStream, 0)
             }
         }.map { Unit }
 
-        handlerResult.complete(result)
+        processorResult.complete(result)
         runCatching { dataStream.close() }
     }
 
     /**
-     * Send SMTP response and reset transaction state based on handler execution result.
+     * Send SMTP response and reset transaction state based on processor execution result.
      *
      * @return true when processed successfully
      */

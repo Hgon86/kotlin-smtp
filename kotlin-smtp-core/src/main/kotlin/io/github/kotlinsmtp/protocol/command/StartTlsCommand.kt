@@ -27,7 +27,7 @@ internal class StartTlsCommand : SmtpCommand(
             return
         }
 
-        // Reject command if server does not support TLS
+        // TLS cert/key may not be configured even when STARTTLS is advertised; reject gracefully.
         if (session.server.sslContext == null) {
             session.sendResponse(454, "4.7.0 TLS not available")
             return

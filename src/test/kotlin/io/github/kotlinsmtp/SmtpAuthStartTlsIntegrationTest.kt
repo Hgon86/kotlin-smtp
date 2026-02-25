@@ -17,11 +17,9 @@ import java.io.OutputStreamWriter
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.Base64
-import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 import kotlin.test.assertTrue
+
+// shared SMTP test helpers (skipEhloResponse, readEhloLines, wrapToTls, buildAuthPlainLine)
 
 class SmtpAuthStartTlsIntegrationTest {
 
@@ -47,7 +45,7 @@ class SmtpAuthStartTlsIntegrationTest {
         server = SmtpServer.create(testPort, "test-smtp.local") {
             serviceName = "test-smtp"
             useAuthService(this@SmtpAuthStartTlsIntegrationTest.authService)
-            useProtocolHandlerFactory { TestSmtpProtocolHandler() }
+            useTransactionProcessorFactory { TestSmtpTransactionProcessor() }
             useUserHandler(object : SmtpUserHandler() {
                 override fun verify(searchTerm: String): Collection<SmtpUser> {
                     if (!searchTerm.equals("user", ignoreCase = true)) return emptyList()
@@ -110,7 +108,7 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             val authLine = buildAuthPlainLine("user", "password")
             writer.write(authLine)
@@ -133,14 +131,14 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
@@ -152,7 +150,7 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            val ehloLines = readEhloLines(reader)
+            val ehloLines = reader.readEhloLines()
             assertTrue(ehloLines.isNotEmpty(), "Expected EHLO response after STARTTLS")
             assertTrue(ehloLines.last().startsWith("250 "), "Expected final 250 line, got: ${ehloLines.last()}")
 
@@ -171,7 +169,7 @@ class SmtpAuthStartTlsIntegrationTest {
 
             out.write("EHLO test.client.local\r\n".toByteArray(Charsets.ISO_8859_1))
             out.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             // The server must reject pipelined commands before STARTTLS 220 response is received.
             out.write("STARTTLS\r\nMAIL FROM:<sender@test.com>\r\n".toByteArray(Charsets.ISO_8859_1))
@@ -196,7 +194,7 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS now\r\n")
             writer.flush()
@@ -217,20 +215,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            val ehloLines = readEhloLines(reader)
+            val ehloLines = reader.readEhloLines()
             assertTrue(ehloLines.isNotEmpty(), "Expected EHLO response after STARTTLS")
             assertTrue(ehloLines.last().startsWith("250 "), "Expected final 250 line, got: ${ehloLines.lastOrNull()}")
 
@@ -262,20 +260,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            val ehloLines = readEhloLines(reader)
+            val ehloLines = reader.readEhloLines()
             assertTrue(ehloLines.isNotEmpty(), "Expected EHLO response after STARTTLS")
             assertTrue(ehloLines.last().startsWith("250 "), "Expected final 250 line, got: ${ehloLines.lastOrNull()}")
 
@@ -303,20 +301,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write(buildAuthPlainLine("user", "wrong-password"))
             writer.flush()
@@ -338,20 +336,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             val userB64 = Base64.getEncoder().encodeToString("user".toByteArray(Charsets.UTF_8))
             val passB64 = Base64.getEncoder().encodeToString("password".toByteArray(Charsets.UTF_8))
@@ -386,20 +384,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("AUTH LOGIN\r\n")
             writer.flush()
@@ -429,7 +427,7 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("VRFY user\r\n")
             writer.flush()
@@ -453,20 +451,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("EXPN dev-team\r\n")
             writer.flush()
@@ -491,20 +489,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write(buildAuthPlainLine("user", "password"))
             writer.flush()
@@ -541,20 +539,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write(buildAuthPlainLine("user", "password"))
             writer.flush()
@@ -581,20 +579,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write(buildAuthPlainLine("user", "password"))
             writer.flush()
@@ -623,20 +621,20 @@ class SmtpAuthStartTlsIntegrationTest {
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write("STARTTLS\r\n")
             writer.flush()
             val startTlsResp = reader.readLine()
             assertTrue(startTlsResp.startsWith("220"), "Expected 220 Ready to start TLS, got: $startTlsResp")
 
-            val tlsSocket = wrapToTls(socket)
+            val tlsSocket = socket.wrapToTls()
             reader = BufferedReader(InputStreamReader(tlsSocket.getInputStream()))
             writer = OutputStreamWriter(tlsSocket.getOutputStream())
 
             writer.write("EHLO test.client.local\r\n")
             writer.flush()
-            skipEhloResponse(reader)
+            reader.skipEhloResponse()
 
             writer.write(buildAuthPlainLine("user", "password"))
             writer.flush()
@@ -652,46 +650,4 @@ class SmtpAuthStartTlsIntegrationTest {
         }
     }
 
-    private fun skipEhloResponse(reader: BufferedReader) {
-        var line = reader.readLine()
-        while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
-            if (line.startsWith("250 ")) break
-            line = reader.readLine()
-        }
-    }
-
-    private fun readEhloLines(reader: BufferedReader): List<String> {
-        val lines = mutableListOf<String>()
-        var line = reader.readLine()
-        while (line != null && (line.startsWith("250-") || line.startsWith("250 "))) {
-            lines.add(line)
-            if (line.startsWith("250 ")) break
-            line = reader.readLine()
-        }
-        return lines
-    }
-
-    private fun buildAuthPlainLine(username: String, password: String): String {
-        val raw = "\u0000${username}\u0000${password}".toByteArray(Charsets.UTF_8)
-        val b64 = Base64.getEncoder().encodeToString(raw)
-        return "AUTH PLAIN $b64\r\n"
-    }
-
-    private fun wrapToTls(socket: Socket): SSLSocket {
-        val trustAll: TrustManager = object : X509TrustManager {
-            override fun getAcceptedIssuers() = emptyArray<java.security.cert.X509Certificate>()
-            override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
-            override fun checkServerTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
-        }
-        val ctx = SSLContext.getInstance("TLS")
-        ctx.init(null, arrayOf(trustAll), java.security.SecureRandom())
-
-        val factory = ctx.socketFactory
-        val tls = factory.createSocket(socket, "localhost", socket.port, true) as SSLSocket
-        tls.useClientMode = true
-        tls.startHandshake()
-        // Wait briefly after TLS handshake for stable I/O.
-        Thread.sleep(50)
-        return tls
-    }
 }
